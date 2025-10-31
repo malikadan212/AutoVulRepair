@@ -1,0 +1,1110 @@
+import os
+import time
+import uuid
+import tempfile
+import shutil
+import subprocess
+import zipfile
+from functools import wraps
+from pathlib import Path
+
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
+from flask_login import LoginManager, login_user, logout_user, login_required, UserMixin, current_user
+from authlib.integrations.flask_client import OAuth
+from dotenv import load_dotenv
+import requests
+
+# Import new components
+from src.models.scan import get_session, Scan, create_database
+from src.queue.tasks import celery_app, analyze_code
+from src.utils.validation import (
+    is_valid_github_url, validate_zip_file, validate_code_snippet, 
+    safe_extract_zip, sanitize_filename
+)
+
+load_dotenv()
+
+# Initialize database
+create_database()
+
+app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')
+
+# Flask-Login setup
+login_manager = LoginManager()
+login_manager.login_view = 'home'
+login_manager.init_app(app)
+
+# Simple in-memory user store (for demo)
+USERS = {}
+
+
+class User(UserMixin):
+    def __init__(self, id_, username, token=None):
+        self.id = id_
+        self.username = username
+        self.token = token
+
+    def get_id(self):
+        return str(self.id)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return USERS.get(user_id)
+
+
+# OAuth (GitHub) setup
+oauth = OAuth(app)
+github = oauth.register(
+    name='github',
+    client_id=os.getenv('GITHUB_CLIENT_ID'),
+    client_secret=os.getenv('GITHUB_CLIENT_SECRET'),
+    access_token_url='https://github.com/login/oauth/access_token',
+    authorize_url='https://github.com/login/oauth/authorize',
+    api_base_url='https://api.github.com/',
+    client_kwargs={
+        'scope': 'user:email'
+    },
+)
+
+
+def login_required_oauth(f):
+    """Wrapper for routes that require OAuth token in session."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'github_token' not in session:
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+
+@app.route('/no-login')
+def no_login_scan():
+    """Entry point for users who want to scan without GitHub login"""
+    return render_template('no_login_scan.html')
+
+@app.route('/scan-public', methods=['GET'])
+def scan_public_form():
+    """Show the public scanning form"""
+    return render_template('no_login_scan.html')
+
+
+@app.route('/login')
+def login():
+    redirect_uri = url_for('authorized', _external=True)
+    return github.authorize_redirect(redirect_uri)
+
+
+@app.route('/auth')
+def authorized():
+    try:
+        token = github.authorize_access_token()
+        if not token:
+            flash('Authentication failed.')
+            return redirect(url_for('home'))
+
+        session['github_token'] = token['access_token']
+        
+        # Fetch user info
+        resp = requests.get('https://api.github.com/user', 
+                          headers={'Authorization': f'token {token["access_token"]}'})
+        
+        if resp.status_code != 200:
+            flash('Failed to fetch user info from GitHub.')
+            return redirect(url_for('home'))
+
+        data = resp.json()
+        user_id = str(data.get('id'))
+        username = data.get('login')
+
+        user = User(user_id, username, token=token['access_token'])
+        USERS[user_id] = user
+        login_user(user)
+        flash('Logged in successfully.')
+        return redirect(url_for('dashboard'))
+    except Exception as e:
+        flash(f'Authentication error: {str(e)}')
+        return redirect(url_for('home'))
+
+
+# Token getter no longer needed with Authlib
+
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return render_template('dashboard.html', user=current_user)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    session.pop('github_token', None)
+    flash('Logged out.')
+    return redirect(url_for('home'))
+
+
+@app.route('/scan', methods=['GET', 'POST'])
+@login_required
+def scan():
+    if request.method == 'POST':
+        repo_url = request.form.get('repo_url', '').strip()
+        zip_file = request.files.get('zip_file')
+        analysis_tool = request.form.get('analysis_tool', 'cppcheck')
+
+        scan_id = str(uuid.uuid4())
+
+        try:
+            if repo_url:
+                # Validate it's a GitHub URL
+                if not is_valid_github_url(repo_url):
+                    flash('Please provide a valid GitHub repository URL.')
+                    return render_template('scan.html')
+                
+                result = process_github_repo(repo_url, scan_id, analysis_tool)
+            elif zip_file:
+                result = process_zip_upload(zip_file, scan_id, analysis_tool)
+            else:
+                flash('Please provide a GitHub URL or upload a ZIP file.')
+                return render_template('scan.html')
+            
+            if result['success']:
+                # Store scan results in session
+                session.setdefault('scans', {})[scan_id] = result['data']
+                return redirect(url_for('results', scan_id=scan_id))
+            else:
+                flash(f'Scan failed: {result["error"]}')
+                return render_template('scan.html')
+                
+        except Exception as e:
+            flash(f'An error occurred: {str(e)}')
+            return render_template('scan.html')
+
+    return render_template('scan.html')
+
+
+@app.route('/results/<scan_id>')
+@login_required
+def results(scan_id):
+    scans = session.get('scans', {})
+    scan = scans.get(scan_id)
+    if not scan:
+        flash('Scan not found.')
+        return redirect(url_for('dashboard'))
+
+    # Placeholder progress (in a real app, poll background job status)
+    progress = 100 if scan['status'] == 'completed' else 0
+
+    return render_template('results.html', scan_id=scan_id, scan=scan, progress=progress)
+
+
+@app.route('/scan-progress/<scan_id>')
+def scan_progress(scan_id):
+    """Show scan progress page - accessible without login"""
+    # In real implementation, check if scan exists and get details
+    return render_template('scan_progress.html', 
+                         scan_id=scan_id, 
+                         analysis_tool='cppcheck',
+                         source_type='Repository')
+
+
+@app.route('/detailed-findings/<scan_id>')
+def detailed_findings(scan_id):
+    """Show detailed vulnerability findings - accessible without login"""
+    # Get scan data (from session for demo, from DB in real app)
+    scans = session.get('scans', {})
+    scan = scans.get(scan_id)
+    
+    if not scan:
+        # Create demo data for presentation
+        vulnerabilities = [
+            {
+                'id': 'vuln_001',
+                'severity': 'high',
+                'description': 'Buffer overflow in strcpy function',
+                'file': 'src/utils/string_utils.c',
+                'line': 127,
+                'tool': 'CodeQL'
+            },
+            {
+                'id': 'vuln_002', 
+                'severity': 'medium',
+                'description': 'Potential null pointer dereference',
+                'file': 'src/parser/json_parser.c',
+                'line': 89,
+                'tool': 'Cppcheck'
+            },
+            {
+                'id': 'vuln_003',
+                'severity': 'high',
+                'description': 'Use after free in memory allocator',
+                'file': 'src/memory/allocator.c',
+                'line': 234,
+                'tool': 'CodeQL'
+            },
+            {
+                'id': 'vuln_004',
+                'severity': 'medium',
+                'description': 'Integer overflow in calculation',
+                'file': 'src/math/calculator.c',
+                'line': 156,
+                'tool': 'Cppcheck'
+            },
+            {
+                'id': 'vuln_005',
+                'severity': 'low',
+                'description': 'Unused variable declaration',
+                'file': 'src/utils/helpers.c',
+                'line': 45,
+                'tool': 'Cppcheck'
+            }
+        ]
+        patches = [
+            {
+                'id': 'patch_001',
+                'description': 'Fix buffer overflow with bounds checking',
+                'content': '- strcpy(buffer, input);\n+ strncpy(buffer, input, sizeof(buffer)-1);\n+ buffer[sizeof(buffer)-1] = \'\\0\';'
+            },
+            {
+                'id': 'patch_002',
+                'description': 'Add null pointer check',
+                'content': '+ if (ptr == NULL) {\n+     return -1;\n+ }\n  ptr->data = value;'
+            }
+        ]
+    else:
+        vulnerabilities = scan.get('vulnerabilities', [])
+        patches = scan.get('patches', [])
+    
+    return render_template('detailed_findings.html', 
+                         scan_id=scan_id,
+                         vulnerabilities=vulnerabilities,
+                         patches=patches)
+
+
+@app.route('/patch-review/<scan_id>/<patch_id>')
+def patch_review(scan_id, patch_id):
+    """Show patch review interface - accessible without login"""
+    return render_template('patch_review.html', 
+                         scan_id=scan_id,
+                         patch_id=patch_id)
+
+
+@app.route('/fuzzing-dashboard')
+def fuzzing_dashboard():
+    """Show fuzzing campaign dashboard - accessible without login"""
+    return render_template('fuzzing_dashboard.html')
+
+
+@app.route('/monitoring')
+def monitoring_dashboard():
+    """Show system monitoring dashboard - accessible without login"""
+    return render_template('monitoring_dashboard.html')
+
+
+@app.route('/demo-dashboard')
+def demo_dashboard():
+    """Public demo dashboard - accessible without login"""
+    # Create a demo user object for display
+    demo_user = type('DemoUser', (), {
+        'username': 'demo_user',
+        'is_authenticated': False
+    })()
+    
+    return render_template('dashboard.html', user=demo_user)
+
+
+@app.route('/api/scan-status/<scan_id>')
+def scan_status_api(scan_id):
+    """Get scan status and progress"""
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            return jsonify({'error': 'Scan not found'}), 404
+        
+        response = {
+            'scan_id': scan.id,
+            'status': scan.status,
+            'analysis_tool': scan.analysis_tool,
+            'created_at': scan.created_at.isoformat(),
+            'updated_at': scan.updated_at.isoformat()
+        }
+        
+        if scan.status == 'completed':
+            response['vulnerabilities_count'] = len(scan.vulnerabilities_json or [])
+            response['patches_count'] = len(scan.patches_json or [])
+        
+        return jsonify(response)
+        
+    finally:
+        session_db.close()
+
+@app.route('/api/scan_status/<scan_id>')
+@login_required
+def scan_status(scan_id):
+    """Legacy endpoint for authenticated users"""
+    scans = session.get('scans', {})
+    scan = scans.get(scan_id)
+    if not scan:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify({'status': scan['status']})
+
+
+@app.route('/scan-public', methods=['POST'])
+def scan_public():
+    """New ingestion API endpoint for public scanning"""
+    try:
+        # Get form data
+        repo_url = request.form.get('repo_url', '').strip()
+        zip_file = request.files.get('zip_file')
+        code_snippet = request.form.get('code_snippet', '').strip()
+        analysis_tool = request.form.get('analysis_tool', 'cppcheck')
+        
+        # Validate that only one source type is provided
+        source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, code_snippet])
+        if source_count != 1:
+            return jsonify({'error': 'Exactly one source type must be provided'}), 400
+        
+        # Validate analysis tool
+        if analysis_tool not in ['cppcheck', 'codeql']:
+            return jsonify({'error': 'Invalid analysis tool. Must be "cppcheck" or "codeql"'}), 400
+        
+        # Generate scan ID and create directories
+        scan_id = str(uuid.uuid4())
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        source_dir = os.path.join(scan_dir, 'source')
+        artifacts_dir = os.path.join(scan_dir, 'artifacts')
+        
+        os.makedirs(source_dir, exist_ok=True)
+        os.makedirs(artifacts_dir, exist_ok=True)
+        
+        # Process different source types
+        session_db = get_session()
+        try:
+            if repo_url:
+                # Validate GitHub URL
+                if not is_valid_github_url(repo_url):
+                    return jsonify({'error': 'Invalid GitHub URL format'}), 400
+                
+                # Create scan record
+                scan = Scan(
+                    id=scan_id,
+                    user_id=None,  # Public scan
+                    source_type='repo_url',
+                    repo_url=repo_url,
+                    analysis_tool=analysis_tool,
+                    status='queued'
+                )
+                
+            elif zip_file:
+                # Validate ZIP file
+                is_valid, error_msg = validate_zip_file(zip_file)
+                if not is_valid:
+                    return jsonify({'error': error_msg}), 400
+                
+                # Save and extract ZIP safely
+                zip_path = os.path.join(source_dir, 'source.zip')
+                zip_file.save(zip_path)
+                
+                try:
+                    safe_extract_zip(zip_path, source_dir)
+                    os.remove(zip_path)  # Remove ZIP after extraction
+                except ValueError as e:
+                    shutil.rmtree(scan_dir, ignore_errors=True)
+                    return jsonify({'error': f'Unsafe ZIP file: {str(e)}'}), 400
+                
+                # Create scan record
+                scan = Scan(
+                    id=scan_id,
+                    user_id=None,
+                    source_type='zip',
+                    source_path=source_dir,
+                    analysis_tool=analysis_tool,
+                    status='queued'
+                )
+                
+            else:  # code_snippet
+                # Validate code snippet
+                is_valid, error_msg = validate_code_snippet(code_snippet)
+                if not is_valid:
+                    return jsonify({'error': error_msg}), 400
+                
+                # Determine file extension based on content
+                if 'def ' in code_snippet or 'import ' in code_snippet:
+                    file_ext = '.py'
+                elif any(keyword in code_snippet for keyword in ['#include', 'int main', 'void ']):
+                    file_ext = '.cpp'
+                elif 'function' in code_snippet or 'const ' in code_snippet:
+                    file_ext = '.js'
+                else:
+                    file_ext = '.txt'
+                
+                # Save code snippet
+                snippet_path = os.path.join(source_dir, f'snippet{file_ext}')
+                with open(snippet_path, 'w', encoding='utf-8') as f:
+                    f.write(code_snippet)
+                
+                # Create scan record
+                scan = Scan(
+                    id=scan_id,
+                    user_id=None,
+                    source_type='code_snippet',
+                    source_path=snippet_path,
+                    analysis_tool=analysis_tool,
+                    status='queued'
+                )
+            
+            # Save scan to database
+            session_db.add(scan)
+            session_db.commit()
+            
+            # Enqueue Celery task
+            analyze_code.delay(scan_id, analysis_tool)
+            
+            # Store demo scan in session for later retrieval
+            session.setdefault('public_scans', {})[scan_id] = {
+                'status': 'completed',
+                'analysis_tool': analysis_tool,
+                'source_type': 'demo'
+            }
+            
+            # For form submissions, redirect to progress page
+            if request.content_type and 'application/x-www-form-urlencoded' in request.content_type:
+                return redirect(url_for('scan_progress', scan_id=scan_id))
+            
+            # For API calls, return JSON
+            return jsonify({
+                'scan_id': scan_id,
+                'status': 'queued'
+            }), 202
+            
+        finally:
+            session_db.close()
+            
+    except Exception as e:
+        # Clean up on error
+        if 'scan_dir' in locals() and os.path.exists(scan_dir):
+            shutil.rmtree(scan_dir, ignore_errors=True)
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+@app.route('/public-results/<scan_id>')
+def public_results(scan_id):
+    """Show results for public scans (no login required)"""
+    # For demo purposes, create sample results
+    demo_scan = {
+        'status': 'completed',
+        'analysis_tool': 'cppcheck',
+        'vulnerabilities': [
+            {
+                'id': 'vuln_001',
+                'severity': 'high',
+                'description': 'Buffer overflow in strcpy function',
+                'file': 'demo_code.c',
+                'line': 15,
+                'tool': 'Cppcheck'
+            },
+            {
+                'id': 'vuln_002',
+                'severity': 'high',
+                'description': 'Use after free vulnerability',
+                'file': 'demo_code.c',
+                'line': 28,
+                'tool': 'Cppcheck'
+            },
+            {
+                'id': 'vuln_003',
+                'severity': 'medium',
+                'description': 'Potential null pointer dereference',
+                'file': 'demo_code.c',
+                'line': 42,
+                'tool': 'Cppcheck'
+            }
+        ],
+        'patches': [
+            {
+                'id': 'patch_001',
+                'description': 'Fix buffer overflow with safe string functions',
+                'content': '- strcpy(buffer, input);\n+ strncpy(buffer, input, sizeof(buffer)-1);\n+ buffer[sizeof(buffer)-1] = \'\\0\';'
+            }
+        ]
+    }
+    
+    return render_template('public_results.html', scan_id=scan_id, scan=demo_scan)
+
+
+@app.route('/api/tool-status')
+def tool_status():
+    """Check availability of analysis tools"""
+    from src.analysis.codeql import CodeQLAnalyzer
+    from src.analysis.cppcheck import CppcheckAnalyzer
+    
+    codeql_analyzer = CodeQLAnalyzer()
+    cppcheck_analyzer = CppcheckAnalyzer()
+    
+    status = {
+        'codeql': {
+            'available': codeql_analyzer.is_available(),
+            'name': 'CodeQL'
+        },
+        'cppcheck': {
+            'available': cppcheck_analyzer.is_available(),
+            'name': 'Cppcheck'
+        }
+    }
+    return jsonify(status)
+
+
+@app.route('/download-patch/<scan_id>/<patch_id>')
+def download_patch(scan_id, patch_id):
+    """Download patch file"""
+    scans = session.get('public_scans', {})
+    scan = scans.get(scan_id)
+    if not scan:
+        flash('Scan not found or expired.')
+        return redirect(url_for('no_login_scan'))
+    
+    # Find the patch
+    patch = next((p for p in scan.get('patches', []) if p['id'] == patch_id), None)
+    if not patch:
+        flash('Patch not found.')
+        return redirect(url_for('public_results', scan_id=scan_id))
+    
+    # Create temporary patch file
+    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False)
+    temp_file.write(patch['content'])
+    temp_file.close()
+    
+    return send_file(temp_file.name, as_attachment=True, 
+                    download_name=f'{patch_id}.patch', mimetype='text/plain')
+
+
+def is_valid_github_url(url):
+    """Validate if URL is a valid GitHub repository URL"""
+    import re
+    pattern = r'^https://github\.com/[\w\-\.]+/[\w\-\.]+/?$'
+    return bool(re.match(pattern, url))
+
+
+def process_github_repo(repo_url, scan_id, analysis_tool='cppcheck'):
+    """Clone and process a public GitHub repository"""
+    temp_dir = None
+    try:
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp(prefix=f'scan_{scan_id}_')
+        
+        # Clone the repository
+        result = subprocess.run([
+            'git', 'clone', '--depth', '1', repo_url, temp_dir
+        ], capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            return {
+                'success': False, 
+                'error': 'Failed to clone repository. Make sure it\'s public and accessible.'
+            }
+        
+        # Run static analysis with selected tool
+        vulnerabilities, patches = run_static_analysis(temp_dir, analysis_tool)
+        
+        return {
+            'success': True,
+            'data': {
+                'repo_url': repo_url,
+                'status': 'completed',
+                'vulnerabilities': vulnerabilities,
+                'patches': patches,
+                'scan_type': 'github_repo',
+                'analysis_tool': analysis_tool
+            }
+        }
+        
+    except subprocess.TimeoutExpired:
+        return {'success': False, 'error': 'Repository clone timed out.'}
+    except Exception as e:
+        return {'success': False, 'error': f'Processing failed: {str(e)}'}
+    finally:
+        # Clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def process_zip_upload(zip_file, scan_id, analysis_tool='cppcheck'):
+    """Process uploaded ZIP file"""
+    temp_dir = None
+    try:
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp(prefix=f'scan_{scan_id}_')
+        
+        # Save and extract ZIP
+        zip_path = os.path.join(temp_dir, 'upload.zip')
+        zip_file.save(zip_path)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Remove the ZIP file
+        os.remove(zip_path)
+        
+        # Run static analysis with selected tool
+        vulnerabilities, patches = run_static_analysis(temp_dir, analysis_tool)
+        
+        return {
+            'success': True,
+            'data': {
+                'status': 'completed',
+                'vulnerabilities': vulnerabilities,
+                'patches': patches,
+                'scan_type': 'zip_upload',
+                'analysis_tool': analysis_tool
+            }
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'ZIP processing failed: {str(e)}'}
+    finally:
+        # Clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def process_code_snippet(code_snippet, scan_id, analysis_tool='cppcheck'):
+    """Process pasted code snippet"""
+    try:
+        # Create temporary file for analysis
+        temp_dir = tempfile.mkdtemp(prefix=f'snippet_{scan_id}_')
+        
+        # Determine file extension based on content or default to .txt
+        file_ext = '.py' if 'def ' in code_snippet or 'import ' in code_snippet else '.cpp'
+        snippet_file = os.path.join(temp_dir, f'snippet{file_ext}')
+        
+        with open(snippet_file, 'w', encoding='utf-8') as f:
+            f.write(code_snippet)
+        
+        # Run analysis on the snippet
+        vulnerabilities, patches = run_static_analysis(temp_dir, analysis_tool)
+        
+        # Clean up
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return {
+            'success': True,
+            'data': {
+                'status': 'completed',
+                'vulnerabilities': vulnerabilities,
+                'patches': patches,
+                'scan_type': 'code_snippet',
+                'analysis_tool': analysis_tool
+            }
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'Code analysis failed: {str(e)}'}
+
+
+def run_static_analysis(directory, analysis_tool='cppcheck'):
+    """Run static analysis using the selected tool"""
+    try:
+        if analysis_tool == 'codeql':
+            return run_codeql_analysis(directory)
+        elif analysis_tool == 'cppcheck':
+            return run_cppcheck_analysis(directory)
+        else:
+            # Fallback to simulation for unsupported tools
+            return simulate_scan(directory)
+    except Exception as e:
+        print(f"Analysis failed: {e}")
+        # Fallback to simulation if analysis fails
+        return simulate_scan(directory)
+
+
+def run_codeql_analysis(directory):
+    """Run CodeQL analysis for deep semantic analysis"""
+    vulnerabilities = []
+    patches = []
+    
+    try:
+        # Check if CodeQL is available
+        result = subprocess.run(['codeql', '--version'], capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            print("CodeQL not available, falling back to simulation")
+            return simulate_scan(directory)
+        
+        print(f"CodeQL version: {result.stdout.strip()}")
+        
+        # Detect languages in the directory
+        languages = detect_languages(directory)
+        if not languages:
+            print("No supported languages detected for CodeQL")
+            return simulate_scan(directory)
+        
+        # Create CodeQL database
+        db_path = os.path.join(directory, 'codeql-db')
+        language_str = ','.join(languages)
+        
+        print(f"Creating CodeQL database for languages: {language_str}")
+        create_db_result = subprocess.run([
+            'codeql', 'database', 'create', db_path,
+            f'--language={language_str}',
+            '--source-root', directory
+        ], capture_output=True, text=True, timeout=300)
+        
+        if create_db_result.returncode != 0:
+            print(f"CodeQL database creation failed: {create_db_result.stderr}")
+            return simulate_scan(directory)
+        
+        # Run CodeQL queries with standard security pack
+        sarif_path = os.path.join(directory, 'codeql-results.sarif')
+        query_result = subprocess.run([
+            'codeql', 'database', 'analyze', db_path,
+            '--format=sarif-latest',
+            f'--output={sarif_path}',
+            '--download'  # Download standard query packs
+        ], capture_output=True, text=True, timeout=300)
+        
+        if query_result.returncode == 0 and os.path.exists(sarif_path):
+            # Parse SARIF results
+            vulnerabilities, patches = parse_sarif_results(sarif_path)
+            print(f"CodeQL found {len(vulnerabilities)} vulnerabilities")
+        else:
+            print(f"CodeQL analysis failed: {query_result.stderr}")
+            vulnerabilities, patches = simulate_scan(directory)
+        
+        # Clean up database and results
+        if os.path.exists(db_path):
+            shutil.rmtree(db_path, ignore_errors=True)
+        if os.path.exists(sarif_path):
+            os.remove(sarif_path)
+            
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"CodeQL analysis error: {e}")
+        return simulate_scan(directory)
+    
+    return vulnerabilities, patches
+
+
+def run_cppcheck_analysis(directory):
+    """Run Cppcheck analysis for fast C/C++ vulnerability detection"""
+    vulnerabilities = []
+    patches = []
+    
+    try:
+        # Check if Cppcheck is available
+        result = subprocess.run(['cppcheck', '--version'], capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            print("Cppcheck not available, falling back to simulation")
+            return simulate_scan(directory)
+        
+        print(f"Cppcheck version: {result.stdout.strip()}")
+        
+        # Check if directory contains C/C++ files
+        cpp_files = find_cpp_files(directory)
+        if not cpp_files:
+            print("No C/C++ files found, using simulation")
+            return simulate_scan(directory)
+        
+        print(f"Found {len(cpp_files)} C/C++ files for analysis")
+        
+        # Run Cppcheck analysis with comprehensive checks
+        xml_output_path = os.path.join(directory, 'cppcheck-results.xml')
+        cppcheck_result = subprocess.run([
+            'cppcheck',
+            '--enable=all',
+            '--inconclusive',
+            '--xml',
+            '--xml-version=2',
+            f'--output-file={xml_output_path}',
+            directory
+        ], capture_output=True, text=True, timeout=120)
+        
+        # Parse Cppcheck XML output
+        if os.path.exists(xml_output_path):
+            vulnerabilities, patches = parse_cppcheck_xml(xml_output_path)
+            print(f"Cppcheck found {len(vulnerabilities)} issues")
+            os.remove(xml_output_path)
+        elif cppcheck_result.stderr:
+            # Fallback: parse stderr output
+            vulnerabilities, patches = parse_cppcheck_stderr(cppcheck_result.stderr)
+        else:
+            print("No Cppcheck results found")
+            vulnerabilities, patches = simulate_scan(directory)
+            
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"Cppcheck analysis error: {e}")
+        return simulate_scan(directory)
+    
+    return vulnerabilities, patches
+
+
+def detect_languages(directory):
+    """Detect programming languages in the directory for CodeQL"""
+    languages = []
+    
+    # Walk through directory and check file extensions
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            ext = os.path.splitext(file)[1].lower()
+            if ext in ['.py']:
+                if 'python' not in languages:
+                    languages.append('python')
+            elif ext in ['.js', '.ts', '.jsx', '.tsx']:
+                if 'javascript' not in languages:
+                    languages.append('javascript')
+            elif ext in ['.java']:
+                if 'java' not in languages:
+                    languages.append('java')
+            elif ext in ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp']:
+                if 'cpp' not in languages:
+                    languages.append('cpp')
+            elif ext in ['.cs']:
+                if 'csharp' not in languages:
+                    languages.append('csharp')
+            elif ext in ['.go']:
+                if 'go' not in languages:
+                    languages.append('go')
+    
+    return languages
+
+
+def find_cpp_files(directory):
+    """Find C/C++ files in the directory"""
+    cpp_files = []
+    cpp_extensions = ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx']
+    
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if any(file.lower().endswith(ext) for ext in cpp_extensions):
+                cpp_files.append(os.path.join(root, file))
+    
+    return cpp_files
+
+
+def parse_sarif_results(sarif_path):
+    """Parse SARIF results from CodeQL"""
+    vulnerabilities = []
+    patches = []
+    
+    try:
+        import json
+        with open(sarif_path, 'r', encoding='utf-8') as f:
+            sarif_data = json.load(f)
+        
+        for run in sarif_data.get('runs', []):
+            for result in run.get('results', []):
+                rule_id = result.get('ruleId', 'unknown')
+                message = result.get('message', {}).get('text', 'No description')
+                
+                # Get location info
+                locations = result.get('locations', [])
+                file_path = 'unknown'
+                line_num = 0
+                
+                if locations:
+                    physical_location = locations[0].get('physicalLocation', {})
+                    artifact_location = physical_location.get('artifactLocation', {})
+                    file_path = artifact_location.get('uri', 'unknown')
+                    region = physical_location.get('region', {})
+                    line_num = region.get('startLine', 0)
+                
+                # Determine severity
+                level = result.get('level', 'note')
+                severity = 'high' if level == 'error' else 'medium' if level == 'warning' else 'low'
+                
+                vulnerabilities.append({
+                    'id': f'codeql_{rule_id}_{len(vulnerabilities)}',
+                    'severity': severity,
+                    'description': f'CodeQL: {message}',
+                    'file': file_path,
+                    'line': line_num,
+                    'tool': 'CodeQL'
+                })
+        
+        # Generate basic patches
+        for i, vuln in enumerate(vulnerabilities):
+            patches.append({
+                'id': f'codeql_patch_{i}',
+                'description': f'Review and fix: {vuln["description"]}',
+                'content': f'# CodeQL Issue: {vuln["description"]}\n# File: {vuln["file"]}:{vuln["line"]}\n# Manual review and fix required'
+            })
+    
+    except Exception as e:
+        print(f"Error parsing SARIF: {e}")
+        return simulate_scan('')[0], simulate_scan('')[1]
+    
+    return vulnerabilities, patches
+
+
+def parse_cppcheck_xml(xml_path):
+    """Parse Cppcheck XML results"""
+    vulnerabilities = []
+    patches = []
+    
+    try:
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        
+        for error in root.findall('.//error'):
+            error_id = error.get('id', 'unknown')
+            severity = error.get('severity', 'style')
+            msg = error.get('msg', 'No description')
+            
+            # Map Cppcheck severity to our levels
+            if severity in ['error']:
+                sev_level = 'high'
+            elif severity in ['warning', 'performance', 'portability']:
+                sev_level = 'medium'
+            else:
+                sev_level = 'low'
+            
+            # Get location
+            location = error.find('location')
+            file_path = location.get('file', 'unknown') if location is not None else 'unknown'
+            line_num = int(location.get('line', 0)) if location is not None else 0
+            
+            vulnerabilities.append({
+                'id': f'cppcheck_{error_id}_{len(vulnerabilities)}',
+                'severity': sev_level,
+                'description': f'Cppcheck: {msg}',
+                'file': os.path.basename(file_path),
+                'line': line_num,
+                'tool': 'Cppcheck'
+            })
+        
+        # Generate patches
+        for i, vuln in enumerate(vulnerabilities):
+            patches.append({
+                'id': f'cppcheck_patch_{i}',
+                'description': f'Fix Cppcheck issue: {vuln["description"]}',
+                'content': f'# Cppcheck Issue: {vuln["description"]}\n# File: {vuln["file"]}:{vuln["line"]}\n# Review and apply appropriate fix'
+            })
+    
+    except Exception as e:
+        print(f"Error parsing Cppcheck XML: {e}")
+        return simulate_scan('')[0], simulate_scan('')[1]
+    
+    return vulnerabilities, patches
+
+
+def parse_cppcheck_stderr(stderr_output):
+    """Parse Cppcheck stderr output as fallback"""
+    vulnerabilities = []
+    patches = []
+    
+    try:
+        lines = stderr_output.split('\n')
+        for line in lines:
+            if ':' in line and any(word in line.lower() for word in ['error', 'warning', 'style']):
+                parts = line.split(':')
+                if len(parts) >= 4:
+                    file_path = parts[0].strip()
+                    line_num = parts[1].strip() if parts[1].strip().isdigit() else '0'
+                    severity = 'medium' if 'warning' in line.lower() else 'low'
+                    description = ':'.join(parts[2:]).strip()
+                    
+                    vulnerabilities.append({
+                        'id': f'cppcheck_stderr_{len(vulnerabilities)}',
+                        'severity': severity,
+                        'description': f'Cppcheck: {description}',
+                        'file': os.path.basename(file_path),
+                        'line': int(line_num) if line_num.isdigit() else 0,
+                        'tool': 'Cppcheck'
+                    })
+        
+        # Generate patches
+        for i, vuln in enumerate(vulnerabilities):
+            patches.append({
+                'id': f'cppcheck_stderr_patch_{i}',
+                'description': f'Fix: {vuln["description"]}',
+                'content': f'# Issue: {vuln["description"]}\n# File: {vuln["file"]}:{vuln["line"]}\n# Apply appropriate fix'
+            })
+    
+    except Exception as e:
+        print(f"Error parsing Cppcheck stderr: {e}")
+    
+    return vulnerabilities, patches
+
+
+def check_tool_availability(tool_name):
+    """Check if a tool is available and get version info"""
+    try:
+        result = subprocess.run([tool_name, '--version'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            return {
+                'available': True,
+                'version': result.stdout.strip(),
+                'path': shutil.which(tool_name)
+            }
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    return {
+        'available': False,
+        'version': None,
+        'path': None
+    }
+
+
+def simulate_scan(directory):
+    """Simulate vulnerability scanning (fallback when tools aren't available)"""
+    vulnerabilities = [
+        {
+            'id': 'sim_vuln_1',
+            'severity': 'high',
+            'description': 'Simulated: SQL Injection vulnerability detected',
+            'file': 'src/database.py',
+            'line': 42,
+            'tool': 'Simulation'
+        },
+        {
+            'id': 'sim_vuln_2',
+            'severity': 'medium',
+            'description': 'Simulated: Outdated dependency with known vulnerabilities',
+            'file': 'requirements.txt',
+            'line': 5,
+            'tool': 'Simulation'
+        }
+    ]
+    
+    patches = [
+        {
+            'id': 'sim_patch_1',
+            'description': 'Fix SQL injection by using parameterized queries',
+            'content': '''--- a/src/database.py
++++ b/src/database.py
+@@ -39,7 +39,7 @@ def get_user(user_id):
+     """Get user by ID"""
+-    query = f"SELECT * FROM users WHERE id = {user_id}"
++    query = "SELECT * FROM users WHERE id = %s"
+-    cursor.execute(query)
++    cursor.execute(query, (user_id,))
+     return cursor.fetchone()'''
+        },
+        {
+            'id': 'sim_patch_2',
+            'description': 'Update vulnerable dependency',
+            'content': '''--- a/requirements.txt
++++ b/requirements.txt
+@@ -2,7 +2,7 @@ flask==2.0.1
+ requests==2.25.1
+-urllib3==1.26.4
++urllib3==1.26.18
+ jinja2==3.0.1'''
+        }
+    ]
+    
+    return vulnerabilities, patches
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

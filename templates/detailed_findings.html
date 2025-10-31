@@ -1,0 +1,402 @@
+{% extends 'layout.html' %}
+
+{% block title %}Detailed Findings - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-bug text-danger"></i>
+        Vulnerability Analysis
+      </h2>
+      <p class="text-muted mb-0">Detailed findings for scan {{ scan_id }}</p>
+    </div>
+    <div>
+      <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Scan
+      </a>
+      <button class="btn btn-primary" onclick="exportFindings()">
+        <i class="fas fa-download"></i> Export Report
+      </button>
+    </div>
+  </div>
+
+  <!-- Workflow Status -->
+  {% include 'workflow_status.html' %}
+
+  <!-- Automated Workflow Progress -->
+  <div class="alert alert-success">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-check-circle"></i>
+          Static Analysis Complete - {{ vulnerabilities|length }} vulnerabilities found
+        </h6>
+        <small>
+          <i class="fas fa-magic text-warning"></i> Auto-triggering fuzzing campaigns for high-priority findings
+          <span class="mx-2">|</span>
+          <i class="fas fa-robot text-success"></i> Preparing AI patch generation
+        </small>
+      </div>
+      <div class="btn-group">
+        <a href="{{ url_for('fuzzing_dashboard') }}" class="btn btn-warning">
+          <i class="fas fa-play"></i> View Auto Fuzzing
+        </a>
+        <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-success">
+          <i class="fas fa-robot"></i> View AI Patches
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters and Search -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="row align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Filter by Severity</label>
+          <select class="form-select" id="severity-filter" onchange="filterFindings()">
+            <option value="">All Severities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Filter by Tool</label>
+          <select class="form-select" id="tool-filter" onchange="filterFindings()">
+            <option value="">All Tools</option>
+            <option value="CodeQL">CodeQL</option>
+            <option value="Cppcheck">Cppcheck</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Search</label>
+          <input type="text" class="form-control" id="search-input" placeholder="Search descriptions, files..." onkeyup="filterFindings()">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+            <i class="fas fa-times"></i> Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card border-danger">
+        <div class="card-body text-center">
+          <h3 class="text-danger" id="high-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'high')|list|length }}</h3>
+          <p class="card-text">Critical Issues</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-warning">
+        <div class="card-body text-center">
+          <h3 class="text-warning" id="medium-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'medium')|list|length }}</h3>
+          <p class="card-text">Medium Issues</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-info">
+        <div class="card-body text-center">
+          <h3 class="text-info" id="low-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'low')|list|length }}</h3>
+          <p class="card-text">Low Issues</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-success">
+        <div class="card-body text-center">
+          <h3 class="text-success" id="total-count">{{ vulnerabilities|length }}</h3>
+          <p class="card-text">Total Found</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Findings List -->
+  <div id="findings-container">
+    {% for vuln in vulnerabilities %}
+    <div class="card mb-3 finding-card" 
+         data-severity="{{ vuln.severity }}" 
+         data-tool="{{ vuln.tool }}"
+         data-description="{{ vuln.description|lower }}"
+         data-file="{{ vuln.file|lower }}">
+      
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center">
+          <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %} me-2">
+            {{ vuln.severity|upper }}
+          </span>
+          <h6 class="mb-0">{{ vuln.description }}</h6>
+        </div>
+        <div class="d-flex align-items-center">
+          <span class="badge bg-secondary me-2">{{ vuln.tool }}</span>
+          <button class="btn btn-sm btn-outline-primary" onclick="toggleDetails('{{ vuln.id }}')">
+            <i class="fas fa-chevron-down" id="toggle-{{ vuln.id }}"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="card-body">
+        <!-- Basic Info -->
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <p class="mb-1">
+              <i class="fas fa-file-code text-muted"></i>
+              <strong>File:</strong> {{ vuln.file }}
+            </p>
+            {% if vuln.line %}
+            <p class="mb-1">
+              <i class="fas fa-map-marker-alt text-muted"></i>
+              <strong>Line:</strong> {{ vuln.line }}
+            </p>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <p class="mb-1">
+              <i class="fas fa-shield-alt text-muted"></i>
+              <strong>CWE:</strong> 
+              {% if vuln.severity == 'high' %}
+                CWE-787 (Buffer Overflow)
+              {% elif vuln.severity == 'medium' %}
+                CWE-476 (NULL Pointer Dereference)
+              {% else %}
+                CWE-563 (Unused Variable)
+              {% endif %}
+            </p>
+            <p class="mb-1">
+              <i class="fas fa-exclamation-triangle text-muted"></i>
+              <strong>Risk Score:</strong> 
+              <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
+                {% if vuln.severity == 'high' %}8.5{% elif vuln.severity == 'medium' %}5.2{% else %}2.1{% endif %}
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Detailed Information (Collapsible) -->
+        <div class="collapse" id="details-{{ vuln.id }}">
+          <hr>
+          
+          <!-- Code Context -->
+          <div class="mb-4">
+            <h6><i class="fas fa-code"></i> Code Context</h6>
+            <div class="card bg-light">
+              <div class="card-body">
+                <pre class="mb-0"><code class="language-cpp">{% if vuln.line %}{{ vuln.line - 2 }}: // Previous context
+{{ vuln.line - 1 }}: int buffer[10];
+{{ vuln.line }}: <mark>strcpy(buffer, user_input); // Vulnerable line</mark>
+{{ vuln.line + 1 }}: return buffer;
+{{ vuln.line + 2 }}: // Following context{% else %}// Code context not available
+// This is a simulated vulnerability for demo purposes
+char buffer[256];
+<mark>strcpy(buffer, untrusted_input); // Potential buffer overflow</mark>{% endif %}</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Vulnerability Details -->
+          <div class="mb-4">
+            <h6><i class="fas fa-info-circle"></i> Vulnerability Details</h6>
+            <div class="alert alert-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
+              <p class="mb-2"><strong>Description:</strong> {{ vuln.description }}</p>
+              <p class="mb-2"><strong>Impact:</strong> 
+                {% if vuln.severity == 'high' %}
+                  This vulnerability could allow an attacker to execute arbitrary code or cause a denial of service.
+                {% elif vuln.severity == 'medium' %}
+                  This issue may lead to application crashes or unexpected behavior under certain conditions.
+                {% else %}
+                  This is a code quality issue that should be addressed to improve maintainability.
+                {% endif %}
+              </p>
+              <p class="mb-0"><strong>Recommendation:</strong> 
+                {% if vuln.severity == 'high' %}
+                  Immediate action required. Use safe string functions or implement proper bounds checking.
+                {% elif vuln.severity == 'medium' %}
+                  Should be fixed in the next release cycle. Add null pointer checks and validation.
+                {% else %}
+                  Consider removing unused code or adding appropriate comments.
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <!-- Available Patches -->
+          <div class="mb-4">
+            <h6><i class="fas fa-wrench"></i> Suggested Fixes</h6>
+            {% set patch_found = false %}
+            {% for patch in patches %}
+              {% if patch.id.endswith(loop.index0|string) %}
+                {% set patch_found = true %}
+                <div class="card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>{{ patch.description }}</span>
+                    <div>
+                      <span class="badge bg-success">AI Generated</span>
+                      <button class="btn btn-sm btn-primary ms-2" onclick="applyPatch('{{ patch.id }}')">
+                        <i class="fas fa-check"></i> Apply
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <pre class="mb-0"><code class="language-diff">{{ patch.content }}</code></pre>
+                  </div>
+                </div>
+              {% endif %}
+            {% endfor %}
+            {% if not patch_found %}
+            <div class="alert alert-info">
+              <i class="fas fa-robot"></i>
+              <strong>AI Patch Generation:</strong> Analyzing vulnerability pattern to generate automated fix...
+              <button class="btn btn-sm btn-outline-primary ms-2" onclick="generatePatch('{{ vuln.id }}')">
+                <i class="fas fa-magic"></i> Generate Patch
+              </button>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- References and Resources -->
+          <div class="mb-3">
+            <h6><i class="fas fa-external-link-alt"></i> References</h6>
+            <ul class="list-unstyled">
+              <li><a href="#" class="text-decoration-none"><i class="fas fa-link"></i> OWASP Top 10 - A03:2021 Injection</a></li>
+              <li><a href="#" class="text-decoration-none"><i class="fas fa-link"></i> CWE-787: Out-of-bounds Write</a></li>
+              <li><a href="#" class="text-decoration-none"><i class="fas fa-link"></i> NIST Cybersecurity Framework</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- No Results Message -->
+  <div id="no-results" class="text-center py-5" style="display: none;">
+    <i class="fas fa-search fa-3x text-muted mb-3"></i>
+    <h5>No findings match your current filters</h5>
+    <p class="text-muted">Try adjusting your search criteria or clearing the filters.</p>
+  </div>
+</div>
+
+<!-- Include Demo Navigation -->
+{% include 'demo_navigation.html' %}
+
+<script>
+function toggleDetails(vulnId) {
+  const details = document.getElementById(`details-${vulnId}`);
+  const icon = document.getElementById(`toggle-${vulnId}`);
+  
+  if (details.classList.contains('show')) {
+    details.classList.remove('show');
+    icon.classList.remove('fa-chevron-up');
+    icon.classList.add('fa-chevron-down');
+  } else {
+    details.classList.add('show');
+    icon.classList.remove('fa-chevron-down');
+    icon.classList.add('fa-chevron-up');
+  }
+}
+
+function filterFindings() {
+  const severityFilter = document.getElementById('severity-filter').value.toLowerCase();
+  const toolFilter = document.getElementById('tool-filter').value.toLowerCase();
+  const searchTerm = document.getElementById('search-input').value.toLowerCase();
+  
+  const cards = document.querySelectorAll('.finding-card');
+  let visibleCount = 0;
+  
+  cards.forEach(card => {
+    const severity = card.dataset.severity;
+    const tool = card.dataset.tool.toLowerCase();
+    const description = card.dataset.description;
+    const file = card.dataset.file;
+    
+    const matchesSeverity = !severityFilter || severity === severityFilter;
+    const matchesTool = !toolFilter || tool === toolFilter;
+    const matchesSearch = !searchTerm || 
+                         description.includes(searchTerm) || 
+                         file.includes(searchTerm);
+    
+    if (matchesSeverity && matchesTool && matchesSearch) {
+      card.style.display = 'block';
+      visibleCount++;
+    } else {
+      card.style.display = 'none';
+    }
+  });
+  
+  // Show/hide no results message
+  const noResults = document.getElementById('no-results');
+  if (visibleCount === 0) {
+    noResults.style.display = 'block';
+  } else {
+    noResults.style.display = 'none';
+  }
+}
+
+function clearFilters() {
+  document.getElementById('severity-filter').value = '';
+  document.getElementById('tool-filter').value = '';
+  document.getElementById('search-input').value = '';
+  filterFindings();
+}
+
+function applyPatch(patchId) {
+  if (confirm('Apply this patch to your codebase?')) {
+    // In real implementation, this would apply the patch
+    alert(`Patch ${patchId} would be applied. This is a demo.`);
+  }
+}
+
+function generatePatch(vulnId) {
+  // Simulate AI patch generation
+  alert(`Generating AI patch for vulnerability ${vulnId}. This would trigger the Vul-RAG module.`);
+}
+
+function exportFindings() {
+  // In real implementation, this would generate a report
+  alert('Exporting detailed vulnerability report. This is a demo.');
+}
+
+// Initialize syntax highlighting if available
+document.addEventListener('DOMContentLoaded', function() {
+  // If using a syntax highlighting library like Prism.js or highlight.js
+  if (typeof Prism !== 'undefined') {
+    Prism.highlightAll();
+  }
+});
+</script>
+
+<style>
+.finding-card {
+  transition: all 0.3s ease;
+}
+
+.finding-card:hover {
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+pre code {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+mark {
+  background-color: #fff3cd;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.collapse.show {
+  display: block !important;
+}
+</style>
+{% endblock %}

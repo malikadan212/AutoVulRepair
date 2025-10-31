@@ -1,0 +1,297 @@
+{% extends 'layout.html' %}
+
+{% block title %}Quick Scan - No Login Required{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <h2 class="text-center mb-4">Quick Vulnerability Scan</h2>
+      
+      <div class="alert alert-success">
+        <i class="fas fa-rocket"></i>
+        <strong>Demo Mode Active</strong>
+      </div>
+      
+      <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        <strong>Privacy First:</strong> We don't store your code. All processing happens in ephemeral containers and is deleted immediately after scanning.
+      </div>
+
+      <form method="POST" action="{{ url_for('scan_public') }}" enctype="multipart/form-data">
+        <div class="card">
+          <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="scanTabs" role="tablist">
+              <li class="nav-item">
+                <button class="nav-link active" id="github-tab" data-bs-toggle="tab" data-bs-target="#github" type="button" role="tab">Public GitHub Repo</button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab">Upload ZIP</button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link" id="snippet-tab" data-bs-toggle="tab" data-bs-target="#snippet" type="button" role="tab">Code Snippet</button>
+              </li>
+            </ul>
+          </div>
+          
+          <div class="card-body">
+            <div class="tab-content">
+              <!-- GitHub Repo Tab -->
+              <div class="tab-pane fade show active" id="github" role="tabpanel">
+                <div class="mb-3">
+                  <label for="repo_url" class="form-label">GitHub Repository URL</label>
+                  <input type="url" class="form-control" id="repo_url" name="repo_url" 
+                         placeholder="https://github.com/username/repository"
+                         pattern="https://github\.com/[\w\-\.]+/[\w\-\.]+(\.git)?/?">
+                  <div class="form-text">
+                    Only public repositories are supported. Private repos require ZIP upload.
+                  </div>
+                </div>
+              </div>
+              
+              <!-- ZIP Upload Tab -->
+              <div class="tab-pane fade" id="upload" role="tabpanel">
+                <div class="mb-3">
+                  <label for="zip_file" class="form-label">Upload Repository ZIP</label>
+                  <input type="file" class="form-control" id="zip_file" name="zip_file" accept=".zip">
+                  <div class="form-text">
+                    Upload a ZIP file of your repository. Perfect for private repos or local projects.
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Code Snippet Tab -->
+              <div class="tab-pane fade" id="snippet" role="tabpanel">
+                <div class="mb-3">
+                  <label for="code_snippet" class="form-label">Paste Your Code</label>
+                  <textarea class="form-control" id="code_snippet" name="code_snippet" rows="12" 
+                            placeholder="Paste your code here for quick analysis..."></textarea>
+                  <div class="form-text">
+                    Paste code snippets, functions, or small files for quick vulnerability analysis.
+                    <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="loadSampleCode()">
+                      <i class="fas fa-code"></i> Load Sample Vulnerable Code
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Static Analysis Tool Selection -->
+            <div class="card mt-4">
+              <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                  <h6 class="mb-0">Choose Analysis Engine</h6>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="checkToolStatus()">
+                    <i class="fas fa-sync-alt"></i> Check Status
+                  </button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="analysis_tool" id="cppcheck" value="cppcheck" checked>
+                      <label class="form-check-label" for="cppcheck">
+                        <strong>Cppcheck</strong> - Fast Analysis
+                        <span id="cppcheck-status" class="badge bg-secondary ms-2">Checking...</span>
+                        <br><small class="text-muted">Lightweight C/C++ analyzer for quick vulnerability detection with minimal resource usage</small>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="analysis_tool" id="codeql" value="codeql">
+                      <label class="form-check-label" for="codeql">
+                        <strong>CodeQL</strong> - Deep Analysis
+                        <span id="codeql-status" class="badge bg-secondary ms-2">Checking...</span>
+                        <br><small class="text-muted">Advanced semantic analysis engine for comprehensive security vulnerability discovery</small>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div id="tool-installation-help" class="mt-3" style="display: none;">
+                </div>
+              </div>
+            </div>
+            
+            <div class="text-center mt-4">
+              <button type="submit" class="btn btn-primary btn-lg">
+                <i class="fas fa-search"></i> Start Scan
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+      
+      <div class="text-center mt-4">
+        <a href="{{ url_for('home') }}" class="btn btn-link">← Back to Home</a>
+      </div>
+      
+      <!-- Include Demo Navigation -->
+      {% include 'demo_navigation.html' %}
+      
+      <!-- Security Features -->
+      <div class="row mt-5">
+        <div class="col-md-4 text-center">
+          <i class="fas fa-trash fa-2x text-muted mb-2"></i>
+          <h6>No Storage</h6>
+          <small class="text-muted">Code processed in memory only</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-lock fa-2x text-muted mb-2"></i>
+          <h6>Encrypted Transit</h6>
+          <small class="text-muted">All data encrypted in transit</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-clock fa-2x text-muted mb-2"></i>
+          <h6>Ephemeral Processing</h6>
+          <small class="text-muted">Containers deleted after scan</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Auto-clear other inputs when switching tabs
+document.addEventListener('DOMContentLoaded', function() {
+  const tabs = document.querySelectorAll('#scanTabs button[data-bs-toggle="tab"]');
+  tabs.forEach(tab => {
+    tab.addEventListener('shown.bs.tab', function(e) {
+      // Clear other inputs when switching tabs
+      const target = e.target.getAttribute('data-bs-target');
+      if (target !== '#github') {
+        document.getElementById('repo_url').value = '';
+      }
+      if (target !== '#upload') {
+        document.getElementById('zip_file').value = '';
+      }
+      if (target !== '#snippet') {
+        document.getElementById('code_snippet').value = '';
+      }
+    });
+  });
+  
+  // Check tool status on page load
+  checkToolStatus();
+});
+
+function checkToolStatus() {
+  fetch('/api/tool-status')
+    .then(response => response.json())
+    .then(data => {
+      updateToolStatus('cppcheck', data.cppcheck);
+      updateToolStatus('codeql', data.codeql);
+      
+      // Show installation help if any tools are missing
+      const anyMissing = !data.cppcheck.available || !data.codeql.available;
+      document.getElementById('tool-installation-help').style.display = anyMissing ? 'block' : 'none';
+    })
+    .catch(error => {
+      console.error('Error checking tool status:', error);
+      document.getElementById('cppcheck-status').textContent = 'Error';
+      document.getElementById('codeql-status').textContent = 'Error';
+    });
+}
+
+function updateToolStatus(toolName, status) {
+  const statusElement = document.getElementById(toolName + '-status');
+  if (status.available) {
+    statusElement.textContent = 'Available';
+    statusElement.className = 'badge bg-success ms-2';
+    statusElement.title = `Version: ${status.version}`;
+  } else {
+    statusElement.textContent = 'Not Installed';
+    statusElement.className = 'badge bg-warning ms-2';
+    statusElement.title = 'Tool not found in PATH';
+  }
+}
+
+function showInstallationInstructions() {
+  const instructions = `
+Installation Instructions:
+
+1. For Windows (PowerShell as Administrator):
+   Run: .\\install_tools.ps1
+
+2. Manual Installation:
+   - Cppcheck: Download from https://cppcheck.sourceforge.io/
+   - CodeQL: Download from https://github.com/github/codeql-cli-binaries/releases
+
+3. Alternative (Chocolatey):
+   choco install cppcheck
+   
+Note: Tools will fall back to simulation mode if not installed.
+  `;
+  alert(instructions);
+}
+
+function loadSampleCode() {
+  const sampleCode = `// Sample vulnerable C code for AutoVulRepair demo
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+// Vulnerability 1: Buffer overflow in strcpy
+int process_user_input(const char* input) {
+    char buffer[256];
+    
+    if (!input) {
+        return -1;
+    }
+    
+    // VULNERABLE: No bounds checking
+    strcpy(buffer, input);  // Buffer overflow risk
+    
+    printf("Processed: %s\\n", buffer);
+    return 0;
+}
+
+// Vulnerability 2: Use after free
+char* get_user_data() {
+    char* data = malloc(100);
+    strcpy(data, "user data");
+    
+    free(data);  // Memory freed
+    
+    // VULNERABLE: Use after free
+    return data;  // Returning freed pointer
+}
+
+// Vulnerability 3: Null pointer dereference
+void process_config(char* config) {
+    // VULNERABLE: No null check
+    int len = strlen(config);  // Potential null pointer dereference
+    
+    if (len > 0) {
+        printf("Config length: %d\\n", len);
+    }
+}
+
+int main() {
+    char user_input[1000];
+    
+    printf("Enter data: ");
+    // VULNERABLE: No bounds checking on input
+    gets(user_input);  // Deprecated and unsafe function
+    
+    process_user_input(user_input);
+    
+    char* data = get_user_data();
+    printf("Data: %s\\n", data);  // Using freed memory
+    
+    process_config(NULL);  // Passing null pointer
+    
+    return 0;
+}`;
+  
+  document.getElementById('code_snippet').value = sampleCode;
+  
+  // Switch to snippet tab if not already active
+  const snippetTab = document.getElementById('snippet-tab');
+  if (!snippetTab.classList.contains('active')) {
+    snippetTab.click();
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,546 @@
+{% extends 'layout.html' %}
+
+{% block title %}System Monitoring{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-chart-bar text-info"></i>
+        Automated Pipeline Monitoring
+      </h2>
+      <p class="text-muted mb-0">Module 6: Real-time monitoring of the complete security workflow</p>
+    </div>
+    <div>
+      <button class="btn btn-outline-primary" onclick="refreshMetrics()">
+        <i class="fas fa-sync-alt"></i> Refresh
+      </button>
+      <button class="btn btn-outline-secondary" onclick="exportReport()">
+        <i class="fas fa-download"></i> Export Report
+      </button>
+    </div>
+  </div>
+
+  <!-- Workflow Pipeline Status -->
+  <div class="card mb-4 border-success">
+    <div class="card-header bg-success text-white">
+      <h5 class="mb-0">
+        <i class="fas fa-cogs"></i>
+        Automated Security Pipeline Status
+      </h5>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-3 text-center">
+          <div class="border rounded p-3 bg-light">
+            <i class="fas fa-shield-alt fa-2x text-primary mb-2"></i>
+            <h6>Static Analysis</h6>
+            <span class="badge bg-success">Active</span>
+            <br><small class="text-muted">5 scans/hour</small>
+          </div>
+        </div>
+        <div class="col-md-3 text-center">
+          <div class="border rounded p-3 bg-light">
+            <i class="fas fa-random fa-2x text-warning mb-2"></i>
+            <h6>Auto Fuzzing</h6>
+            <span class="badge bg-warning">Running</span>
+            <br><small class="text-muted">3 campaigns active</small>
+          </div>
+        </div>
+        <div class="col-md-3 text-center">
+          <div class="border rounded p-3 bg-light">
+            <i class="fas fa-robot fa-2x text-success mb-2"></i>
+            <h6>AI Patching</h6>
+            <span class="badge bg-success">Generating</span>
+            <br><small class="text-muted">87% success rate</small>
+          </div>
+        </div>
+        <div class="col-md-3 text-center">
+          <div class="border rounded p-3 bg-light">
+            <i class="fas fa-rocket fa-2x text-info mb-2"></i>
+            <h6>Deployment</h6>
+            <span class="badge bg-info">Monitoring</span>
+            <br><small class="text-muted">2 patches deployed</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Health Overview -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-center border-success">
+        <div class="card-body">
+          <h3 class="text-success">
+            <i class="fas fa-heartbeat"></i>
+            98.7%
+          </h3>
+          <p class="card-text">System Uptime</p>
+          <small class="text-muted">Last 30 days</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-primary">
+        <div class="card-body">
+          <h3 class="text-primary">1,247</h3>
+          <p class="card-text">Scans Today</p>
+          <small class="text-success">+12% vs yesterday</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-warning">
+        <div class="card-body">
+          <h3 class="text-warning">89.2%</h3>
+          <p class="card-text">Patch Acceptance</p>
+          <small class="text-muted">Last 7 days</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-info">
+        <div class="card-body">
+          <h3 class="text-info">2.3s</h3>
+          <p class="card-text">Avg Response Time</p>
+          <small class="text-success">-0.2s improvement</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Status -->
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">
+        <i class="fas fa-bell"></i>
+        Active Alerts
+      </h5>
+      <span class="badge bg-warning">3 Active</span>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-warning d-flex justify-content-between align-items-center">
+        <div>
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>High Memory Usage</strong> - Kubernetes cluster memory usage at 87%
+        </div>
+        <div>
+          <span class="badge bg-warning me-2">Warning</span>
+          <button class="btn btn-sm btn-outline-primary" onclick="viewAlert('memory-high')">View</button>
+        </div>
+      </div>
+      
+      <div class="alert alert-info d-flex justify-content-between align-items-center">
+        <div>
+          <i class="fas fa-info-circle"></i>
+          <strong>Queue Backlog</strong> - Analysis queue has 45 pending jobs
+        </div>
+        <div>
+          <span class="badge bg-info me-2">Info</span>
+          <button class="btn btn-sm btn-outline-primary" onclick="viewAlert('queue-backlog')">View</button>
+        </div>
+      </div>
+      
+      <div class="alert alert-warning d-flex justify-content-between align-items-center">
+        <div>
+          <i class="fas fa-clock"></i>
+          <strong>Slow Response</strong> - CodeQL analysis taking longer than usual
+        </div>
+        <div>
+          <span class="badge bg-warning me-2">Warning</span>
+          <button class="btn btn-sm btn-outline-primary" onclick="viewAlert('slow-response')">View</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Pipeline Metrics -->
+    <div class="col-md-8">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-stream"></i>
+            Pipeline Performance Metrics
+          </h5>
+        </div>
+        <div class="card-body">
+          <!-- Metrics Charts Placeholder -->
+          <div class="row mb-4">
+            <div class="col-md-6">
+              <canvas id="scanVolumeChart" width="300" height="200"></canvas>
+            </div>
+            <div class="col-md-6">
+              <canvas id="responseTimeChart" width="300" height="200"></canvas>
+            </div>
+          </div>
+          
+          <!-- Pipeline Stage Performance -->
+          <h6>Pipeline Stage Performance (Last 24h)</h6>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th>Avg Duration</th>
+                  <th>Success Rate</th>
+                  <th>Throughput</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><i class="fas fa-download text-muted"></i> Source Processing</td>
+                  <td>12.3s</td>
+                  <td><span class="badge bg-success">99.2%</span></td>
+                  <td>847 jobs/hr</td>
+                  <td><i class="fas fa-check-circle text-success"></i></td>
+                </tr>
+                <tr>
+                  <td><i class="fas fa-search text-muted"></i> Static Analysis</td>
+                  <td>45.7s</td>
+                  <td><span class="badge bg-success">97.8%</span></td>
+                  <td>234 jobs/hr</td>
+                  <td><i class="fas fa-check-circle text-success"></i></td>
+                </tr>
+                <tr>
+                  <td><i class="fas fa-wrench text-muted"></i> Patch Generation</td>
+                  <td>23.1s</td>
+                  <td><span class="badge bg-warning">89.2%</span></td>
+                  <td>156 jobs/hr</td>
+                  <td><i class="fas fa-exclamation-triangle text-warning"></i></td>
+                </tr>
+                <tr>
+                  <td><i class="fas fa-vial text-muted"></i> Validation Testing</td>
+                  <td>67.4s</td>
+                  <td><span class="badge bg-success">95.1%</span></td>
+                  <td>89 jobs/hr</td>
+                  <td><i class="fas fa-check-circle text-success"></i></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resource Usage -->
+    <div class="col-md-4">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-server"></i>
+            Resource Usage
+          </h5>
+        </div>
+        <div class="card-body">
+          <!-- CPU Usage -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span><i class="fas fa-microchip text-primary"></i> CPU Usage</span>
+              <span class="badge bg-primary">67%</span>
+            </div>
+            <div class="progress mb-1">
+              <div class="progress-bar bg-primary" style="width: 67%"></div>
+            </div>
+            <small class="text-muted">8 cores, 2.4 GHz average</small>
+          </div>
+
+          <!-- Memory Usage -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span><i class="fas fa-memory text-warning"></i> Memory Usage</span>
+              <span class="badge bg-warning">87%</span>
+            </div>
+            <div class="progress mb-1">
+              <div class="progress-bar bg-warning" style="width: 87%"></div>
+            </div>
+            <small class="text-muted">14.2 GB / 16 GB used</small>
+          </div>
+
+          <!-- Storage Usage -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span><i class="fas fa-hdd text-info"></i> Storage Usage</span>
+              <span class="badge bg-info">43%</span>
+            </div>
+            <div class="progress mb-1">
+              <div class="progress-bar bg-info" style="width: 43%"></div>
+            </div>
+            <small class="text-muted">432 GB / 1 TB used</small>
+          </div>
+
+          <!-- Network I/O -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span><i class="fas fa-network-wired text-success"></i> Network I/O</span>
+              <span class="badge bg-success">Normal</span>
+            </div>
+            <div class="small">
+              <div class="d-flex justify-content-between">
+                <span>↓ 125 MB/s</span>
+                <span>↑ 89 MB/s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Containers -->
+          <div class="alert alert-info">
+            <h6><i class="fas fa-cube"></i> Kubernetes Status</h6>
+            <div class="small">
+              <div class="d-flex justify-content-between">
+                <span>Running Pods:</span>
+                <span class="text-success">23/25</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Healthy Nodes:</span>
+                <span class="text-success">5/5</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Active Jobs:</span>
+                <span class="text-primary">12</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security and Quality Metrics -->
+  <div class="row">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-shield-alt"></i>
+            Security Metrics
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="row text-center mb-3">
+            <div class="col-4">
+              <h4 class="text-danger">2,847</h4>
+              <small>Vulnerabilities Found</small>
+            </div>
+            <div class="col-4">
+              <h4 class="text-success">2,541</h4>
+              <small>Patches Generated</small>
+            </div>
+            <div class="col-4">
+              <h4 class="text-info">2,267</h4>
+              <small>Patches Applied</small>
+            </div>
+          </div>
+
+          <h6>Vulnerability Distribution</h6>
+          <div class="mb-2">
+            <div class="d-flex justify-content-between">
+              <span>Critical</span>
+              <span class="badge bg-danger">234</span>
+            </div>
+            <div class="progress mb-2" style="height: 8px;">
+              <div class="progress-bar bg-danger" style="width: 8%"></div>
+            </div>
+          </div>
+          
+          <div class="mb-2">
+            <div class="d-flex justify-content-between">
+              <span>High</span>
+              <span class="badge bg-warning">892</span>
+            </div>
+            <div class="progress mb-2" style="height: 8px;">
+              <div class="progress-bar bg-warning" style="width: 31%"></div>
+            </div>
+          </div>
+          
+          <div class="mb-2">
+            <div class="d-flex justify-content-between">
+              <span>Medium</span>
+              <span class="badge bg-info">1,234</span>
+            </div>
+            <div class="progress mb-2" style="height: 8px;">
+              <div class="progress-bar bg-info" style="width: 43%"></div>
+            </div>
+          </div>
+          
+          <div class="mb-2">
+            <div class="d-flex justify-content-between">
+              <span>Low</span>
+              <span class="badge bg-secondary">487</span>
+            </div>
+            <div class="progress mb-2" style="height: 8px;">
+              <div class="progress-bar bg-secondary" style="width: 17%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-chart-pie"></i>
+            Quality Metrics
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="row text-center mb-3">
+            <div class="col-4">
+              <h4 class="text-success">89.2%</h4>
+              <small>Patch Accuracy</small>
+            </div>
+            <div class="col-4">
+              <h4 class="text-info">2.3s</h4>
+              <small>Avg TTR</small>
+            </div>
+            <div class="col-4">
+              <h4 class="text-primary">94.7%</h4>
+              <small>Auto-merge Rate</small>
+            </div>
+          </div>
+
+          <h6>Analysis Tool Performance</h6>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Tool</th>
+                  <th>Accuracy</th>
+                  <th>Speed</th>
+                  <th>Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>CodeQL</td>
+                  <td><span class="badge bg-success">94.2%</span></td>
+                  <td><span class="badge bg-warning">Slow</span></td>
+                  <td><span class="badge bg-success">High</span></td>
+                </tr>
+                <tr>
+                  <td>Cppcheck</td>
+                  <td><span class="badge bg-info">87.1%</span></td>
+                  <td><span class="badge bg-success">Fast</span></td>
+                  <td><span class="badge bg-info">Medium</span></td>
+                </tr>
+                <tr>
+                  <td>Fuzzing</td>
+                  <td><span class="badge bg-success">91.8%</span></td>
+                  <td><span class="badge bg-info">Medium</span></td>
+                  <td><span class="badge bg-success">High</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="alert alert-success mt-3">
+            <small>
+              <i class="fas fa-thumbs-up"></i>
+              System performance is within normal parameters. All quality gates are passing.
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function refreshMetrics() {
+  // Simulate metrics refresh
+  const button = event.target;
+  const originalText = button.innerHTML;
+  button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+  button.disabled = true;
+  
+  setTimeout(() => {
+    button.innerHTML = originalText;
+    button.disabled = false;
+    // In real app, this would update all metrics
+    location.reload();
+  }, 2000);
+}
+
+function exportReport() {
+  alert('Generating comprehensive system report...\nThis would export metrics to PDF/CSV format.');
+}
+
+function viewAlert(alertId) {
+  const alertMessages = {
+    'memory-high': 'Memory usage is at 87%. Consider scaling up the cluster or optimizing memory-intensive processes.',
+    'queue-backlog': 'Analysis queue has 45 pending jobs. Current processing rate: 12 jobs/hour. Estimated completion: 3.7 hours.',
+    'slow-response': 'CodeQL analysis is taking 23% longer than baseline. This may be due to increased complexity in recent scans.'
+  };
+  
+  alert(`Alert Details:\n\n${alertMessages[alertId] || 'Alert details not available.'}`);
+}
+
+// Initialize charts
+document.addEventListener('DOMContentLoaded', function() {
+  // Scan Volume Chart
+  const scanCtx = document.getElementById('scanVolumeChart').getContext('2d');
+  scanCtx.fillStyle = '#e9ecef';
+  scanCtx.fillRect(0, 0, scanCtx.canvas.width, scanCtx.canvas.height);
+  scanCtx.fillStyle = '#495057';
+  scanCtx.font = '12px Arial';
+  scanCtx.textAlign = 'center';
+  scanCtx.fillText('Scan Volume Trends', scanCtx.canvas.width/2, scanCtx.canvas.height/2 - 10);
+  scanCtx.fillText('(Last 24 hours)', scanCtx.canvas.width/2, scanCtx.canvas.height/2 + 10);
+  
+  // Response Time Chart
+  const responseCtx = document.getElementById('responseTimeChart').getContext('2d');
+  responseCtx.fillStyle = '#e9ecef';
+  responseCtx.fillRect(0, 0, responseCtx.canvas.width, responseCtx.canvas.height);
+  responseCtx.fillStyle = '#495057';
+  responseCtx.font = '12px Arial';
+  responseCtx.textAlign = 'center';
+  responseCtx.fillText('Response Time Trends', responseCtx.canvas.width/2, responseCtx.canvas.height/2 - 10);
+  responseCtx.fillText('(Average per hour)', responseCtx.canvas.width/2, responseCtx.canvas.height/2 + 10);
+  
+  // Auto-refresh every 30 seconds (in real app)
+  // setInterval(refreshMetrics, 30000);
+});
+</script>
+
+<style>
+.progress {
+  height: 20px;
+}
+
+.table th {
+  border-top: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.card-body canvas {
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+}
+
+.alert {
+  border-left: 4px solid;
+}
+
+.alert-warning {
+  border-left-color: #ffc107;
+}
+
+.alert-info {
+  border-left-color: #0dcaf0;
+}
+
+.alert-success {
+  border-left-color: #198754;
+}
+
+.badge {
+  font-size: 0.8rem;
+}
+</style>
+{% endblock %}

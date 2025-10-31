@@ -1,0 +1,11 @@
+Flask>=2.0,<3.0
+Flask-Login>=0.6
+Authlib>=1.2.0
+requests>=2.25.0
+python-dotenv>=1.0
+celery>=5.2.0
+redis>=4.0.0
+sqlalchemy>=1.4.0
+werkzeug>=2.0.0
+uuid
+pytest>=7.0.0
