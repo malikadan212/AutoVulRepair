@@ -16,11 +16,12 @@ import requests
 
 # Import new components
 from src.models.scan import get_session, Scan, create_database
-from src.queue.tasks import celery_app, analyze_code
+from src.queue.tasks import celery_app, analyze_code, analyze_code_sync
 from src.utils.validation import (
     is_valid_github_url, validate_zip_file, validate_code_snippet, 
     safe_extract_zip, sanitize_filename
 )
+# validate_zip_file and safe_extract_zip are used for secure ZIP processing
 
 load_dotenv()
 
@@ -29,6 +30,8 @@ create_database()
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')
+# Set maximum upload size to 100MB to prevent resource exhaustion
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -368,13 +371,29 @@ def scan_public():
         code_snippet = request.form.get('code_snippet', '').strip()
         analysis_tool = request.form.get('analysis_tool', 'cppcheck')
         
+        # Check if this is a form submission (for proper error handling)
+        # Check both multipart (file upload) and urlencoded (text form) content types
+        is_form_submission = request.content_type and (
+            'multipart/form-data' in request.content_type or 
+            'application/x-www-form-urlencoded' in request.content_type
+        )
+        
+        print(f"POST /scan-public - Content-Type: {request.content_type}, Is Form: {is_form_submission}")
+        print(f"Data - repo_url: {bool(repo_url)}, zip_file: {bool(zip_file and zip_file.filename)}, code_snippet: {bool(code_snippet)}")
+        
         # Validate that only one source type is provided
         source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, code_snippet])
         if source_count != 1:
+            if is_form_submission:
+                flash('Please provide exactly one source: GitHub URL, ZIP file, or code snippet.', 'error')
+                return redirect(url_for('no_login_scan'))
             return jsonify({'error': 'Exactly one source type must be provided'}), 400
         
         # Validate analysis tool
         if analysis_tool not in ['cppcheck', 'codeql']:
+            if is_form_submission:
+                flash('Invalid analysis tool. Must be "cppcheck" or "codeql"', 'error')
+                return redirect(url_for('no_login_scan'))
             return jsonify({'error': 'Invalid analysis tool. Must be "cppcheck" or "codeql"'}), 400
         
         # Generate scan ID and create directories
@@ -393,6 +412,9 @@ def scan_public():
             if repo_url:
                 # Validate GitHub URL
                 if not is_valid_github_url(repo_url):
+                    if is_form_submission:
+                        flash('Invalid GitHub URL format. Please use: https://github.com/username/repository', 'error')
+                        return redirect(url_for('no_login_scan'))
                     return jsonify({'error': 'Invalid GitHub URL format'}), 400
                 
                 # Create scan record
@@ -409,6 +431,9 @@ def scan_public():
                 # Validate ZIP file
                 is_valid, error_msg = validate_zip_file(zip_file)
                 if not is_valid:
+                    if is_form_submission:
+                        flash(f'ZIP file error: {error_msg}', 'error')
+                        return redirect(url_for('no_login_scan'))
                     return jsonify({'error': error_msg}), 400
                 
                 # Save and extract ZIP safely
@@ -416,11 +441,26 @@ def scan_public():
                 zip_file.save(zip_path)
                 
                 try:
-                    safe_extract_zip(zip_path, source_dir)
+                    safe_extract_zip(zip_path, source_dir, timeout=120)
                     os.remove(zip_path)  # Remove ZIP after extraction
                 except ValueError as e:
                     shutil.rmtree(scan_dir, ignore_errors=True)
+                    if is_form_submission:
+                        flash(f'Unsafe ZIP file: {str(e)}', 'error')
+                        return redirect(url_for('no_login_scan'))
                     return jsonify({'error': f'Unsafe ZIP file: {str(e)}'}), 400
+                except TimeoutError as e:
+                    shutil.rmtree(scan_dir, ignore_errors=True)
+                    if is_form_submission:
+                        flash(f'ZIP extraction timed out: {str(e)}', 'error')
+                        return redirect(url_for('no_login_scan'))
+                    return jsonify({'error': f'ZIP extraction timed out: {str(e)}'}), 400
+                except RuntimeError as e:
+                    shutil.rmtree(scan_dir, ignore_errors=True)
+                    if is_form_submission:
+                        flash(f'ZIP extraction failed: {str(e)}', 'error')
+                        return redirect(url_for('no_login_scan'))
+                    return jsonify({'error': f'ZIP extraction failed: {str(e)}'}), 400
                 
                 # Create scan record
                 scan = Scan(
@@ -436,6 +476,9 @@ def scan_public():
                 # Validate code snippet
                 is_valid, error_msg = validate_code_snippet(code_snippet)
                 if not is_valid:
+                    if is_form_submission:
+                        flash(f'Code snippet error: {error_msg}', 'error')
+                        return redirect(url_for('no_login_scan'))
                     return jsonify({'error': error_msg}), 400
                 
                 # Determine file extension based on content
@@ -467,8 +510,34 @@ def scan_public():
             session_db.add(scan)
             session_db.commit()
             
-            # Enqueue Celery task
-            analyze_code.delay(scan_id, analysis_tool)
+            # Enqueue Celery task (with fallback to sync if Redis unavailable)
+            # Run analysis in background thread immediately to avoid any blocking
+            import threading
+            import traceback
+            
+            def run_analysis_background():
+                """Run analysis - try Celery first, fallback to sync"""
+                try:
+                    # Try Celery first (will fail fast if Redis unavailable due to our config)
+                    print(f"Attempting to enqueue Celery task for scan {scan_id}...")
+                    analyze_code.delay(scan_id, analysis_tool)
+                    print(f"Celery task enqueued successfully for scan {scan_id}")
+                except Exception as e:
+                    # Celery failed, run synchronously
+                    print(f"Warning: Celery unavailable ({e}), running synchronously...")
+                    print("For production, ensure Redis is running and Celery worker is active")
+                    try:
+                        print(f"Starting synchronous analysis for scan {scan_id}")
+                        analyze_code_sync(scan_id, analysis_tool)
+                        print(f"Completed synchronous analysis for scan {scan_id}")
+                    except Exception as task_error:
+                        print(f"Error in background analysis: {task_error}")
+                        traceback.print_exc()
+            
+            # Start analysis in background thread immediately (non-blocking)
+            analysis_thread = threading.Thread(target=run_analysis_background, daemon=True)
+            analysis_thread.start()
+            print(f"Started analysis thread for scan {scan_id}")
             
             # Store demo scan in session for later retrieval
             session.setdefault('public_scans', {})[scan_id] = {
@@ -478,8 +547,17 @@ def scan_public():
             }
             
             # For form submissions, redirect to progress page
-            if request.content_type and 'application/x-www-form-urlencoded' in request.content_type:
-                return redirect(url_for('scan_progress', scan_id=scan_id))
+            if is_form_submission:
+                try:
+                    progress_url = url_for('scan_progress', scan_id=scan_id)
+                    print(f"Redirecting to: {progress_url}")
+                    return redirect(progress_url)
+                except Exception as redirect_error:
+                    import traceback
+                    print(f"Error generating redirect URL: {redirect_error}")
+                    traceback.print_exc()
+                    flash(f'Scan submitted successfully (ID: {scan_id})', 'success')
+                    return redirect(url_for('no_login_scan'))
             
             # For API calls, return JSON
             return jsonify({
@@ -494,6 +572,23 @@ def scan_public():
         # Clean up on error
         if 'scan_dir' in locals() and os.path.exists(scan_dir):
             shutil.rmtree(scan_dir, ignore_errors=True)
+        # Check if form submission for proper error handling
+        is_form_submission = request.content_type and ('multipart/form-data' in request.content_type or 'application/x-www-form-urlencoded' in request.content_type)
+        
+        import traceback
+        print(f"ERROR in /scan-public: {e}")
+        print(f"Content-Type: {request.content_type}, Is Form: {is_form_submission}")
+        traceback.print_exc()
+        
+        if is_form_submission:
+            flash(f'An error occurred: {str(e)}', 'error')
+            try:
+                return redirect(url_for('no_login_scan'))
+            except Exception as redirect_err:
+                print(f"ERROR in redirect: {redirect_err}")
+                traceback.print_exc()
+                # Fallback: return error page directly
+                return f"<html><body><h1>Error</h1><p>{str(e)}</p><a href='/no-login'>Go Back</a></body></html>", 500
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
@@ -639,18 +734,30 @@ def process_github_repo(repo_url, scan_id, analysis_tool='cppcheck'):
 
 
 def process_zip_upload(zip_file, scan_id, analysis_tool='cppcheck'):
-    """Process uploaded ZIP file"""
+    """Process uploaded ZIP file with secure extraction"""
     temp_dir = None
     try:
+        # Validate ZIP file before processing
+        is_valid, error_msg = validate_zip_file(zip_file)
+        if not is_valid:
+            return {'success': False, 'error': error_msg}
+        
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix=f'scan_{scan_id}_')
         
-        # Save and extract ZIP
+        # Save and extract ZIP securely
         zip_path = os.path.join(temp_dir, 'upload.zip')
         zip_file.save(zip_path)
         
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
+        # Use secure extraction with path traversal protection and timeout
+        try:
+            safe_extract_zip(zip_path, temp_dir, timeout=120)
+        except ValueError as e:
+            return {'success': False, 'error': f'Unsafe ZIP file: {str(e)}'}
+        except TimeoutError as e:
+            return {'success': False, 'error': f'ZIP extraction timed out: {str(e)}'}
+        except RuntimeError as e:
+            return {'success': False, 'error': f'ZIP extraction failed: {str(e)}'}
         
         # Remove the ZIP file
         os.remove(zip_path)

@@ -3,6 +3,10 @@ import re
 import zipfile
 from pathlib import Path
 
+# Maximum file size limits
+MAX_ZIP_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_EXTRACTED_SIZE = 500 * 1024 * 1024  # 500MB maximum extracted size
+
 def is_safe_path(path, base_path):
     """Check if path is safe (no directory traversal)"""
     try:
@@ -13,24 +17,93 @@ def is_safe_path(path, base_path):
     except (OSError, ValueError):
         return False
 
-def safe_extract_zip(zip_file_path, extract_to):
-    """Safely extract ZIP file with path traversal protection"""
-    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-        for member in zip_ref.infolist():
-            # Check for directory traversal
-            if '..' in member.filename or member.filename.startswith('/'):
-                raise ValueError(f"Unsafe path in ZIP: {member.filename}")
+def safe_extract_zip(zip_file_path, extract_to, timeout=120):
+    """Safely extract ZIP file with path traversal protection and resource limits"""
+    import threading
+    import signal
+    
+    extracted_size = 0
+    file_count = 0
+    max_files = 10000  # Limit number of files to prevent exhaustion
+    
+    def _extract_with_limits():
+        nonlocal extracted_size, file_count
+        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+            # Validate all entries before extraction
+            for member in zip_ref.infolist():
+                # Check for directory traversal
+                if '..' in member.filename or member.filename.startswith('/'):
+                    raise ValueError(f"Unsafe path in ZIP: {member.filename}")
+                
+                # Check for absolute paths
+                if os.path.isabs(member.filename):
+                    raise ValueError(f"Absolute path in ZIP: {member.filename}")
+                
+                # Additional safety check
+                if not is_safe_path(member.filename, extract_to):
+                    raise ValueError(f"Path traversal attempt: {member.filename}")
+                
+                # Check file count limit
+                file_count += 1
+                if file_count > max_files:
+                    raise ValueError(f"ZIP contains too many files (>{max_files}). Possible archive bomb.")
+                
+                # Check individual file size (prevent extremely large single files)
+                if member.file_size > 100 * 1024 * 1024:  # 100MB per file
+                    raise ValueError(f"File '{member.filename}' exceeds 100MB limit")
+                
+                # Track total extracted size
+                extracted_size += member.file_size
+                if extracted_size > MAX_EXTRACTED_SIZE:
+                    raise ValueError(f"Total extracted size would exceed {MAX_EXTRACTED_SIZE / (1024*1024)}MB limit")
             
-            # Check for absolute paths
-            if os.path.isabs(member.filename):
-                raise ValueError(f"Absolute path in ZIP: {member.filename}")
-            
-            # Additional safety check
-            if not is_safe_path(member.filename, extract_to):
-                raise ValueError(f"Path traversal attempt: {member.filename}")
+            # If all files are safe, extract them
+            zip_ref.extractall(extract_to)
+    
+    # Extract with timeout protection (Unix-like systems)
+    if hasattr(signal, 'SIGALRM'):
+        # Use signal-based timeout on Unix
+        def timeout_handler(signum, frame):
+            raise TimeoutError(f"ZIP extraction timed out after {timeout} seconds")
         
-        # If all files are safe, extract them
-        zip_ref.extractall(extract_to)
+        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)
+        try:
+            _extract_with_limits()
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    else:
+        # Windows or systems without SIGALRM - use threading timeout
+        import queue
+        result_queue = queue.Queue()
+        exception_queue = queue.Queue()
+        
+        def extract_thread():
+            try:
+                _extract_with_limits()
+                result_queue.put(True)
+            except Exception as e:
+                exception_queue.put(e)
+        
+        thread = threading.Thread(target=extract_thread, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout)
+        
+        # Check if thread is still running (timed out)
+        if thread.is_alive():
+            raise TimeoutError(f"ZIP extraction timed out after {timeout} seconds")
+        
+        # Check for exceptions first
+        if not exception_queue.empty():
+            raise exception_queue.get()
+        
+        # Check for successful completion
+        if not result_queue.empty():
+            return  # Success
+        
+        # If we get here, something unexpected happened
+        raise RuntimeError("ZIP extraction failed for unknown reason")
 
 def is_valid_github_url(url):
     """Validate GitHub repository URL format"""
@@ -42,7 +115,7 @@ def is_valid_github_url(url):
     return bool(re.match(pattern, url))
 
 def validate_zip_file(file_obj):
-    """Validate that uploaded file is a valid ZIP file"""
+    """Validate that uploaded file is a valid ZIP file with size limits"""
     if not file_obj:
         return False, "No file provided"
     
@@ -50,8 +123,17 @@ def validate_zip_file(file_obj):
     if not file_obj.filename.lower().endswith('.zip'):
         return False, "File must have .zip extension"
     
+    # Check file size to prevent resource exhaustion
+    file_obj.seek(0, os.SEEK_END)
+    file_size = file_obj.tell()
+    file_obj.seek(0)  # Reset file pointer
+    
+    if file_size > MAX_ZIP_SIZE:
+        size_mb = file_size / (1024 * 1024)
+        max_mb = MAX_ZIP_SIZE / (1024 * 1024)
+        return False, f"File size ({size_mb:.1f}MB) exceeds maximum allowed size ({max_mb}MB)"
+    
     # Check magic bytes
-    file_obj.seek(0)
     magic_bytes = file_obj.read(4)
     file_obj.seek(0)  # Reset file pointer
     
