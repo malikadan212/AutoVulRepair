@@ -79,6 +79,10 @@ class DockerToolRunner:
             output_dir = temp_dir
             output_filename = 'cppcheck-results.xml'
         
+        # Ensure absolute host paths for Docker volume mounts (Windows-safe)
+        output_dir = os.path.abspath(output_dir)
+        source_path = os.path.abspath(source_path)
+        
         try:
             # Run Cppcheck container
             container = self.client.containers.run(
@@ -252,7 +256,7 @@ class DockerToolRunner:
                 raise RuntimeError("CodeQL Docker image not found. Run: python build_docker_tools.py")
         
         db_path = os.path.abspath(db_path)
-        sarif_dir = os.path.dirname(sarif_output_path)
+        sarif_dir = os.path.abspath(os.path.dirname(sarif_output_path))
         os.makedirs(sarif_dir, exist_ok=True)
         sarif_filename = os.path.basename(sarif_output_path)
         
@@ -275,12 +279,14 @@ class DockerToolRunner:
             query_suite = query_pack_map.get(language, f'codeql/{language}-queries')
             logger.info(f"Using query suite: {query_suite}")
             
-            cmd = f'{codeql_path} database analyze --format=sarif-latest --output=/opt/results/{sarif_filename} /opt/results/source_db {query_suite}'
+            # Write SARIF to a dedicated output mount so it lands at sarif_output_path on host
+            cmd = f'{codeql_path} database analyze --format=sarif-latest --output=/opt/out/{sarif_filename} /opt/results/source_db {query_suite}'
             container = self.client.containers.run(
                 image_name,
                 command=[cmd],  # Pass as list with single string for /bin/sh -c
                 volumes={
-                    db_path: {'bind': '/opt/results', 'mode': 'rw'}
+                    db_path: {'bind': '/opt/results', 'mode': 'rw'},
+                    sarif_dir: {'bind': '/opt/out', 'mode': 'rw'}
                 },
                 remove=False,  # Keep to check logs
                 mem_limit='4g',
@@ -328,13 +334,15 @@ class DockerToolRunner:
             
         except docker.errors.ContainerError as e:
             # Check if file was still created despite error
-            expected_path = os.path.join(db_path, sarif_filename)
+            expected_path = os.path.join(sarif_dir, sarif_filename)
             if os.path.exists(expected_path):
                 import shutil
                 try:
-                    shutil.move(expected_path, sarif_output_path)
+                    # Already in the correct location; ensure final path exists
+                    if expected_path != sarif_output_path:
+                        shutil.move(expected_path, sarif_output_path)
                     return "", "", 0
-                except:
+                except Exception:
                     pass
             return "", str(e), e.exit_status
         except docker.errors.APIError as e:

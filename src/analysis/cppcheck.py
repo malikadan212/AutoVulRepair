@@ -93,7 +93,7 @@ class CppcheckAnalyzer:
         
         return cpp_files
     
-    def analyze(self, source_path, source_type, repo_url=None):
+    def analyze(self, source_path, source_type, repo_url=None, artifacts_dir=None):
         """Run Cppcheck analysis on the source code"""
         logger.info(f"[CPPCHECK_ANALYZE] Starting analyze() - source_path: {source_path}, source_type: {source_type}, repo_url: {repo_url}")
         if not self.is_available():
@@ -104,12 +104,12 @@ class CppcheckAnalyzer:
         # Handle different source types
         if source_type == 'repo_url' and repo_url:
             logger.info(f"[CPPCHECK_ANALYZE] Detected repo_url, calling _analyze_repo()")
-            return self._analyze_repo(repo_url)
+            return self._analyze_repo(repo_url, artifacts_dir=artifacts_dir)
         else:
             logger.info(f"[CPPCHECK_ANALYZE] Local analysis, calling _analyze_local()")
-            return self._analyze_local(source_path)
+            return self._analyze_local(source_path, artifacts_dir=artifacts_dir)
     
-    def _analyze_repo(self, repo_url):
+    def _analyze_repo(self, repo_url, artifacts_dir=None):
         """Analyze a GitHub repository"""
         logger.info(f"[CPPCHECK_REPO] Starting repository analysis for: {repo_url}")
         temp_dir = None
@@ -126,7 +126,7 @@ class CppcheckAnalyzer:
                 return self._simulate_analysis()
             
             logger.info(f"[CPPCHECK_REPO] Repository cloned successfully, starting local analysis")
-            return self._analyze_local(temp_dir)
+            return self._analyze_local(temp_dir, artifacts_dir=artifacts_dir)
             
         except Exception as e:
             logger.error(f"Repository analysis failed: {e}")
@@ -135,7 +135,7 @@ class CppcheckAnalyzer:
             if temp_dir and os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
     
-    def _analyze_local(self, source_path):
+    def _analyze_local(self, source_path, artifacts_dir=None):
         """Analyze local source code"""
         logger.info(f"[CPPCHECK_LOCAL] Starting local analysis for path: {source_path}")
         try:
@@ -150,7 +150,7 @@ class CppcheckAnalyzer:
             
             # Run Cppcheck analysis
             logger.info(f"[CPPCHECK_LOCAL] Running Cppcheck now...")
-            result = self._run_cppcheck(source_path)
+            result = self._run_cppcheck(source_path, artifacts_dir=artifacts_dir)
             logger.info(f"[CPPCHECK_LOCAL] Cppcheck analysis completed")
             return result
             
@@ -158,12 +158,18 @@ class CppcheckAnalyzer:
             logger.error(f"Local analysis failed: {e}")
             return self._simulate_analysis()
     
-    def _run_cppcheck(self, source_path):
+    def _run_cppcheck(self, source_path, artifacts_dir=None):
         """Run Cppcheck and parse results"""
         logger.info(f"[CPPCHECK_RUN] Starting Cppcheck execution for: {source_path}")
-        xml_fd, xml_path = tempfile.mkstemp(suffix='.xml')
-        os.close(xml_fd)
-        logger.info(f"[CPPCHECK_RUN] Temporary XML output file: {xml_path}")
+        if artifacts_dir:
+            artifacts_dir = os.path.abspath(artifacts_dir)
+            os.makedirs(artifacts_dir, exist_ok=True)
+            xml_path = os.path.join(artifacts_dir, 'cppcheck-report.xml')
+            logger.info(f"[CPPCHECK_RUN] Artifact XML output file: {xml_path}")
+        else:
+            xml_fd, xml_path = tempfile.mkstemp(suffix='.xml')
+            os.close(xml_fd)
+            logger.info(f"[CPPCHECK_RUN] Temporary XML output file: {xml_path}")
         
         try:
             # Try Docker first (preferred method)
@@ -180,6 +186,15 @@ class CppcheckAnalyzer:
                         # Parse results if XML was generated
                         if os.path.exists(xml_path) and os.path.getsize(xml_path) > 0:
                             logger.info("Successfully ran Cppcheck via Docker")
+                            # If artifacts_dir provided but xml_path is temporary, persist a copy
+                            if artifacts_dir and not xml_path.startswith(os.path.abspath(artifacts_dir)):
+                                try:
+                                    os.makedirs(artifacts_dir, exist_ok=True)
+                                    persisted = os.path.join(artifacts_dir, 'cppcheck-report.xml')
+                                    import shutil
+                                    shutil.copyfile(xml_path, persisted)
+                                except Exception as persist_err:
+                                    logger.warning(f"[CPPCHECK_RUN] Failed to persist XML to artifacts: {persist_err}")
                             return self._parse_xml_results(xml_path)
                         elif stderr:
                             logger.warning(f"Cppcheck Docker stderr: {stderr}")
@@ -205,6 +220,15 @@ class CppcheckAnalyzer:
             
             # Parse results
             if os.path.exists(xml_path) and os.path.getsize(xml_path) > 0:
+                # If artifacts_dir provided but xml_path is temporary, persist a copy
+                if artifacts_dir and not xml_path.startswith(os.path.abspath(artifacts_dir)):
+                    try:
+                        os.makedirs(artifacts_dir, exist_ok=True)
+                        persisted = os.path.join(artifacts_dir, 'cppcheck-report.xml')
+                        import shutil
+                        shutil.copyfile(xml_path, persisted)
+                    except Exception as persist_err:
+                        logger.warning(f"[CPPCHECK_RUN] Failed to persist XML to artifacts: {persist_err}")
                 return self._parse_xml_results(xml_path)
             elif cppcheck_result.stderr:
                 # Fallback: parse stderr output
@@ -220,7 +244,7 @@ class CppcheckAnalyzer:
             logger.error(f"Cppcheck execution failed: {e}")
             return self._simulate_analysis()
         finally:
-            if os.path.exists(xml_path):
+            if not artifacts_dir and os.path.exists(xml_path):
                 os.unlink(xml_path)
     
     def _parse_xml_results(self, xml_path):

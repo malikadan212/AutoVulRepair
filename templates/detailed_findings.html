@@ -30,7 +30,13 @@
       <div>
         <h6 class="mb-1">
           <i class="fas fa-spinner fa-spin"></i>
-          <span id="status-text">Analysis {{ status == 'queued' and 'Queued' or 'In Progress' }}</span>
+          <span id="status-text">
+            {% if status == 'queued' %}
+              Analysis Queued
+            {% else %}
+              Analysis In Progress
+            {% endif %}
+          </span>
         </h6>
         <small id="status-detail">Initializing analysis... This page will auto-refresh when complete.</small>
       </div>
@@ -81,13 +87,26 @@
         {% endif %}
       </div>
       <div class="btn-group">
-        <a href="{{ url_for('fuzzing_dashboard') }}" class="btn btn-warning">
-          <i class="fas fa-play"></i> View Auto Fuzzing
+        <a href="{{ url_for('fuzzing_dashboard', scan_id=scan_id) }}" class="btn btn-warning">
+          <i class="fas fa-play"></i> Proceed to Dynamic Analysis
         </a>
         {% if patches %}
         <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-success">
           <i class="fas fa-robot"></i> View AI Patches
         </a>
+        {% endif %}
+        {% if analysis_tool %}
+        <div class="btn-group ms-2">
+          {% if analysis_tool == 'codeql' %}
+          <a class="btn btn-outline-secondary" href="{{ url_for('download_artifact', scan_id=scan_id, filename='codeql-results.sarif') }}">
+            <i class="fas fa-file-download"></i> Download SARIF
+          </a>
+          {% elif analysis_tool == 'cppcheck' %}
+          <a class="btn btn-outline-secondary" href="{{ url_for('download_artifact', scan_id=scan_id, filename='cppcheck-report.xml') }}">
+            <i class="fas fa-file-download"></i> Download XML
+          </a>
+          {% endif %}
+        </div>
         {% endif %}
       </div>
     </div>
@@ -180,8 +199,8 @@
     <div class="card mb-3 finding-card" 
          data-severity="{{ vuln.severity }}" 
          data-tool="{{ vuln.tool }}"
-         data-description="{{ vuln.description|lower }}"
-         data-file="{{ vuln.file|lower }}">
+         data-description="{{ (vuln.description or '')|lower }}"
+         data-file="{{ (vuln.file or '')|lower }}">
       
       <div class="card-header d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center">
@@ -192,7 +211,7 @@
         </div>
         <div class="d-flex align-items-center">
           <span class="badge bg-secondary me-2">{{ vuln.tool }}</span>
-          <button class="btn btn-sm btn-outline-primary" onclick="toggleDetails('{{ vuln.id }}')">
+          <button class="btn btn-sm btn-outline-primary" type="button" aria-expanded="false" onclick="toggleDetails('{{ vuln.id }}')">
             <i class="fas fa-chevron-down" id="toggle-{{ vuln.id }}"></i>
           </button>
         </div>
@@ -336,186 +355,263 @@
   </div>
 </div>
 
-
+<span id="scan-context" data-scan-id="{{ scan_id }}" data-status="{{ status }}" style="display:none;"></span>
 <script>
-const scanId = '{{ scan_id }}';
+/* ---------- Server -> Client context (single place using Jinja) ---------- */
+var __scanCtxEl = document.getElementById('scan-context');
+var SCAN_CONTEXT = {
+  scanId: __scanCtxEl ? (__scanCtxEl.getAttribute('data-scan-id') || '') : '',
+  status: __scanCtxEl ? (__scanCtxEl.getAttribute('data-status') || '') : ''
+};
 
+/* Local copies used by JS */
+const scanId = (SCAN_CONTEXT && SCAN_CONTEXT.scanId) ? String(SCAN_CONTEXT.scanId) : '';
+let shouldPoll = (SCAN_CONTEXT && (SCAN_CONTEXT.status === 'queued' || SCAN_CONTEXT.status === 'running'));
+let refreshInterval = null;
+let startTime = Date.now();
+
+/* ---------- UI helpers ---------- */
+function safeGet(el, id) {
+  try { return el.querySelector(id); } catch (e) { return null; }
+}
+
+/* Toggle details for a vulnerability card */
 function toggleDetails(vulnId) {
-  const details = document.getElementById(`details-${vulnId}`);
-  const icon = document.getElementById(`toggle-${vulnId}`);
-  
-  if (details.classList.contains('show')) {
+  if (!vulnId) return;
+  var details = document.getElementById('details-' + vulnId);
+  var icon = document.getElementById('toggle-' + vulnId);
+
+  if (!details) return;
+
+  var isShown = details.classList.contains('show');
+  if (isShown) {
     details.classList.remove('show');
-    icon.classList.remove('fa-chevron-up');
-    icon.classList.add('fa-chevron-down');
+    if (icon) {
+      icon.classList.remove('fa-chevron-up');
+      icon.classList.add('fa-chevron-down');
+    }
   } else {
     details.classList.add('show');
-    icon.classList.remove('fa-chevron-down');
-    icon.classList.add('fa-chevron-up');
+    if (icon) {
+      icon.classList.remove('fa-chevron-down');
+      icon.classList.add('fa-chevron-up');
+    }
+    // If Prism is available, highlight newly visible code blocks
+    if (typeof Prism !== 'undefined' && typeof Prism.highlightElement === 'function') {
+      details.querySelectorAll('pre code').forEach(function(block){ Prism.highlightElement(block); });
+    }
   }
 }
 
+/* Filter findings by severity, tool, and search term */
 function filterFindings() {
-  const severityFilter = document.getElementById('severity-filter').value.toLowerCase();
-  const toolFilter = document.getElementById('tool-filter').value.toLowerCase();
-  const searchTerm = document.getElementById('search-input').value.toLowerCase();
-  
-  const cards = document.querySelectorAll('.finding-card');
-  let visibleCount = 0;
-  
-  cards.forEach(card => {
-    const severity = card.dataset.severity;
-    const tool = card.dataset.tool.toLowerCase();
-    const description = card.dataset.description;
-    const file = card.dataset.file;
-    
-    const matchesSeverity = !severityFilter || severity === severityFilter;
-    const matchesTool = !toolFilter || tool === toolFilter;
-    const matchesSearch = !searchTerm || 
-                         description.includes(searchTerm) || 
-                         file.includes(searchTerm);
-    
+  var severityFilter = (document.getElementById('severity-filter') || { value: '' }).value.toLowerCase();
+  var toolFilter = (document.getElementById('tool-filter') || { value: '' }).value.toLowerCase();
+  var searchTerm = (document.getElementById('search-input') || { value: '' }).value.toLowerCase();
+
+  var cards = document.querySelectorAll('.finding-card');
+  var visibleCount = 0;
+
+  cards.forEach(function(card) {
+    var severity = (card.dataset.severity || '').toLowerCase();
+    var tool = (card.dataset.tool || '').toLowerCase();
+    var description = (card.dataset.description || '').toLowerCase();
+    var file = (card.dataset.file || '').toLowerCase();
+
+    var matchesSeverity = !severityFilter || severity === severityFilter;
+    var matchesTool = !toolFilter || tool === toolFilter;
+    var matchesSearch = !searchTerm || description.indexOf(searchTerm) !== -1 || file.indexOf(searchTerm) !== -1;
+
     if (matchesSeverity && matchesTool && matchesSearch) {
-      card.style.display = 'block';
+      card.style.display = '';
       visibleCount++;
     } else {
       card.style.display = 'none';
     }
   });
-  
-  // Show/hide no results message
-  const noResults = document.getElementById('no-results');
-  if (visibleCount === 0) {
-    noResults.style.display = 'block';
-  } else {
-    noResults.style.display = 'none';
-  }
+
+  var noResults = document.getElementById('no-results');
+  if (noResults) noResults.style.display = (visibleCount === 0 ? 'block' : 'none');
 }
 
+/* Clear all filters */
 function clearFilters() {
-  document.getElementById('severity-filter').value = '';
-  document.getElementById('tool-filter').value = '';
-  document.getElementById('search-input').value = '';
+  var severity = document.getElementById('severity-filter');
+  var tool = document.getElementById('tool-filter');
+  var search = document.getElementById('search-input');
+  if (severity) severity.value = '';
+  if (tool) tool.value = '';
+  if (search) search.value = '';
   filterFindings();
 }
 
+/* Apply a patch (stub) */
 function applyPatch(patchId) {
+  if (!patchId) return;
   if (confirm('Apply this patch to your codebase?')) {
-    // TODO: Implement patch application
-    alert(`Patch ${patchId} application will be implemented soon.`);
+    // TODO: implement server call to apply patch
+    alert('Patch ' + patchId + ' application will be implemented soon.');
   }
 }
 
+/* Generate an AI patch (stub) */
 function generatePatch(vulnId) {
-  // Simulate AI patch generation
-  alert(`Generating AI patch for vulnerability ${vulnId}. This would trigger the Vul-RAG module.`);
+  if (!vulnId) return;
+  alert('Generating AI patch for vulnerability ' + vulnId + '. This would trigger the Vul-RAG module.');
 }
 
+/* Export visible findings to a plain-text report */
 function exportFindings() {
-  // Generate a simple text report
-  let report = `Vulnerability Report - Scan ${scanId}\n`;
-  report += `Generated: ${new Date().toISOString()}\n`;
-  report += `Total Vulnerabilities: ${document.querySelectorAll('.finding-card').length}\n\n`;
-  
-  document.querySelectorAll('.finding-card').forEach(card => {
-    const severity = card.dataset.severity;
-    const tool = card.dataset.tool;
-    const description = card.dataset.description;
-    const file = card.dataset.file;
-    
-    report += `[${severity.toUpperCase()}] ${description}\n`;
-    report += `  Tool: ${tool}\n`;
-    report += `  File: ${file}\n\n`;
+  var blobLines = [];
+  blobLines.push('Vulnerability Report - Scan ' + (scanId || 'unknown'));
+  blobLines.push('Generated: ' + new Date().toISOString());
+
+  var cards = document.querySelectorAll('.finding-card');
+  var visibleCount = 0;
+  var findings = [];
+
+  cards.forEach(function(card) {
+    // Only include visible cards in export
+    var style = window.getComputedStyle(card);
+    if (style && style.display === 'none') return;
+
+    var severity = card.dataset.severity || '(unknown)';
+    var tool = card.dataset.tool || '(unknown)';
+    var description = card.dataset.description || '(no description)';
+    var file = card.dataset.file || '(unknown)';
+
+    visibleCount++;
+    findings.push({
+      severity: severity,
+      tool: tool,
+      description: description,
+      file: file
+    });
   });
-  
-  // Download as file
-  const blob = new Blob([report], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+
+  blobLines.push('Total Vulnerabilities (visible): ' + visibleCount);
+  blobLines.push('');
+
+  findings.forEach(function(f) {
+    blobLines.push('[' + String(f.severity).toUpperCase() + '] ' + f.description);
+    blobLines.push('  Tool: ' + f.tool);
+    blobLines.push('  File: ' + f.file);
+    blobLines.push('');
+  });
+
+  var blob = new Blob([blobLines.join('\n')], { type: 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
   a.href = url;
-  a.download = `vulnerability-report-${scanId}.txt`;
+  a.download = 'vulnerability-report-' + (scanId || 'unknown') + '.txt';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-// Auto-refresh if scan is still running
-{% if status == 'queued' or status == 'running' %}
-let refreshInterval;
-let lastStatus = '{{ status }}';
-let startTime = Date.now();
-
+/* ---------- Polling for scan status ---------- */
 function updateStatusDisplay(data) {
-  const statusText = document.getElementById('status-text');
-  const statusDetail = document.getElementById('status-detail');
-  
-  if (!statusText || !statusDetail) return;
-  
+  var statusText = document.getElementById('status-text');
+  var statusDetail = document.getElementById('status-detail');
+  if (!statusText || !statusDetail || !data) return;
+
   if (data.status === 'queued') {
     statusText.innerHTML = '<i class="fas fa-clock"></i> Analysis Queued';
     statusDetail.textContent = 'Scan queued, starting analysis...';
   } else if (data.status === 'running') {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
     statusText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analysis In Progress';
-    
-    // Show more detailed messages based on elapsed time
     if (elapsed < 10) {
-      statusDetail.textContent = `Setting up analysis environment... (${elapsed}s)`;
+      statusDetail.textContent = 'Setting up analysis environment... (' + elapsed + 's)';
     } else if (elapsed < 30) {
-      statusDetail.textContent = `Running static analysis tool... (${elapsed}s)`;
+      statusDetail.textContent = 'Running static analysis tool... (' + elapsed + 's)';
     } else {
-      statusDetail.textContent = `Processing analysis results... (${elapsed}s)`;
+      statusDetail.textContent = 'Processing analysis results... (' + elapsed + 's)';
     }
   } else if (data.status === 'completed') {
     statusText.innerHTML = '<i class="fas fa-check-circle"></i> Analysis Complete';
-    statusDetail.textContent = `Found ${data.vulnerabilities_count || 0} vulnerabilities. Reloading page...`;
-    setTimeout(() => window.location.reload(), 2000);
+    var count = (data && typeof data.vulnerabilities_count === 'number') ? data.vulnerabilities_count : (document.querySelectorAll('.finding-card').length || 0);
+    statusDetail.textContent = 'Found ' + count + ' vulnerabilities. Reloading page...';
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+    setTimeout(function() { window.location.reload(); }, 1500);
   } else if (data.status === 'failed') {
     statusText.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Analysis Failed';
-    statusDetail.textContent = `Error: ${data.error || 'Unknown error'}. Reloading page...`;
-    setTimeout(() => window.location.reload(), 2000);
+    var err = (data && data.error) ? data.error : 'Unknown error';
+    statusDetail.textContent = 'Error: ' + err + '. Reloading page...';
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+    setTimeout(function() { window.location.reload(); }, 3000);
+  } else {
+    statusText.innerHTML = '<i class="fas fa-info-circle"></i> Status: ' + (data.status || '(unknown)');
+    statusDetail.textContent = data.detail || '';
   }
 }
 
+/* Fail-safe retry/backoff variables */
+let retryDelay = 2000; // initial 2s
+const maxRetryDelay = 30000; // 30s
+
 function checkScanStatus() {
-  fetch(`/api/scan-status/{{ scan_id }}`)
-    .then(response => response.json())
-    .then(data => {
+  if (!scanId) return;
+  fetch('/api/scan-status/' + encodeURIComponent(scanId))
+    .then(function(response) {
+      if (!response.ok) throw new Error('Network response was not ok: ' + response.status);
+      return response.json();
+    })
+    .then(function(data) {
+      // reset retry delay on success
+      retryDelay = 2000;
       updateStatusDisplay(data);
-      
-      if (data.status === 'completed') {
-        if (refreshInterval) clearInterval(refreshInterval);
-        setTimeout(() => window.location.reload(), 2000);
-      } else if (data.status === 'failed') {
-        if (refreshInterval) clearInterval(refreshInterval);
-        setTimeout(() => window.location.reload(), 2000);
+      if (data.status === 'completed' || data.status === 'failed') {
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+          refreshInterval = null;
+        }
+        // updateStatusDisplay already triggers reload
       }
     })
-    .catch(error => {
+    .catch(function(error) {
       console.error('Failed to check scan status:', error);
-      const statusDetail = document.getElementById('status-detail');
+      var statusDetail = document.getElementById('status-detail');
       if (statusDetail) {
-        statusDetail.textContent = 'Error checking status. Retrying...';
+        statusDetail.textContent = 'Error checking status. Retrying in ' + (retryDelay / 1000) + 's...';
       }
+      // exponential backoff for retries
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+      setTimeout(function() {
+        // increase delay for next failure, but cap it
+        retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+        refreshInterval = setInterval(checkScanStatus, retryDelay);
+        checkScanStatus();
+      }, retryDelay);
     });
 }
 
+/* ---------- DOM ready ---------- */
 document.addEventListener('DOMContentLoaded', function() {
-  // Check status every 2 seconds
-  refreshInterval = setInterval(checkScanStatus, 2000);
-  // Also check immediately
-  checkScanStatus();
-});
-{% else %}
-// Initialize syntax highlighting if available
-document.addEventListener('DOMContentLoaded', function() {
-  // If using a syntax highlighting library like Prism.js or highlight.js
-  if (typeof Prism !== 'undefined') {
-    Prism.highlightAll();
+  // run initial filter to sync any default state
+  filterFindings();
+
+  // Poll while queued/running
+  if (shouldPoll && scanId) {
+    refreshInterval = setInterval(checkScanStatus, 2000);
+    checkScanStatus();
+  } else {
+    // Highlight code blocks if Prism is available
+    if (typeof Prism !== 'undefined') {
+      Prism.highlightAll();
+    }
   }
 });
-{% endif %}
 </script>
 
 <style>

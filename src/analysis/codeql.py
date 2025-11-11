@@ -113,7 +113,7 @@ class CodeQLAnalyzer:
             logger.info(f"[LANGUAGE_DETECT] Detected languages: {', '.join(detected)}")
         return detected
     
-    def analyze(self, source_path, source_type, repo_url=None):
+    def analyze(self, source_path, source_type, repo_url=None, artifacts_dir=None):
         """Run CodeQL analysis on the source code"""
         if not self.is_available():
             logger.warning("CodeQL not available, using simulation")
@@ -121,11 +121,11 @@ class CodeQLAnalyzer:
         
         # Handle different source types
         if source_type == 'repo_url' and repo_url:
-            return self._analyze_repo(repo_url)
+            return self._analyze_repo(repo_url, artifacts_dir=artifacts_dir)
         else:
-            return self._analyze_local(source_path)
+            return self._analyze_local(source_path, artifacts_dir=artifacts_dir)
     
-    def _analyze_repo(self, repo_url):
+    def _analyze_repo(self, repo_url, artifacts_dir=None):
         """Analyze a GitHub repository"""
         logger.info(f"[CODEQL_REPO] Starting repository analysis for: {repo_url}")
         temp_dir = None
@@ -142,7 +142,7 @@ class CodeQLAnalyzer:
                 return self._simulate_analysis()
             
             logger.info(f"[CODEQL_REPO] Repository cloned successfully, starting local analysis")
-            return self._analyze_local(temp_dir)
+            return self._analyze_local(temp_dir, artifacts_dir=artifacts_dir)
             
         except Exception as e:
             logger.error(f"[CODEQL_REPO] Repository analysis failed: {e}")
@@ -151,7 +151,7 @@ class CodeQLAnalyzer:
             if temp_dir and os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
     
-    def _analyze_local(self, source_path):
+    def _analyze_local(self, source_path, artifacts_dir=None):
         """Analyze local source code"""
         logger.info(f"[CODEQL_LOCAL] Starting local analysis for path: {source_path}")
         db_path = None
@@ -221,7 +221,7 @@ class CodeQLAnalyzer:
                     return self._simulate_analysis()
             
             # Run analysis
-            return self._run_queries(db_path, languages)
+            return self._run_queries(db_path, languages, artifacts_dir=artifacts_dir)
             
         except Exception as e:
             logger.error(f"Local analysis failed: {e}")
@@ -230,13 +230,17 @@ class CodeQLAnalyzer:
             if db_path and os.path.exists(db_path):
                 shutil.rmtree(db_path, ignore_errors=True)
     
-    def _run_queries(self, db_path, languages):
+    def _run_queries(self, db_path, languages, artifacts_dir=None):
         """Run CodeQL queries and parse results"""
         sarif_path = None
         try:
             # Create temporary SARIF output file
-            sarif_fd, sarif_path = tempfile.mkstemp(suffix='.sarif')
-            os.close(sarif_fd)
+            if artifacts_dir:
+                os.makedirs(artifacts_dir, exist_ok=True)
+                sarif_path = os.path.join(artifacts_dir, 'codeql-results.sarif')
+            else:
+                sarif_fd, sarif_path = tempfile.mkstemp(suffix='.sarif')
+                os.close(sarif_fd)
             
             # Try Docker first (preferred method)
             analysis_success = False
@@ -287,7 +291,7 @@ class CodeQLAnalyzer:
             logger.error(f"Query execution failed: {e}")
             return self._simulate_analysis()
         finally:
-            if sarif_path and os.path.exists(sarif_path):
+            if (not artifacts_dir) and sarif_path and os.path.exists(sarif_path):
                 os.unlink(sarif_path)
     
     def _parse_sarif_results(self, sarif_path):

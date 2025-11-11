@@ -109,6 +109,27 @@
                     </div>
                   </div>
                 </div>
+                <hr>
+                <div class="row mt-2">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="skip_static" name="skip_static" value="1">
+                      <label class="form-check-label" for="skip_static">
+                        Run dynamic analysis only
+                      </label>
+                      <div class="form-text">Skip Module 1 (static); enqueue only Module 2.</div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="use_cached_static" name="use_cached_static" value="1" checked>
+                      <label class="form-check-label" for="use_cached_static">
+                        Use cached static results (if available)
+                      </label>
+                      <div class="form-text">If artifacts exist, avoid re-running static.</div>
+                    </div>
+                  </div>
+                </div>
                 <div id="tool-installation-help" class="mt-3" style="display: none;">
                 </div>
               </div>

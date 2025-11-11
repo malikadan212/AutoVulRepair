@@ -64,12 +64,17 @@ def _analyze_with_codeql_impl(scan_id):
         scans_dir = os.getenv('SCANS_DIR', './scans')
         source_path = os.path.join(scans_dir, scan_id, 'source')
         
+        # Ensure artifacts directory exists and pass it through
+        scans_dir = os.path.abspath(os.getenv('SCANS_DIR', './scans'))
+        artifacts_dir = os.path.join(scans_dir, scan_id, 'artifacts')
+        os.makedirs(artifacts_dir, exist_ok=True)
+
         # Run analysis
         logger.info(f"[CODEQL] Starting analysis for scan {scan_id}")
         logger.info(f"[CODEQL] Source path: {source_path}, Source type: {scan.source_type}")
         import time
         start_time = time.time()
-        vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url)
+        vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url, artifacts_dir=artifacts_dir)
         elapsed = time.time() - start_time
         
         # Update scan with results
@@ -109,9 +114,14 @@ def _analyze_with_cppcheck_impl(scan_id):
         analyzer = CppcheckAnalyzer()
         
         # Determine source path
-        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scans_dir = os.path.abspath(os.getenv('SCANS_DIR', './scans'))
         source_path = os.path.join(scans_dir, scan_id, 'source')
         
+        # Ensure artifacts directory exists and pass it through
+        scans_dir = os.path.abspath(os.getenv('SCANS_DIR', './scans'))
+        artifacts_dir = os.path.join(scans_dir, scan_id, 'artifacts')
+        os.makedirs(artifacts_dir, exist_ok=True)
+
         # Run analysis
         logger.info(f"[CPPCHECK] Starting analysis for scan {scan_id}")
         logger.info(f"[CPPCHECK] Source path: {source_path}, Source type: {scan.source_type}, Repo URL: {scan.repo_url}")
@@ -119,7 +129,7 @@ def _analyze_with_cppcheck_impl(scan_id):
         import time
         start_time = time.time()
         try:
-            vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url)
+            vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url, artifacts_dir=artifacts_dir)
             elapsed = time.time() - start_time
             logger.info(f"[CPPCHECK] analyzer.analyze() returned - vulnerabilities: {len(vulnerabilities)}, patches: {len(patches)}")
         except Exception as analyze_error:

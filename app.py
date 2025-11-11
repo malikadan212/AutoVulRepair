@@ -332,7 +332,8 @@ def patch_review(scan_id, patch_id):
 @app.route('/fuzzing-dashboard')
 def fuzzing_dashboard():
     """Show fuzzing campaign dashboard - accessible without login"""
-    return render_template('fuzzing_dashboard.html')
+    scan_id = request.args.get('scan_id')
+    return render_template('fuzzing_dashboard.html', scan_id=scan_id)
 
 
 @app.route('/monitoring')
@@ -566,7 +567,51 @@ def scan_public():
             session_db.add(scan)
             session_db.commit()
             logger.info(f"[SCAN_SUBMISSION] Scan record saved successfully")
-            
+
+            # Flags to control Module 1 execution
+            skip_static = bool(request.form.get('skip_static'))
+            use_cached_static = bool(request.form.get('use_cached_static', '1'))
+            if not (request.form.get('skip_static') or request.form.get('use_cached_static')):
+                skip_static = os.getenv('ANALYSIS_DEFAULT', '').lower() == 'dynamic_only'
+
+            # Try cached artifacts if requested
+            if use_cached_static:
+                artifacts_dir_abs = os.path.abspath(artifacts_dir)
+                cached_xml = os.path.join(artifacts_dir_abs, 'cppcheck-report.xml')
+                cached_sarif = os.path.join(artifacts_dir_abs, 'codeql-results.sarif')
+                try:
+                    cached_vulns = None
+                    cached_patches = None
+                    if analysis_tool == 'cppcheck' and os.path.exists(cached_xml):
+                        logger.info(f"[SCAN_SUBMISSION] Using cached Cppcheck XML: {cached_xml}")
+                        cached_vulns, cached_patches = parse_cppcheck_xml(cached_xml)
+                    elif analysis_tool == 'codeql' and os.path.exists(cached_sarif):
+                        logger.info(f"[SCAN_SUBMISSION] Using cached CodeQL SARIF: {cached_sarif}")
+                        cached_vulns, cached_patches = parse_sarif_results(cached_sarif)
+
+                    if cached_vulns is not None and cached_patches is not None:
+                        scan.status = 'completed'
+                        scan.vulnerabilities_json = cached_vulns
+                        scan.patches_json = cached_patches
+                        session_db.commit()
+                        logger.info(f"[SCAN_SUBMISSION] Loaded {len(cached_vulns)} cached vulnerabilities; skipping static execution")
+
+                        if is_form_submission:
+                            return redirect(url_for('detailed_findings', scan_id=scan_id))
+                        return jsonify({'scan_id': scan_id, 'status': 'completed'}), 200
+                except Exception as cache_err:
+                    logger.warning(f"[SCAN_SUBMISSION] Failed to use cached artifacts: {cache_err}")
+                    session_db.rollback()
+
+            # If skipping static, bypass Module 1 (intended for Module 2 work)
+            if skip_static:
+                logger.info(f"[SCAN_SUBMISSION] Skip static enabled - not enqueuing static analysis for scan {scan_id}")
+                scan.status = 'queued'
+                session_db.commit()
+                if is_form_submission:
+                    return redirect(url_for('scan_progress', scan_id=scan_id))
+                return jsonify({'scan_id': scan_id, 'status': 'queued'}), 202
+
             # Enqueue Celery task (with fallback to sync if Redis unavailable)
             # Run analysis in background thread immediately to avoid any blocking
             import threading
@@ -731,6 +776,16 @@ def download_patch(scan_id, patch_id):
     
     return send_file(temp_file.name, as_attachment=True, 
                     download_name=f'{patch_id}.patch', mimetype='text/plain')
+
+@app.route('/artifacts/<scan_id>/<filename>')
+def download_artifact(scan_id, filename):
+    """Download analysis artifact (e.g., XML/SARIF)"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    artifact_path = os.path.join(scans_dir, scan_id, 'artifacts', sanitize_filename(filename))
+    if not os.path.exists(artifact_path):
+        flash('Artifact not found.', 'error')
+        return redirect(url_for('no_login_scan'))
+    return send_file(artifact_path, as_attachment=True, download_name=filename)
 
 
 def is_valid_github_url(url):
