@@ -5,8 +5,10 @@ import tempfile
 import shutil
 import subprocess
 import zipfile
+import logging
 from functools import wraps
 from pathlib import Path
+from datetime import datetime
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, UserMixin, current_user
@@ -25,20 +27,52 @@ from src.utils.validation import (
 
 load_dotenv()
 
+# Configure logging with timestamps
+logging.basicConfig(
+    level=logging.DEBUG,  # Set to DEBUG to see more details
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# Set specific loggers to appropriate levels
+logging.getLogger('src.analysis.cppcheck').setLevel(logging.DEBUG)
+logging.getLogger('src.utils.docker_helper').setLevel(logging.DEBUG)
+
+# Also configure Flask's logger
+app_logger = logging.getLogger('werkzeug')
+app_logger.setLevel(logging.INFO)
+
 # Initialize database
+logger.info("=" * 60)
+logger.info(f"Starting application at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+logger.info("=" * 60)
 create_database()
+logger.info("Database initialized")
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')
 # Set maximum upload size to 100MB to prevent resource exhaustion
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 
+# Add request logging middleware
+@app.before_request
+def log_request_info():
+    """Log incoming requests"""
+    logger.info(f"[REQUEST] {request.method} {request.path} - IP: {request.remote_addr}")
+
+@app.after_request
+def log_response_info(response):
+    """Log outgoing responses"""
+    logger.info(f"[RESPONSE] {request.method} {request.path} - Status: {response.status_code}")
+    return response
+
 # Flask-Login setup
 login_manager = LoginManager()
 login_manager.login_view = 'home'
 login_manager.init_app(app)
 
-# Simple in-memory user store (for demo)
+# Simple in-memory user store
 USERS = {}
 
 
@@ -212,84 +246,79 @@ def results(scan_id):
 @app.route('/scan-progress/<scan_id>')
 def scan_progress(scan_id):
     """Show scan progress page - accessible without login"""
-    # In real implementation, check if scan exists and get details
-    return render_template('scan_progress.html', 
-                         scan_id=scan_id, 
-                         analysis_tool='cppcheck',
-                         source_type='Repository')
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
+        
+        return render_template('scan_progress.html', 
+                             scan_id=scan_id, 
+                             analysis_tool=scan.analysis_tool or 'cppcheck',
+                             source_type=scan.source_type or 'Repository',
+                             repo_url=scan.repo_url)
+    except Exception as e:
+        logger.error(f"Error loading scan progress for {scan_id}: {e}")
+        flash('Error loading scan details.', 'error')
+        return redirect(url_for('no_login_scan'))
+    finally:
+        session_db.close()
 
 
 @app.route('/detailed-findings/<scan_id>')
 def detailed_findings(scan_id):
     """Show detailed vulnerability findings - accessible without login"""
-    # Get scan data (from session for demo, from DB in real app)
-    scans = session.get('scans', {})
-    scan = scans.get(scan_id)
-    
-    if not scan:
-        # Create demo data for presentation
-        vulnerabilities = [
-            {
-                'id': 'vuln_001',
-                'severity': 'high',
-                'description': 'Buffer overflow in strcpy function',
-                'file': 'src/utils/string_utils.c',
-                'line': 127,
-                'tool': 'CodeQL'
-            },
-            {
-                'id': 'vuln_002', 
-                'severity': 'medium',
-                'description': 'Potential null pointer dereference',
-                'file': 'src/parser/json_parser.c',
-                'line': 89,
-                'tool': 'Cppcheck'
-            },
-            {
-                'id': 'vuln_003',
-                'severity': 'high',
-                'description': 'Use after free in memory allocator',
-                'file': 'src/memory/allocator.c',
-                'line': 234,
-                'tool': 'CodeQL'
-            },
-            {
-                'id': 'vuln_004',
-                'severity': 'medium',
-                'description': 'Integer overflow in calculation',
-                'file': 'src/math/calculator.c',
-                'line': 156,
-                'tool': 'Cppcheck'
-            },
-            {
-                'id': 'vuln_005',
-                'severity': 'low',
-                'description': 'Unused variable declaration',
-                'file': 'src/utils/helpers.c',
-                'line': 45,
-                'tool': 'Cppcheck'
-            }
-        ]
-        patches = [
-            {
-                'id': 'patch_001',
-                'description': 'Fix buffer overflow with bounds checking',
-                'content': '- strcpy(buffer, input);\n+ strncpy(buffer, input, sizeof(buffer)-1);\n+ buffer[sizeof(buffer)-1] = \'\\0\';'
-            },
-            {
-                'id': 'patch_002',
-                'description': 'Add null pointer check',
-                'content': '+ if (ptr == NULL) {\n+     return -1;\n+ }\n  ptr->data = value;'
-            }
-        ]
-    else:
-        vulnerabilities = scan.get('vulnerabilities', [])
-        patches = scan.get('patches', [])
-    
-    return render_template('detailed_findings.html', 
-                         scan_id=scan_id,
-                         vulnerabilities=vulnerabilities,
-                         patches=patches)
+    logger.info(f"[DETAILED_FINDINGS] Request for scan: {scan_id}")
+    # Get scan data from database
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        
+        if not scan:
+            logger.warning(f"[DETAILED_FINDINGS] Scan not found: {scan_id}")
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
+        
+        logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} found, status: {scan.status}")
+        
+        # Get vulnerabilities and patches from database
+        vulnerabilities = scan.vulnerabilities_json or []
+        patches = scan.patches_json or []
+        
+        logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} has {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
+        
+        # If scan is still running, show progress
+        if scan.status == 'queued' or scan.status == 'running':
+            logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} still in progress, showing progress view")
+            return render_template('detailed_findings.html',
+                                 scan_id=scan_id,
+                                 vulnerabilities=[],
+                                 patches=[],
+                                 status=scan.status,
+                                 analysis_tool=scan.analysis_tool)
+        
+        # If scan failed, show error
+        if scan.status == 'failed':
+            logger.warning(f"[DETAILED_FINDINGS] Scan {scan_id} failed")
+            return render_template('detailed_findings.html',
+                                 scan_id=scan_id,
+                                 vulnerabilities=[],
+                                 patches=[],
+                                 status='failed',
+                                 error='Scan failed. Please try again.')
+        
+        logger.info(f"[DETAILED_FINDINGS] Rendering results for scan {scan_id}")
+        return render_template('detailed_findings.html', 
+                             scan_id=scan_id,
+                             vulnerabilities=vulnerabilities,
+                             patches=patches,
+                             status=scan.status,
+                             analysis_tool=scan.analysis_tool,
+                             repo_url=scan.repo_url,
+                             source_type=scan.source_type)
+    finally:
+        session_db.close()
 
 
 @app.route('/patch-review/<scan_id>/<patch_id>')
@@ -312,41 +341,37 @@ def monitoring_dashboard():
     return render_template('monitoring_dashboard.html')
 
 
-@app.route('/demo-dashboard')
-def demo_dashboard():
-    """Public demo dashboard - accessible without login"""
-    # Create a demo user object for display
-    demo_user = type('DemoUser', (), {
-        'username': 'demo_user',
-        'is_authenticated': False
-    })()
-    
-    return render_template('dashboard.html', user=demo_user)
 
 
 @app.route('/api/scan-status/<scan_id>')
-def scan_status_api(scan_id):
-    """Get scan status and progress"""
+def api_scan_status(scan_id):
+    """API endpoint for checking scan status - accessible without login"""
+    logger.debug(f"[API] Status check requested for scan: {scan_id}")
     session_db = get_session()
     try:
         scan = session_db.query(Scan).filter_by(id=scan_id).first()
         if not scan:
+            logger.warning(f"[API] Scan not found: {scan_id}")
             return jsonify({'error': 'Scan not found'}), 404
         
-        response = {
-            'scan_id': scan.id,
+        vuln_count = len(scan.vulnerabilities_json) if scan.vulnerabilities_json else 0
+        patch_count = len(scan.patches_json) if scan.patches_json else 0
+        
+        # Calculate elapsed time
+        elapsed_time = None
+        if scan.created_at:
+            from datetime import datetime
+            elapsed_time = (datetime.now() - scan.created_at).total_seconds()
+        
+        logger.debug(f"[API] Scan {scan_id} status: {scan.status}, vulnerabilities: {vuln_count}")
+        return jsonify({
             'status': scan.status,
             'analysis_tool': scan.analysis_tool,
-            'created_at': scan.created_at.isoformat(),
-            'updated_at': scan.updated_at.isoformat()
-        }
-        
-        if scan.status == 'completed':
-            response['vulnerabilities_count'] = len(scan.vulnerabilities_json or [])
-            response['patches_count'] = len(scan.patches_json or [])
-        
-        return jsonify(response)
-        
+            'vulnerabilities_count': vuln_count,
+            'patches_count': patch_count,
+            'elapsed_time': elapsed_time,
+            'error': None
+        })
     finally:
         session_db.close()
 
@@ -354,9 +379,11 @@ def scan_status_api(scan_id):
 @login_required
 def scan_status(scan_id):
     """Legacy endpoint for authenticated users"""
+    logger.debug(f"[API] Legacy status check for scan: {scan_id}")
     scans = session.get('scans', {})
     scan = scans.get(scan_id)
     if not scan:
+        logger.warning(f"[API] Scan not found in session: {scan_id}")
         return jsonify({'error': 'not found'}), 404
     return jsonify({'status': scan['status']})
 
@@ -378,12 +405,15 @@ def scan_public():
             'application/x-www-form-urlencoded' in request.content_type
         )
         
-        print(f"POST /scan-public - Content-Type: {request.content_type}, Is Form: {is_form_submission}")
-        print(f"Data - repo_url: {bool(repo_url)}, zip_file: {bool(zip_file and zip_file.filename)}, code_snippet: {bool(code_snippet)}")
+        logger.info(f"[SCAN_SUBMISSION] New scan request received")
+        logger.info(f"[SCAN_SUBMISSION] Content-Type: {request.content_type}, Is Form: {is_form_submission}")
+        logger.info(f"[SCAN_SUBMISSION] Source types - repo_url: {bool(repo_url)}, zip_file: {bool(zip_file and zip_file.filename)}, code_snippet: {bool(code_snippet)}")
+        logger.info(f"[SCAN_SUBMISSION] Analysis tool: {analysis_tool}")
         
         # Validate that only one source type is provided
         source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, code_snippet])
         if source_count != 1:
+            logger.warning(f"[SCAN_SUBMISSION] Validation failed: Exactly one source type must be provided (found {source_count})")
             if is_form_submission:
                 flash('Please provide exactly one source: GitHub URL, ZIP file, or code snippet.', 'error')
                 return redirect(url_for('no_login_scan'))
@@ -391,6 +421,7 @@ def scan_public():
         
         # Validate analysis tool
         if analysis_tool not in ['cppcheck', 'codeql']:
+            logger.warning(f"[SCAN_SUBMISSION] Invalid analysis tool: {analysis_tool}")
             if is_form_submission:
                 flash('Invalid analysis tool. Must be "cppcheck" or "codeql"', 'error')
                 return redirect(url_for('no_login_scan'))
@@ -403,20 +434,26 @@ def scan_public():
         source_dir = os.path.join(scan_dir, 'source')
         artifacts_dir = os.path.join(scan_dir, 'artifacts')
         
+        logger.info(f"[SCAN_SUBMISSION] Generated scan_id: {scan_id}")
+        logger.info(f"[SCAN_SUBMISSION] Creating directories - scan_dir: {scan_dir}")
         os.makedirs(source_dir, exist_ok=True)
         os.makedirs(artifacts_dir, exist_ok=True)
+        logger.info(f"[SCAN_SUBMISSION] Directories created successfully")
         
         # Process different source types
         session_db = get_session()
         try:
             if repo_url:
+                logger.info(f"[SCAN_SUBMISSION] Processing GitHub repository: {repo_url}")
                 # Validate GitHub URL
                 if not is_valid_github_url(repo_url):
+                    logger.warning(f"[SCAN_SUBMISSION] Invalid GitHub URL format: {repo_url}")
                     if is_form_submission:
                         flash('Invalid GitHub URL format. Please use: https://github.com/username/repository', 'error')
                         return redirect(url_for('no_login_scan'))
                     return jsonify({'error': 'Invalid GitHub URL format'}), 400
                 
+                logger.info(f"[SCAN_SUBMISSION] GitHub URL validated successfully")
                 # Create scan record
                 scan = Scan(
                     id=scan_id,
@@ -426,42 +463,53 @@ def scan_public():
                     analysis_tool=analysis_tool,
                     status='queued'
                 )
+                logger.info(f"[SCAN_SUBMISSION] Scan record created for repo_url: {scan_id}")
                 
             elif zip_file:
+                logger.info(f"[SCAN_SUBMISSION] Processing ZIP file: {zip_file.filename}")
                 # Validate ZIP file
                 is_valid, error_msg = validate_zip_file(zip_file)
                 if not is_valid:
+                    logger.warning(f"[SCAN_SUBMISSION] ZIP validation failed: {error_msg}")
                     if is_form_submission:
                         flash(f'ZIP file error: {error_msg}', 'error')
                         return redirect(url_for('no_login_scan'))
                     return jsonify({'error': error_msg}), 400
                 
+                logger.info(f"[SCAN_SUBMISSION] ZIP file validated successfully, size: {zip_file.content_length} bytes")
                 # Save and extract ZIP safely
                 zip_path = os.path.join(source_dir, 'source.zip')
+                logger.info(f"[SCAN_SUBMISSION] Saving ZIP to: {zip_path}")
                 zip_file.save(zip_path)
                 
                 try:
+                    logger.info(f"[SCAN_SUBMISSION] Extracting ZIP file...")
                     safe_extract_zip(zip_path, source_dir, timeout=120)
                     os.remove(zip_path)  # Remove ZIP after extraction
+                    logger.info(f"[SCAN_SUBMISSION] ZIP extracted and removed successfully")
                 except ValueError as e:
+                    logger.error(f"[SCAN_SUBMISSION] Unsafe ZIP file detected: {str(e)}")
                     shutil.rmtree(scan_dir, ignore_errors=True)
                     if is_form_submission:
                         flash(f'Unsafe ZIP file: {str(e)}', 'error')
                         return redirect(url_for('no_login_scan'))
                     return jsonify({'error': f'Unsafe ZIP file: {str(e)}'}), 400
                 except TimeoutError as e:
+                    logger.error(f"[SCAN_SUBMISSION] ZIP extraction timed out: {str(e)}")
                     shutil.rmtree(scan_dir, ignore_errors=True)
                     if is_form_submission:
                         flash(f'ZIP extraction timed out: {str(e)}', 'error')
                         return redirect(url_for('no_login_scan'))
                     return jsonify({'error': f'ZIP extraction timed out: {str(e)}'}), 400
                 except RuntimeError as e:
+                    logger.error(f"[SCAN_SUBMISSION] ZIP extraction failed: {str(e)}")
                     shutil.rmtree(scan_dir, ignore_errors=True)
                     if is_form_submission:
                         flash(f'ZIP extraction failed: {str(e)}', 'error')
                         return redirect(url_for('no_login_scan'))
                     return jsonify({'error': f'ZIP extraction failed: {str(e)}'}), 400
                 
+                logger.info(f"[SCAN_SUBMISSION] ZIP processing completed successfully")
                 # Create scan record
                 scan = Scan(
                     id=scan_id,
@@ -471,11 +519,14 @@ def scan_public():
                     analysis_tool=analysis_tool,
                     status='queued'
                 )
+                logger.info(f"[SCAN_SUBMISSION] Scan record created for zip: {scan_id}")
                 
             else:  # code_snippet
+                logger.info(f"[SCAN_SUBMISSION] Processing code snippet (length: {len(code_snippet)} chars)")
                 # Validate code snippet
                 is_valid, error_msg = validate_code_snippet(code_snippet)
                 if not is_valid:
+                    logger.warning(f"[SCAN_SUBMISSION] Code snippet validation failed: {error_msg}")
                     if is_form_submission:
                         flash(f'Code snippet error: {error_msg}', 'error')
                         return redirect(url_for('no_login_scan'))
@@ -491,10 +542,13 @@ def scan_public():
                 else:
                     file_ext = '.txt'
                 
+                logger.info(f"[SCAN_SUBMISSION] Detected file type: {file_ext}")
                 # Save code snippet
                 snippet_path = os.path.join(source_dir, f'snippet{file_ext}')
+                logger.info(f"[SCAN_SUBMISSION] Saving code snippet to: {snippet_path}")
                 with open(snippet_path, 'w', encoding='utf-8') as f:
                     f.write(code_snippet)
+                logger.info(f"[SCAN_SUBMISSION] Code snippet saved successfully")
                 
                 # Create scan record
                 scan = Scan(
@@ -502,13 +556,16 @@ def scan_public():
                     user_id=None,
                     source_type='code_snippet',
                     source_path=snippet_path,
-                    analysis_tool=analysis_tool,
+                    analysis_tool=analysis_tool, 
                     status='queued'
                 )
+                logger.info(f"[SCAN_SUBMISSION] Scan record created for code_snippet: {scan_id}")
             
             # Save scan to database
+            logger.info(f"[SCAN_SUBMISSION] Saving scan record to database: {scan_id}")
             session_db.add(scan)
             session_db.commit()
+            logger.info(f"[SCAN_SUBMISSION] Scan record saved successfully")
             
             # Enqueue Celery task (with fallback to sync if Redis unavailable)
             # Run analysis in background thread immediately to avoid any blocking
@@ -517,49 +574,48 @@ def scan_public():
             
             def run_analysis_background():
                 """Run analysis - try Celery first, fallback to sync"""
+                start_time = time.time()
+                logger.info(f"[ANALYSIS] Starting analysis for scan {scan_id} using {analysis_tool}")
                 try:
                     # Try Celery first (will fail fast if Redis unavailable due to our config)
-                    print(f"Attempting to enqueue Celery task for scan {scan_id}...")
+                    logger.info(f"[ANALYSIS] Attempting to enqueue Celery task for scan {scan_id}...")
                     analyze_code.delay(scan_id, analysis_tool)
-                    print(f"Celery task enqueued successfully for scan {scan_id}")
+                    logger.info(f"[ANALYSIS] Celery task enqueued successfully for scan {scan_id}")
                 except Exception as e:
                     # Celery failed, run synchronously
-                    print(f"Warning: Celery unavailable ({e}), running synchronously...")
-                    print("For production, ensure Redis is running and Celery worker is active")
+                    logger.warning(f"[ANALYSIS] Celery unavailable ({e}), running synchronously...")
+                    logger.info(f"[ANALYSIS] For production, ensure Redis is running and Celery worker is active")
                     try:
-                        print(f"Starting synchronous analysis for scan {scan_id}")
+                        logger.info(f"[ANALYSIS] Starting synchronous analysis for scan {scan_id} at {datetime.now().strftime('%H:%M:%S')}")
                         analyze_code_sync(scan_id, analysis_tool)
-                        print(f"Completed synchronous analysis for scan {scan_id}")
+                        elapsed = time.time() - start_time
+                        logger.info(f"[ANALYSIS] Completed synchronous analysis for scan {scan_id} in {elapsed:.2f} seconds")
                     except Exception as task_error:
-                        print(f"Error in background analysis: {task_error}")
+                        logger.error(f"[ANALYSIS] Error in background analysis for scan {scan_id}: {task_error}")
                         traceback.print_exc()
             
             # Start analysis in background thread immediately (non-blocking)
+            logger.info(f"[SCAN_SUBMISSION] Starting analysis thread for scan {scan_id}")
             analysis_thread = threading.Thread(target=run_analysis_background, daemon=True)
             analysis_thread.start()
-            print(f"Started analysis thread for scan {scan_id}")
+            logger.info(f"[SCAN_SUBMISSION] Analysis thread started successfully")
             
-            # Store demo scan in session for later retrieval
-            session.setdefault('public_scans', {})[scan_id] = {
-                'status': 'completed',
-                'analysis_tool': analysis_tool,
-                'source_type': 'demo'
-            }
             
-            # For form submissions, redirect to progress page
+            # For form submissions, redirect to detailed findings page
             if is_form_submission:
                 try:
-                    progress_url = url_for('scan_progress', scan_id=scan_id)
-                    print(f"Redirecting to: {progress_url}")
-                    return redirect(progress_url)
+                    findings_url = url_for('detailed_findings', scan_id=scan_id)
+                    logger.info(f"[SCAN_SUBMISSION] Redirecting to detailed findings: {findings_url}")
+                    return redirect(findings_url)
                 except Exception as redirect_error:
+                    logger.error(f"[SCAN_SUBMISSION] Error generating redirect URL: {redirect_error}")
                     import traceback
-                    print(f"Error generating redirect URL: {redirect_error}")
                     traceback.print_exc()
                     flash(f'Scan submitted successfully (ID: {scan_id})', 'success')
                     return redirect(url_for('no_login_scan'))
             
             # For API calls, return JSON
+            logger.info(f"[SCAN_SUBMISSION] Returning JSON response for scan {scan_id}")
             return jsonify({
                 'scan_id': scan_id,
                 'status': 'queued'
@@ -567,8 +623,10 @@ def scan_public():
             
         finally:
             session_db.close()
+            logger.info(f"[SCAN_SUBMISSION] Database session closed for scan {scan_id}")
             
     except Exception as e:
+        logger.error(f"[SCAN_SUBMISSION] Exception during scan submission: {e}", exc_info=True)
         # Clean up on error
         if 'scan_dir' in locals() and os.path.exists(scan_dir):
             shutil.rmtree(scan_dir, ignore_errors=True)
@@ -595,64 +653,56 @@ def scan_public():
 @app.route('/public-results/<scan_id>')
 def public_results(scan_id):
     """Show results for public scans (no login required)"""
-    # For demo purposes, create sample results
-    demo_scan = {
-        'status': 'completed',
-        'analysis_tool': 'cppcheck',
-        'vulnerabilities': [
-            {
-                'id': 'vuln_001',
-                'severity': 'high',
-                'description': 'Buffer overflow in strcpy function',
-                'file': 'demo_code.c',
-                'line': 15,
-                'tool': 'Cppcheck'
-            },
-            {
-                'id': 'vuln_002',
-                'severity': 'high',
-                'description': 'Use after free vulnerability',
-                'file': 'demo_code.c',
-                'line': 28,
-                'tool': 'Cppcheck'
-            },
-            {
-                'id': 'vuln_003',
-                'severity': 'medium',
-                'description': 'Potential null pointer dereference',
-                'file': 'demo_code.c',
-                'line': 42,
-                'tool': 'Cppcheck'
-            }
-        ],
-        'patches': [
-            {
-                'id': 'patch_001',
-                'description': 'Fix buffer overflow with safe string functions',
-                'content': '- strcpy(buffer, input);\n+ strncpy(buffer, input, sizeof(buffer)-1);\n+ buffer[sizeof(buffer)-1] = \'\\0\';'
-            }
-        ]
-    }
-    
-    return render_template('public_results.html', scan_id=scan_id, scan=demo_scan)
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
+        
+        vulnerabilities = scan.vulnerabilities_json or []
+        patches = scan.patches_json or []
+        
+        scan_data = {
+            'status': scan.status,
+            'analysis_tool': scan.analysis_tool,
+            'vulnerabilities': vulnerabilities,
+            'patches': patches,
+            'repo_url': scan.repo_url,
+            'created_at': scan.created_at
+        }
+        
+        return render_template('public_results.html', scan_id=scan_id, scan=scan_data)
+    except Exception as e:
+        logger.error(f"Error loading public results for scan {scan_id}: {e}")
+        flash('Error loading scan results.', 'error')
+        return redirect(url_for('no_login_scan'))
+    finally:
+        session_db.close()
 
 
 @app.route('/api/tool-status')
 def tool_status():
     """Check availability of analysis tools"""
+    logger.info("[API] Tool status check requested")
     from src.analysis.codeql import CodeQLAnalyzer
     from src.analysis.cppcheck import CppcheckAnalyzer
     
     codeql_analyzer = CodeQLAnalyzer()
     cppcheck_analyzer = CppcheckAnalyzer()
     
+    cppcheck_avail = cppcheck_analyzer.is_available()
+    codeql_avail = codeql_analyzer.is_available()
+    
+    logger.info(f"[API] Tool status - Cppcheck: {cppcheck_avail}, CodeQL: {codeql_avail}")
+    
     status = {
         'codeql': {
-            'available': codeql_analyzer.is_available(),
+            'available': codeql_avail,
             'name': 'CodeQL'
         },
         'cppcheck': {
-            'available': cppcheck_analyzer.is_available(),
+            'available': cppcheck_avail,
             'name': 'Cppcheck'
         }
     }

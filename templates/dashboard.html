@@ -81,9 +81,6 @@
             <a href="{{ url_for('scan') }}" class="btn btn-primary">
               <i class="fas fa-search"></i> Start New Scan
             </a>
-            <a href="{{ url_for('detailed_findings', scan_id='demo') }}" class="btn btn-outline-primary">
-              <i class="fas fa-list"></i> View Sample Findings
-            </a>
           </div>
         </div>
       </div>
@@ -124,9 +121,6 @@
         <div class="card-body d-flex flex-column">
           <p class="card-text flex-grow-1">AI-powered patch generation using retrieval-augmented LLM with validation.</p>
           <div class="d-grid gap-2">
-            <a href="{{ url_for('patch_review', scan_id='demo', patch_id='001') }}" class="btn btn-success">
-              <i class="fas fa-eye"></i> Review Sample Patch
-            </a>
             <button class="btn btn-outline-success" onclick="generatePatch()">
               <i class="fas fa-robot"></i> Generate Patch
             </button>

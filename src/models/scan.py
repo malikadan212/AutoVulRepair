@@ -29,7 +29,16 @@ def get_database_url():
 
 def create_database():
     """Create database tables if they don't exist"""
-    engine = create_engine(get_database_url())
+    # Add connection args to improve performance and handle disk issues better
+    engine = create_engine(
+        get_database_url(),
+        connect_args={
+            'timeout': 30,  # Increase timeout for busy database
+            'check_same_thread': False  # Allow multi-threading
+        },
+        pool_pre_ping=True,  # Verify connections before using
+        pool_recycle=3600  # Recycle connections every hour
+    )
     Base.metadata.create_all(engine)
     return engine
 

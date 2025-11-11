@@ -127,8 +127,6 @@
         <a href="{{ url_for('home') }}" class="btn btn-link">← Back to Home</a>
       </div>
       
-      <!-- Include Demo Navigation -->
-      {% include 'demo_navigation.html' %}
       
       <!-- Security Features -->
       <div class="row mt-5">
@@ -303,7 +301,7 @@ Note: Tools will fall back to simulation mode if not installed.
 }
 
 function loadSampleCode() {
-  const sampleCode = `// Sample vulnerable C code for AutoVulRepair demo
+  const sampleCode = `// Sample vulnerable C code for AutoVulRepair
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

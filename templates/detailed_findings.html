@@ -23,6 +23,42 @@
     </div>
   </div>
 
+  <!-- Status Messages -->
+  {% if status == 'queued' or status == 'running' %}
+  <div class="alert alert-info">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span id="status-text">Analysis {{ status == 'queued' and 'Queued' or 'In Progress' }}</span>
+        </h6>
+        <small id="status-detail">Initializing analysis... This page will auto-refresh when complete.</small>
+      </div>
+      <div>
+        <a href="{{ url_for('scan_progress', scan_id=scan_id) }}" class="btn btn-primary">
+          <i class="fas fa-eye"></i> View Progress
+        </a>
+      </div>
+    </div>
+  </div>
+  {% elif status == 'failed' %}
+  <div class="alert alert-danger">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-exclamation-triangle"></i>
+          Scan Failed
+        </h6>
+        <small>{{ error or 'An error occurred during analysis. Please try again.' }}</small>
+      </div>
+      <div>
+        <a href="{{ url_for('no_login_scan') }}" class="btn btn-primary">
+          <i class="fas fa-redo"></i> Try Again
+        </a>
+      </div>
+    </div>
+  </div>
+  {% else %}
   <!-- Workflow Status -->
   {% include 'workflow_status.html' %}
 
@@ -34,22 +70,29 @@
           <i class="fas fa-check-circle"></i>
           Static Analysis Complete - {{ vulnerabilities|length }} vulnerabilities found
         </h6>
+        {% if analysis_tool %}
         <small>
-          <i class="fas fa-magic text-warning"></i> Auto-triggering fuzzing campaigns for high-priority findings
+          Analysis Tool: <strong>{{ analysis_tool|upper }}</strong>
+          {% if repo_url %}
           <span class="mx-2">|</span>
-          <i class="fas fa-robot text-success"></i> Preparing AI patch generation
+          Repository: <a href="{{ repo_url }}" target="_blank">{{ repo_url }}</a>
+          {% endif %}
         </small>
+        {% endif %}
       </div>
       <div class="btn-group">
         <a href="{{ url_for('fuzzing_dashboard') }}" class="btn btn-warning">
           <i class="fas fa-play"></i> View Auto Fuzzing
         </a>
+        {% if patches %}
         <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-success">
           <i class="fas fa-robot"></i> View AI Patches
         </a>
+        {% endif %}
       </div>
     </div>
   </div>
+  {% endif %}
 
   <!-- Filters and Search -->
   <div class="card mb-4">
@@ -122,6 +165,16 @@
   </div>
 
   <!-- Findings List -->
+  {% if vulnerabilities|length == 0 and status != 'queued' and status != 'running' %}
+  <div class="text-center py-5">
+    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+    <h5>No vulnerabilities found</h5>
+    <p class="text-muted">Great! Your code appears to be secure.</p>
+    <a href="{{ url_for('no_login_scan') }}" class="btn btn-primary">
+      <i class="fas fa-redo"></i> Scan Another Project
+    </a>
+  </div>
+  {% else %}
   <div id="findings-container">
     {% for vuln in vulnerabilities %}
     <div class="card mb-3 finding-card" 
@@ -191,14 +244,10 @@
             <h6><i class="fas fa-code"></i> Code Context</h6>
             <div class="card bg-light">
               <div class="card-body">
-                <pre class="mb-0"><code class="language-cpp">{% if vuln.line %}{{ vuln.line - 2 }}: // Previous context
-{{ vuln.line - 1 }}: int buffer[10];
-{{ vuln.line }}: <mark>strcpy(buffer, user_input); // Vulnerable line</mark>
-{{ vuln.line + 1 }}: return buffer;
-{{ vuln.line + 2 }}: // Following context{% else %}// Code context not available
-// This is a simulated vulnerability for demo purposes
-char buffer[256];
-<mark>strcpy(buffer, untrusted_input); // Potential buffer overflow</mark>{% endif %}</code></pre>
+                <pre class="mb-0"><code class="language-cpp">// Code context not available
+// View the source file at {{ vuln.file }}:{{ vuln.line }} for the actual code
+// File: {{ vuln.file }}
+// Line: {{ vuln.line }}</code></pre>
               </div>
             </div>
           </div>
@@ -277,6 +326,7 @@ char buffer[256];
     </div>
     {% endfor %}
   </div>
+  {% endif %}
 
   <!-- No Results Message -->
   <div id="no-results" class="text-center py-5" style="display: none;">
@@ -286,10 +336,10 @@ char buffer[256];
   </div>
 </div>
 
-<!-- Include Demo Navigation -->
-{% include 'demo_navigation.html' %}
 
 <script>
+const scanId = '{{ scan_id }}';
+
 function toggleDetails(vulnId) {
   const details = document.getElementById(`details-${vulnId}`);
   const icon = document.getElementById(`toggle-${vulnId}`);
@@ -351,8 +401,8 @@ function clearFilters() {
 
 function applyPatch(patchId) {
   if (confirm('Apply this patch to your codebase?')) {
-    // In real implementation, this would apply the patch
-    alert(`Patch ${patchId} would be applied. This is a demo.`);
+    // TODO: Implement patch application
+    alert(`Patch ${patchId} application will be implemented soon.`);
   }
 }
 
@@ -362,10 +412,102 @@ function generatePatch(vulnId) {
 }
 
 function exportFindings() {
-  // In real implementation, this would generate a report
-  alert('Exporting detailed vulnerability report. This is a demo.');
+  // Generate a simple text report
+  let report = `Vulnerability Report - Scan ${scanId}\n`;
+  report += `Generated: ${new Date().toISOString()}\n`;
+  report += `Total Vulnerabilities: ${document.querySelectorAll('.finding-card').length}\n\n`;
+  
+  document.querySelectorAll('.finding-card').forEach(card => {
+    const severity = card.dataset.severity;
+    const tool = card.dataset.tool;
+    const description = card.dataset.description;
+    const file = card.dataset.file;
+    
+    report += `[${severity.toUpperCase()}] ${description}\n`;
+    report += `  Tool: ${tool}\n`;
+    report += `  File: ${file}\n\n`;
+  });
+  
+  // Download as file
+  const blob = new Blob([report], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vulnerability-report-${scanId}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
+// Auto-refresh if scan is still running
+{% if status == 'queued' or status == 'running' %}
+let refreshInterval;
+let lastStatus = '{{ status }}';
+let startTime = Date.now();
+
+function updateStatusDisplay(data) {
+  const statusText = document.getElementById('status-text');
+  const statusDetail = document.getElementById('status-detail');
+  
+  if (!statusText || !statusDetail) return;
+  
+  if (data.status === 'queued') {
+    statusText.innerHTML = '<i class="fas fa-clock"></i> Analysis Queued';
+    statusDetail.textContent = 'Scan queued, starting analysis...';
+  } else if (data.status === 'running') {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    statusText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analysis In Progress';
+    
+    // Show more detailed messages based on elapsed time
+    if (elapsed < 10) {
+      statusDetail.textContent = `Setting up analysis environment... (${elapsed}s)`;
+    } else if (elapsed < 30) {
+      statusDetail.textContent = `Running static analysis tool... (${elapsed}s)`;
+    } else {
+      statusDetail.textContent = `Processing analysis results... (${elapsed}s)`;
+    }
+  } else if (data.status === 'completed') {
+    statusText.innerHTML = '<i class="fas fa-check-circle"></i> Analysis Complete';
+    statusDetail.textContent = `Found ${data.vulnerabilities_count || 0} vulnerabilities. Reloading page...`;
+    setTimeout(() => window.location.reload(), 2000);
+  } else if (data.status === 'failed') {
+    statusText.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Analysis Failed';
+    statusDetail.textContent = `Error: ${data.error || 'Unknown error'}. Reloading page...`;
+    setTimeout(() => window.location.reload(), 2000);
+  }
+}
+
+function checkScanStatus() {
+  fetch(`/api/scan-status/{{ scan_id }}`)
+    .then(response => response.json())
+    .then(data => {
+      updateStatusDisplay(data);
+      
+      if (data.status === 'completed') {
+        if (refreshInterval) clearInterval(refreshInterval);
+        setTimeout(() => window.location.reload(), 2000);
+      } else if (data.status === 'failed') {
+        if (refreshInterval) clearInterval(refreshInterval);
+        setTimeout(() => window.location.reload(), 2000);
+      }
+    })
+    .catch(error => {
+      console.error('Failed to check scan status:', error);
+      const statusDetail = document.getElementById('status-detail');
+      if (statusDetail) {
+        statusDetail.textContent = 'Error checking status. Retrying...';
+      }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Check status every 2 seconds
+  refreshInterval = setInterval(checkScanStatus, 2000);
+  // Also check immediately
+  checkScanStatus();
+});
+{% else %}
 // Initialize syntax highlighting if available
 document.addEventListener('DOMContentLoaded', function() {
   // If using a syntax highlighting library like Prism.js or highlight.js
@@ -373,6 +515,7 @@ document.addEventListener('DOMContentLoaded', function() {
     Prism.highlightAll();
   }
 });
+{% endif %}
 </script>
 
 <style>

@@ -6,7 +6,18 @@ import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Try to import Docker helper, fall back to direct execution if unavailable
 logger = logging.getLogger(__name__)
+
+DOCKER_AVAILABLE = False
+try:
+    from src.utils.docker_helper import DockerToolRunner
+    DOCKER_AVAILABLE = True
+    logger.debug("DockerToolRunner import successful")
+except Exception as e:
+    # Catch all exceptions, not just ImportError, since there might be other issues
+    logger.warning(f"Docker helper import failed: {e} - will use direct execution or simulation")
+    DOCKER_AVAILABLE = False
 
 class CppcheckAnalyzer:
     """Cppcheck static analysis implementation"""
@@ -14,15 +25,61 @@ class CppcheckAnalyzer:
     def __init__(self):
         self.tool_name = 'cppcheck'
         self.timeout = 120  # 2 minutes
+        self.docker_runner = None
+        
+        # Try to initialize Docker runner
+        if DOCKER_AVAILABLE:
+            try:
+                self.docker_runner = DockerToolRunner()
+                if self.docker_runner.is_docker_available():
+                    logger.info("[CPPCHECK_INIT] Docker-based Cppcheck available")
+            except Exception as e:
+                logger.warning(f"[CPPCHECK_INIT] Failed to initialize Docker runner: {e}")
+                self.docker_runner = None
     
     def is_available(self):
-        """Check if Cppcheck is available"""
+        """Check if Cppcheck is available (via Docker or direct)"""
+        logger.debug(f"[CPPCHECK_AVAIL] Starting availability check, docker_runner: {self.docker_runner is not None}")
+        
+        # Try Docker first (preferred) - just check if image exists, don't test every time
+        if self.docker_runner:
+            try:
+                logger.debug("[CPPCHECK_AVAIL] Checking Docker availability...")
+                docker_avail = self.docker_runner.is_docker_available()
+                logger.debug(f"[CPPCHECK_AVAIL] Docker available: {docker_avail}")
+                
+                if docker_avail:
+                    logger.debug("[CPPCHECK_AVAIL] Checking if Docker image exists...")
+                    image_exists = self.docker_runner.image_exists('vuln-scanner/cppcheck:latest')
+                    logger.debug(f"[CPPCHECK_AVAIL] Image exists: {image_exists}")
+                    
+                    if image_exists:
+                        logger.info("[CPPCHECK_AVAIL] Docker image found - Cppcheck available via Docker")
+                        return True
+                    else:
+                        logger.warning("[CPPCHECK_AVAIL] Docker image 'vuln-scanner/cppcheck:latest' not found")
+                else:
+                    logger.warning("[CPPCHECK_AVAIL] Docker is not available")
+            except Exception as e:
+                logger.error(f"[CPPCHECK_AVAIL] Docker check error: {e}", exc_info=True)
+        else:
+            logger.warning("[CPPCHECK_AVAIL] docker_runner is None - Docker not initialized")
+        
+        # Fallback to direct execution
+        logger.debug("[CPPCHECK_AVAIL] Checking direct installation...")
         try:
             result = subprocess.run([self.tool_name, '--version'], 
-                                  capture_output=True, text=True, timeout=10)
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                logger.info("[CPPCHECK_AVAIL] Direct installation found")
+                return True
+            else:
+                logger.debug(f"[CPPCHECK_AVAIL] Direct check failed with returncode: {result.returncode}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"[CPPCHECK_AVAIL] Direct installation not found: {type(e).__name__}")
+        
+        logger.warning("[CPPCHECK_AVAIL] Cppcheck not available (neither Docker nor direct)")
+        return False
     
     def find_cpp_files(self, source_path):
         """Find C/C++ files in the source directory"""
@@ -38,30 +95,37 @@ class CppcheckAnalyzer:
     
     def analyze(self, source_path, source_type, repo_url=None):
         """Run Cppcheck analysis on the source code"""
+        logger.info(f"[CPPCHECK_ANALYZE] Starting analyze() - source_path: {source_path}, source_type: {source_type}, repo_url: {repo_url}")
         if not self.is_available():
-            logger.warning("Cppcheck not available, using simulation")
+            logger.warning("[CPPCHECK_ANALYZE] Cppcheck not available, using simulation")
             return self._simulate_analysis()
         
+        logger.info(f"[CPPCHECK_ANALYZE] Cppcheck is available, proceeding with analysis")
         # Handle different source types
         if source_type == 'repo_url' and repo_url:
+            logger.info(f"[CPPCHECK_ANALYZE] Detected repo_url, calling _analyze_repo()")
             return self._analyze_repo(repo_url)
         else:
+            logger.info(f"[CPPCHECK_ANALYZE] Local analysis, calling _analyze_local()")
             return self._analyze_local(source_path)
     
     def _analyze_repo(self, repo_url):
         """Analyze a GitHub repository"""
+        logger.info(f"[CPPCHECK_REPO] Starting repository analysis for: {repo_url}")
         temp_dir = None
         try:
             # Clone repository
             temp_dir = tempfile.mkdtemp(prefix='cppcheck_repo_')
+            logger.info(f"[CPPCHECK_REPO] Cloning repository to: {temp_dir}")
             clone_result = subprocess.run([
                 'git', 'clone', '--depth', '1', repo_url, temp_dir
             ], capture_output=True, text=True, timeout=60)
             
             if clone_result.returncode != 0:
-                logger.error(f"Failed to clone repository: {clone_result.stderr}")
+                logger.error(f"[CPPCHECK_REPO] Failed to clone repository: {clone_result.stderr}")
                 return self._simulate_analysis()
             
+            logger.info(f"[CPPCHECK_REPO] Repository cloned successfully, starting local analysis")
             return self._analyze_local(temp_dir)
             
         except Exception as e:
@@ -73,17 +137,22 @@ class CppcheckAnalyzer:
     
     def _analyze_local(self, source_path):
         """Analyze local source code"""
+        logger.info(f"[CPPCHECK_LOCAL] Starting local analysis for path: {source_path}")
         try:
             # Check for C/C++ files
+            logger.info(f"[CPPCHECK_LOCAL] Searching for C/C++ files...")
             cpp_files = self.find_cpp_files(source_path)
             if not cpp_files:
-                logger.info("No C/C++ files found for Cppcheck analysis")
+                logger.warning(f"[CPPCHECK_LOCAL] No C/C++ files found in {source_path}")
                 return self._simulate_analysis()
             
-            logger.info(f"Found {len(cpp_files)} C/C++ files for analysis")
+            logger.info(f"[CPPCHECK_LOCAL] Found {len(cpp_files)} C/C++ files for analysis")
             
             # Run Cppcheck analysis
-            return self._run_cppcheck(source_path)
+            logger.info(f"[CPPCHECK_LOCAL] Running Cppcheck now...")
+            result = self._run_cppcheck(source_path)
+            logger.info(f"[CPPCHECK_LOCAL] Cppcheck analysis completed")
+            return result
             
         except Exception as e:
             logger.error(f"Local analysis failed: {e}")
@@ -91,11 +160,39 @@ class CppcheckAnalyzer:
     
     def _run_cppcheck(self, source_path):
         """Run Cppcheck and parse results"""
+        logger.info(f"[CPPCHECK_RUN] Starting Cppcheck execution for: {source_path}")
         xml_fd, xml_path = tempfile.mkstemp(suffix='.xml')
         os.close(xml_fd)
+        logger.info(f"[CPPCHECK_RUN] Temporary XML output file: {xml_path}")
         
         try:
-            # Run Cppcheck with comprehensive checks
+            # Try Docker first (preferred method)
+            if self.docker_runner and self.docker_runner.is_docker_available():
+                if self.docker_runner.image_exists('vuln-scanner/cppcheck:latest'):
+                    logger.info("[CPPCHECK_RUN] Running Cppcheck via Docker container")
+                    try:
+                        stdout, stderr, return_code = self.docker_runner.run_cppcheck(
+                            source_path, 
+                            output_file=xml_path,
+                            timeout=self.timeout
+                        )
+                        
+                        # Parse results if XML was generated
+                        if os.path.exists(xml_path) and os.path.getsize(xml_path) > 0:
+                            logger.info("Successfully ran Cppcheck via Docker")
+                            return self._parse_xml_results(xml_path)
+                        elif stderr:
+                            logger.warning(f"Cppcheck Docker stderr: {stderr}")
+                            return self._parse_stderr_output(stderr)
+                        else:
+                            logger.info("No Cppcheck issues found")
+                            return [], []
+                    except Exception as e:
+                        logger.warning(f"Docker execution failed, falling back to direct: {e}")
+                        # Fall through to direct execution
+            
+            # Fallback to direct execution
+            logger.info("Running Cppcheck directly (not via Docker)")
             cppcheck_result = subprocess.run([
                 self.tool_name,
                 '--enable=all',

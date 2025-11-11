@@ -16,12 +16,11 @@
             <li class="nav-item"><a class="nav-link" href="{{ url_for('no_login_scan') }}">Quick Scan</a></li>
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" href="#" id="modulesDropdown" role="button" data-bs-toggle="dropdown">
-                Demo Modules
+                Modules
               </a>
               <ul class="dropdown-menu">
                 <li><h6 class="dropdown-header">Module 1: Vulnerability Detection</h6></li>
                 <li><a class="dropdown-item" href="{{ url_for('no_login_scan') }}"><i class="fas fa-shield-alt"></i> Start Scan</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('detailed_findings', scan_id='demo') }}"><i class="fas fa-list"></i> Sample Findings</a></li>
                 
                 <li><hr class="dropdown-divider"></li>
                 <li><h6 class="dropdown-header">Module 2: Fuzzing</h6></li>
@@ -29,12 +28,10 @@
                 
                 <li><hr class="dropdown-divider"></li>
                 <li><h6 class="dropdown-header">Module 3: AI Patches</h6></li>
-                <li><a class="dropdown-item" href="{{ url_for('patch_review', scan_id='demo', patch_id='001') }}"><i class="fas fa-code-branch"></i> Patch Review</a></li>
                 
                 <li><hr class="dropdown-divider"></li>
                 <li><h6 class="dropdown-header">Modules 4-6: Infrastructure</h6></li>
                 <li><a class="dropdown-item" href="{{ url_for('monitoring_dashboard') }}"><i class="fas fa-chart-bar"></i> System Monitoring</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('scan_progress', scan_id='demo') }}"><i class="fas fa-clock"></i> Progress Tracking</a></li>
               </ul>
             </li>
           </ul>
@@ -43,7 +40,6 @@
             <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
             {% else %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('demo_dashboard') }}">Demo Dashboard</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
             {% endif %}
           </ul>
@@ -51,15 +47,6 @@
       </div>
     </nav>
 
-    <!-- Demo Mode Banner -->
-    {% if not current_user.is_authenticated %}
-    <div class="bg-primary text-white text-center py-2">
-      <small>
-        <i class="fas fa-rocket"></i>
-        <strong>DEMO MODE</strong>
-      </small>
-    </div>
-    {% endif %}
 
     <div class="container py-4">
       {% with messages = get_flashed_messages() %}

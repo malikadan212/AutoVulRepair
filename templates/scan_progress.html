@@ -118,14 +118,14 @@ Preparing workspace...</pre>
               </a>
             </div>
             <div>
-              <button class="btn btn-outline-secondary" onclick="refreshStatus()">
+              <button class="btn btn-outline-secondary" onclick="pollScanStatus()">
                 <i class="fas fa-sync-alt"></i> Refresh
               </button>
               <a href="#" class="btn btn-success d-none" id="view-results-btn">
                 <i class="fas fa-eye"></i> View Results
               </a>
-              <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-outline-primary ms-2" id="demo-findings-btn">
-                <i class="fas fa-list"></i> Demo Findings
+              <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-outline-primary ms-2 d-none" id="view-findings-btn">
+                <i class="fas fa-list"></i> View Findings
               </a>
             </div>
           </div>
@@ -239,28 +239,6 @@ function addLogEntry(message) {
   logsElement.scrollTop = logsElement.scrollHeight;
 }
 
-function simulateProgress() {
-  // Simulate realistic scan progress
-  const progressSteps = [
-    { stage: 0, delay: 1000, log: 'Environment initialized successfully' },
-    { stage: 1, delay: 2000, log: 'Source code downloaded and validated' },
-    { stage: 2, delay: 4000, log: 'Static analysis engine started' },
-    { stage: 2, delay: 6000, log: 'Scanning files for vulnerabilities...' },
-    { stage: 3, delay: 8000, log: 'Analysis complete, generating patches' },
-    { stage: 4, delay: 10000, log: 'Scan completed successfully' }
-  ];
-  
-  progressSteps.forEach((step, index) => {
-    setTimeout(() => {
-      updateStage(step.stage, index === progressSteps.length - 1 ? 'completed' : 'active');
-      addLogEntry(step.log);
-      
-      if (index === progressSteps.length - 1) {
-        completeScan();
-      }
-    }, step.delay);
-  });
-}
 
 function completeScan() {
   isCompleted = true;
@@ -325,35 +303,90 @@ function cancelScan() {
   }
 }
 
-function refreshStatus() {
-  // In real implementation, poll the API
-  // For demo, just refresh the page
-  location.reload();
+
+// Real API polling with detailed progress tracking
+function pollScanStatus() {
+  fetch(`/api/scan-status/${scanId}`)
+    .then(response => response.json())
+    .then(data => {
+      console.log('Scan status:', data);
+      
+      // Update status badge
+      const statusBadge = document.getElementById('scan-status');
+      statusBadge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+      
+      if (data.status === 'queued') {
+        statusBadge.className = 'badge bg-secondary';
+        updateProgress(5, 'Scan queued, starting analysis...');
+        updateStage(0, 'active');
+        addLogEntry('Scan submitted and queued for processing');
+        addLogEntry('Initializing analysis environment...');
+      } else if (data.status === 'running') {
+        statusBadge.className = 'badge bg-primary';
+        const elapsed = data.elapsed_time || 0;
+        const elapsedText = elapsed > 0 ? ` (${Math.floor(elapsed)}s)` : '';
+        updateProgress(40, `Analysis in progress${elapsedText}...`);
+        updateStage(1, 'completed');
+        updateStage(2, 'active');
+        
+        // Show more detailed status based on time
+        if (elapsed < 10) {
+          addLogEntry('Setting up source code...');
+        } else if (elapsed < 30) {
+          addLogEntry('Running static analysis tool...');
+        } else {
+          addLogEntry('Processing analysis results...');
+        }
+      } else if (data.status === 'completed') {
+        statusBadge.className = 'badge bg-success';
+        updateProgress(100, 'Scan completed successfully');
+        updateStage(4, 'completed');
+        
+        const vulnCount = data.vulnerabilities_count || 0;
+        const patchCount = data.patches_count || 0;
+        
+        addLogEntry(`Analysis complete: Found ${vulnCount} vulnerabilities and ${patchCount} patches`);
+        
+        // Show results button
+        const viewBtn = document.getElementById('view-results-btn');
+        if (viewBtn) {
+          viewBtn.href = `/detailed-findings/${scanId}`;
+          viewBtn.classList.remove('d-none');
+        }
+        
+        // Auto-redirect to detailed findings after 3 seconds
+        setTimeout(() => {
+          window.location.href = `/detailed-findings/${scanId}`;
+        }, 3000);
+        
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+      } else if (data.status === 'failed') {
+        statusBadge.className = 'badge bg-danger';
+        updateProgress(0, 'Scan failed');
+        const errorMsg = data.error || 'Unknown error occurred';
+        document.getElementById('progress-text').innerHTML = 
+          `<span class="text-danger">Error: ${errorMsg}</span>`;
+        addLogEntry(`Scan failed: ${errorMsg}`);
+        
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+      }
+    })
+    .catch(error => {
+      console.error('Failed to poll scan status:', error);
+      document.getElementById('progress-text').textContent = 'Error checking status';
+      addLogEntry('Error checking scan status');
+    });
 }
 
-// Start the simulation when page loads
+// Start polling when page loads
 document.addEventListener('DOMContentLoaded', function() {
-  // In real implementation, start polling API
-  // For demo, simulate progress
-  simulateProgress();
-  
-  // Real API polling would look like this:
-  /*
-  pollInterval = setInterval(async () => {
-    try {
-      const response = await fetch(`/api/scan-status/${scanId}`);
-      const data = await response.json();
-      
-      if (data.status === 'completed') {
-        completeScan();
-      } else if (data.status === 'failed') {
-        handleScanError(data.error);
-      }
-    } catch (error) {
-      console.error('Failed to poll scan status:', error);
-    }
-  }, 2000);
-  */
+  // Poll immediately, then every 2 seconds
+  pollScanStatus();
+  pollInterval = setInterval(pollScanStatus, 2000);
 });
 </script>
 {% endblock %}

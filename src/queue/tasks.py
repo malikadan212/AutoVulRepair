@@ -10,17 +10,23 @@ from src.models.scan import get_session, Scan
 from src.analysis.codeql import CodeQLAnalyzer
 from src.analysis.cppcheck import CppcheckAnalyzer
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with timestamps
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
-# Suppress Celery Redis connection errors
+# Suppress Celery Redis connection errors - we fall back to sync if Redis is unavailable
 import logging as std_logging
 celery_logger = std_logging.getLogger('celery')
-celery_logger.setLevel(std_logging.WARNING)  # Only show warnings/errors, not connection retries
-# Suppress Redis backend connection retry messages
+celery_logger.setLevel(std_logging.CRITICAL)  # Suppress all Celery messages below CRITICAL
+# Suppress Redis backend connection retry messages completely
 redis_logger = std_logging.getLogger('celery.backends.redis')
-redis_logger.setLevel(std_logging.ERROR)  # Only show actual errors
+redis_logger.setLevel(std_logging.CRITICAL)  # Suppress all Redis connection retry messages
+redis_connection_logger = std_logging.getLogger('celery.backends.redis.connection')
+redis_connection_logger.setLevel(std_logging.CRITICAL)
 
 # Initialize Celery with connection retry disabled for graceful fallback
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -33,10 +39,12 @@ celery_app = Celery(
 celery_app.conf.broker_connection_retry = False  # Disable connection retries
 celery_app.conf.broker_connection_max_retries = 0  # Don't retry at all
 celery_app.conf.task_always_eager = False  # Keep async by default
+# Suppress connection errors in Celery logs
+celery_app.conf.broker_logging_level = 'CRITICAL'  # Only log critical broker errors
+celery_app.conf.worker_logging_level = 'INFO'  # Keep worker logs at INFO
 
-@celery_app.task(bind=True)
-def analyze_with_codeql(self, scan_id):
-    """Celery task for CodeQL analysis"""
+def _analyze_with_codeql_impl(scan_id):
+    """Internal implementation of CodeQL analysis"""
     session = get_session()
     try:
         # Get scan record
@@ -57,8 +65,12 @@ def analyze_with_codeql(self, scan_id):
         source_path = os.path.join(scans_dir, scan_id, 'source')
         
         # Run analysis
-        logger.info(f"Starting CodeQL analysis for scan {scan_id}")
+        logger.info(f"[CODEQL] Starting analysis for scan {scan_id}")
+        logger.info(f"[CODEQL] Source path: {source_path}, Source type: {scan.source_type}")
+        import time
+        start_time = time.time()
         vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url)
+        elapsed = time.time() - start_time
         
         # Update scan with results
         scan.status = 'completed'
@@ -67,7 +79,8 @@ def analyze_with_codeql(self, scan_id):
         scan.artifacts_path = os.path.join(scans_dir, scan_id, 'artifacts')
         session.commit()
         
-        logger.info(f"CodeQL analysis completed for scan {scan_id}")
+        logger.info(f"[CODEQL] Analysis completed for scan {scan_id} in {elapsed:.2f} seconds")
+        logger.info(f"[CODEQL] Found {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
         return {'status': 'completed', 'vulnerabilities': len(vulnerabilities), 'patches': len(patches)}
         
     except Exception as e:
@@ -78,9 +91,8 @@ def analyze_with_codeql(self, scan_id):
     finally:
         session.close()
 
-@celery_app.task(bind=True)
-def analyze_with_cppcheck(self, scan_id):
-    """Celery task for Cppcheck analysis"""
+def _analyze_with_cppcheck_impl(scan_id):
+    """Internal implementation of Cppcheck analysis"""
     session = get_session()
     try:
         # Get scan record
@@ -101,8 +113,19 @@ def analyze_with_cppcheck(self, scan_id):
         source_path = os.path.join(scans_dir, scan_id, 'source')
         
         # Run analysis
-        logger.info(f"Starting Cppcheck analysis for scan {scan_id}")
-        vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url)
+        logger.info(f"[CPPCHECK] Starting analysis for scan {scan_id}")
+        logger.info(f"[CPPCHECK] Source path: {source_path}, Source type: {scan.source_type}, Repo URL: {scan.repo_url}")
+        logger.info(f"[CPPCHECK] Calling analyzer.analyze() now...")
+        import time
+        start_time = time.time()
+        try:
+            vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url)
+            elapsed = time.time() - start_time
+            logger.info(f"[CPPCHECK] analyzer.analyze() returned - vulnerabilities: {len(vulnerabilities)}, patches: {len(patches)}")
+        except Exception as analyze_error:
+            elapsed = time.time() - start_time
+            logger.error(f"[CPPCHECK] analyzer.analyze() failed after {elapsed:.2f} seconds: {analyze_error}", exc_info=True)
+            raise
         
         # Update scan with results
         scan.status = 'completed'
@@ -111,7 +134,8 @@ def analyze_with_cppcheck(self, scan_id):
         scan.artifacts_path = os.path.join(scans_dir, scan_id, 'artifacts')
         session.commit()
         
-        logger.info(f"Cppcheck analysis completed for scan {scan_id}")
+        logger.info(f"[CPPCHECK] Analysis completed for scan {scan_id} in {elapsed:.2f} seconds")
+        logger.info(f"[CPPCHECK] Found {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
         return {'status': 'completed', 'vulnerabilities': len(vulnerabilities), 'patches': len(patches)}
         
     except Exception as e:
@@ -122,14 +146,24 @@ def analyze_with_cppcheck(self, scan_id):
     finally:
         session.close()
 
+@celery_app.task(bind=True)
+def analyze_with_codeql(self, scan_id):
+    """Celery task wrapper for CodeQL analysis"""
+    return _analyze_with_codeql_impl(scan_id)
+
+@celery_app.task(bind=True)
+def analyze_with_cppcheck(self, scan_id):
+    """Celery task wrapper for Cppcheck analysis"""
+    return _analyze_with_cppcheck_impl(scan_id)
+
 # Task routing
 @celery_app.task(bind=True)
 def analyze_code(self, scan_id, analysis_tool):
     """Route analysis to appropriate tool (Celery async)"""
     if analysis_tool == 'codeql':
-        return analyze_with_codeql(scan_id)
+        return _analyze_with_codeql_impl(scan_id)
     elif analysis_tool == 'cppcheck':
-        return analyze_with_cppcheck(scan_id)
+        return _analyze_with_cppcheck_impl(scan_id)
     else:
         logger.error(f"Unknown analysis tool: {analysis_tool}")
         session = get_session()
@@ -145,12 +179,29 @@ def analyze_code(self, scan_id, analysis_tool):
 # Synchronous version for testing without Redis
 def analyze_code_sync(scan_id, analysis_tool):
     """Synchronous version for testing without Redis"""
-    if analysis_tool == 'codeql':
-        return analyze_with_codeql(scan_id)
-    elif analysis_tool == 'cppcheck':
-        return analyze_with_cppcheck(scan_id)
-    else:
-        logger.error(f"Unknown analysis tool: {analysis_tool}")
+    logger.info(f"[SYNC_ANALYSIS] Starting synchronous analysis for scan {scan_id}, tool: {analysis_tool}")
+    try:
+        if analysis_tool == 'codeql':
+            # Call the implementation directly (not as Celery task)
+            result = _analyze_with_codeql_impl(scan_id)
+            return result
+        elif analysis_tool == 'cppcheck':
+            # Call the implementation directly (not as Celery task)
+            result = _analyze_with_cppcheck_impl(scan_id)
+            return result
+        else:
+            logger.error(f"[SYNC_ANALYSIS] Unknown analysis tool: {analysis_tool}")
+            session = get_session()
+            try:
+                scan = session.query(Scan).filter_by(id=scan_id).first()
+                if scan:
+                    scan.status = 'failed'
+                    session.commit()
+            finally:
+                session.close()
+            return {'status': 'failed', 'error': f'Unknown analysis tool: {analysis_tool}'}
+    except Exception as e:
+        logger.error(f"[SYNC_ANALYSIS] Error in synchronous analysis: {e}", exc_info=True)
         session = get_session()
         try:
             scan = session.query(Scan).filter_by(id=scan_id).first()
@@ -159,4 +210,4 @@ def analyze_code_sync(scan_id, analysis_tool):
                 session.commit()
         finally:
             session.close()
-        return {'status': 'failed', 'error': f'Unknown analysis tool: {analysis_tool}'}
+        raise

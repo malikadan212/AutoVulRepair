@@ -6,6 +6,13 @@ import tempfile
 import logging
 from pathlib import Path
 
+# Try to import Docker helper, fall back to direct execution if unavailable
+try:
+    from src.utils.docker_helper import DockerToolRunner
+    DOCKER_AVAILABLE = True
+except ImportError:
+    DOCKER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class CodeQLAnalyzer:
@@ -13,22 +20,79 @@ class CodeQLAnalyzer:
     
     def __init__(self):
         self.tool_name = 'codeql'
-        self.timeout = 300  # 5 minutes
+        self.timeout = 1100  # 15 minutes - CodeQL analysis can take a while
+        self.docker_runner = None
+        
+        # Try to initialize Docker runner
+        if DOCKER_AVAILABLE:
+            try:
+                self.docker_runner = DockerToolRunner()
+                if self.docker_runner.is_docker_available():
+                    logger.info("[CODEQL_INIT] Docker-based CodeQL available")
+                logger.debug(f"[CODEQL_INIT] Docker runner initialized: {self.docker_runner is not None}")
+            except Exception as e:
+                logger.warning(f"[CODEQL_INIT] Failed to initialize Docker runner: {e}")
+                self.docker_runner = None
+        else:
+            logger.debug("[CODEQL_INIT] Docker helper not available")
     
     def is_available(self):
-        """Check if CodeQL is available"""
+        """Check if CodeQL is available (via Docker or direct)"""
+        logger.debug(f"[CODEQL_AVAIL] Starting availability check, docker_runner: {self.docker_runner is not None}")
+        
+        # Try Docker first (preferred) - just check if image exists, don't test every time
+        if self.docker_runner:
+            try:
+                logger.debug("[CODEQL_AVAIL] Checking Docker availability...")
+                docker_avail = self.docker_runner.is_docker_available()
+                logger.debug(f"[CODEQL_AVAIL] Docker available: {docker_avail}")
+                
+                if docker_avail:
+                    logger.debug("[CODEQL_AVAIL] Checking if Docker image exists...")
+                    # Check for our tagged image first
+                    image_exists = self.docker_runner.image_exists('vuln-scanner/codeql:latest')
+                    if not image_exists:
+                        # Also check for Microsoft container
+                        image_exists = self.docker_runner.image_exists('mcr.microsoft.com/cstsectools/codeql-container:latest')
+                    
+                    logger.debug(f"[CODEQL_AVAIL] Image exists: {image_exists}")
+                    
+                    if image_exists:
+                        logger.info("[CODEQL_AVAIL] Docker image found - CodeQL available via Docker")
+                        return True
+                    else:
+                        logger.warning("[CODEQL_AVAIL] Docker image 'vuln-scanner/codeql:latest' or 'mcr.microsoft.com/cstsectools/codeql-container:latest' not found")
+                else:
+                    logger.warning("[CODEQL_AVAIL] Docker is not available")
+            except Exception as e:
+                logger.error(f"[CODEQL_AVAIL] Docker check error: {e}", exc_info=True)
+        else:
+            logger.warning("[CODEQL_AVAIL] docker_runner is None - Docker not initialized")
+        
+        # Fallback to direct execution
+        logger.debug("[CODEQL_AVAIL] Checking direct installation...")
         try:
             result = subprocess.run([self.tool_name, '--version'], 
                                   capture_output=True, text=True, timeout=10)
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
+            if result.returncode == 0:
+                logger.info("[CODEQL_AVAIL] Direct installation found")
+                return True
+            else:
+                logger.debug(f"[CODEQL_AVAIL] Direct check failed with returncode: {result.returncode}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"[CODEQL_AVAIL] Direct installation not found: {type(e).__name__}")
+        
+        logger.warning("[CODEQL_AVAIL] CodeQL not available (neither Docker nor direct)")
+        return False
     
     def detect_languages(self, source_path):
         """Detect programming languages in the source directory"""
         languages = set()
         
         for root, dirs, files in os.walk(source_path):
+            # Skip common dependency/build directories
+            dirs[:] = [d for d in dirs if d not in ['node_modules', '.git', 'vendor', 'venv', 'dist', 'build']]
+            
             for file in files:
                 ext = Path(file).suffix.lower()
                 if ext in ['.py']:
@@ -44,7 +108,10 @@ class CodeQLAnalyzer:
                 elif ext in ['.go']:
                     languages.add('go')
         
-        return list(languages)
+        detected = list(languages)
+        if detected:
+            logger.info(f"[LANGUAGE_DETECT] Detected languages: {', '.join(detected)}")
+        return detected
     
     def analyze(self, source_path, source_type, repo_url=None):
         """Run CodeQL analysis on the source code"""
@@ -60,22 +127,25 @@ class CodeQLAnalyzer:
     
     def _analyze_repo(self, repo_url):
         """Analyze a GitHub repository"""
+        logger.info(f"[CODEQL_REPO] Starting repository analysis for: {repo_url}")
         temp_dir = None
         try:
             # Clone repository
             temp_dir = tempfile.mkdtemp(prefix='codeql_repo_')
+            logger.info(f"[CODEQL_REPO] Cloning repository to: {temp_dir}")
             clone_result = subprocess.run([
                 'git', 'clone', '--depth', '1', repo_url, temp_dir
             ], capture_output=True, text=True, timeout=60)
             
             if clone_result.returncode != 0:
-                logger.error(f"Failed to clone repository: {clone_result.stderr}")
+                logger.error(f"[CODEQL_REPO] Failed to clone repository: {clone_result.stderr}")
                 return self._simulate_analysis()
             
+            logger.info(f"[CODEQL_REPO] Repository cloned successfully, starting local analysis")
             return self._analyze_local(temp_dir)
             
         except Exception as e:
-            logger.error(f"Repository analysis failed: {e}")
+            logger.error(f"[CODEQL_REPO] Repository analysis failed: {e}")
             return self._simulate_analysis()
         finally:
             if temp_dir and os.path.exists(temp_dir):
@@ -83,31 +153,75 @@ class CodeQLAnalyzer:
     
     def _analyze_local(self, source_path):
         """Analyze local source code"""
+        logger.info(f"[CODEQL_LOCAL] Starting local analysis for path: {source_path}")
         db_path = None
         try:
             # Detect languages
+            logger.info(f"[CODEQL_LOCAL] Detecting languages in source code...")
             languages = self.detect_languages(source_path)
             if not languages:
-                logger.info("No supported languages detected")
+                logger.warning(f"[CODEQL_LOCAL] No supported languages detected in {source_path}")
                 return self._simulate_analysis()
+            
+            language_str = ','.join(languages)
+            logger.info(f"[CODEQL_LOCAL] Detected languages: {language_str}")
             
             # Create CodeQL database
             db_path = tempfile.mkdtemp(prefix='codeql_db_')
-            language_str = ','.join(languages)
+            logger.info(f"[CODEQL_LOCAL] Creating CodeQL database at: {db_path}")
+            logger.info(f"[CODEQL_LOCAL] This step may take 2-5 minutes for large repositories...")
             
-            logger.info(f"Creating CodeQL database for languages: {language_str}")
-            create_result = subprocess.run([
-                self.tool_name, 'database', 'create', db_path,
-                f'--language={language_str}',
-                '--source-root', source_path
-            ], capture_output=True, text=True, timeout=self.timeout)
+            # Try Docker first (preferred method)
+            db_created = False
+            if self.docker_runner and self.docker_runner.is_docker_available():
+                # Check for our tagged image or Microsoft container
+                image_exists = self.docker_runner.image_exists('vuln-scanner/codeql:latest')
+                if not image_exists:
+                    image_exists = self.docker_runner.image_exists('mcr.microsoft.com/cstsectools/codeql-container:latest')
+                
+                if image_exists:
+                    logger.info("[CODEQL_LOCAL] Creating CodeQL database via Docker container (this may take several minutes)...")
+                    try:
+                        stdout, stderr, return_code = self.docker_runner.run_codeql_database_create(
+                            source_path,
+                            db_path,
+                            languages,
+                            timeout=self.timeout
+                        )
+                        if return_code == 0:
+                            db_created = True
+                            logger.info("Successfully created CodeQL database via Docker")
+                        else:
+                            logger.warning(f"CodeQL database creation via Docker failed: {stderr}")
+                    except Exception as e:
+                        logger.warning(f"Docker database creation failed, falling back to direct: {e}")
             
-            if create_result.returncode != 0:
-                logger.error(f"Database creation failed: {create_result.stderr}")
-                return self._simulate_analysis()
+            # Fallback to direct execution
+            if not db_created:
+                logger.info("Creating CodeQL database directly (not via Docker)")
+                
+                # Build command arguments - let autobuild detect build system
+                cmd_args = [
+                    self.tool_name, 'database', 'create', db_path,
+                    f'--language={language_str}',
+                    '--source-root', source_path
+                ]
+                
+                logger.info(f"[CODEQL_DIRECT] Letting autobuild detect build system for {language_str}")
+                
+                create_result = subprocess.run(
+                    cmd_args,
+                    capture_output=True, 
+                    text=True, 
+                    timeout=self.timeout
+                )
+                
+                if create_result.returncode != 0:
+                    logger.error(f"Database creation failed: {create_result.stderr}")
+                    return self._simulate_analysis()
             
             # Run analysis
-            return self._run_queries(db_path)
+            return self._run_queries(db_path, languages)
             
         except Exception as e:
             logger.error(f"Local analysis failed: {e}")
@@ -116,7 +230,7 @@ class CodeQLAnalyzer:
             if db_path and os.path.exists(db_path):
                 shutil.rmtree(db_path, ignore_errors=True)
     
-    def _run_queries(self, db_path):
+    def _run_queries(self, db_path, languages):
         """Run CodeQL queries and parse results"""
         sarif_path = None
         try:
@@ -124,18 +238,49 @@ class CodeQLAnalyzer:
             sarif_fd, sarif_path = tempfile.mkstemp(suffix='.sarif')
             os.close(sarif_fd)
             
-            # Run CodeQL analysis with security queries
-            query_result = subprocess.run([
-                self.tool_name, 'database', 'analyze', db_path,
-                '--format=sarif-latest',
-                f'--output={sarif_path}',
-                '--download'  # Download standard query packs
-            ], capture_output=True, text=True, timeout=self.timeout)
+            # Try Docker first (preferred method)
+            analysis_success = False
+            if self.docker_runner and self.docker_runner.is_docker_available():
+                # Check for either our tagged image or Microsoft container
+                has_image = (self.docker_runner.image_exists('vuln-scanner/codeql:latest') or 
+                           self.docker_runner.image_exists('mcr.microsoft.com/cstsectools/codeql-container:latest'))
+                if has_image:
+                    logger.info("Running CodeQL analysis via Docker container")
+                    try:
+                        # Get primary language from detected languages
+                        primary_language = languages[0] if languages else 'javascript'
+                        stdout, stderr, return_code = self.docker_runner.run_codeql_analyze(
+                            db_path,
+                            sarif_path,
+                            language=primary_language,
+                            timeout=self.timeout
+                        )
+                        if return_code == 0 and os.path.exists(sarif_path):
+                            analysis_success = True
+                            logger.info("Successfully ran CodeQL analysis via Docker")
+                        else:
+                            logger.warning(f"CodeQL analysis via Docker failed: {stderr}")
+                    except Exception as e:
+                        logger.warning(f"Docker analysis failed, falling back to direct: {e}")
             
-            if query_result.returncode == 0 and os.path.exists(sarif_path):
+            # Fallback to direct execution
+            if not analysis_success:
+                logger.info("Running CodeQL analysis directly (not via Docker)")
+                query_result = subprocess.run([
+                    self.tool_name, 'database', 'analyze', db_path,
+                    '--format=sarif-latest',
+                    f'--output={sarif_path}',
+                    '--download'  # Download standard query packs
+                ], capture_output=True, text=True, timeout=self.timeout)
+                
+                if query_result.returncode == 0 and os.path.exists(sarif_path):
+                    analysis_success = True
+                else:
+                    logger.error(f"Query execution failed: {query_result.stderr}")
+            
+            if analysis_success and os.path.exists(sarif_path):
                 return self._parse_sarif_results(sarif_path)
             else:
-                logger.error(f"Query execution failed: {query_result.stderr}")
                 return self._simulate_analysis()
                 
         except Exception as e:
