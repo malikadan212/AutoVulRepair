@@ -12,5 +12,5 @@ load_dotenv()
 from src.queue.tasks import celery_app
 
 if __name__ == '__main__':
-    # Start Celery worker
-    celery_app.start()
+    # Start Celery worker with proper arguments for Windows
+    celery_app.worker_main(['worker', '--loglevel=info', '--pool=solo'])

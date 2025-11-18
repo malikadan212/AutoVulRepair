@@ -87,6 +87,9 @@
         {% endif %}
       </div>
       <div class="btn-group">
+        <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
+          <i class="fas fa-sitemap"></i> Generate Fuzz Plan
+        </a>
         <a href="{{ url_for('fuzzing_dashboard', scan_id=scan_id) }}" class="btn btn-warning">
           <i class="fas fa-play"></i> Proceed to Dynamic Analysis
         </a>

@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuzz Plan - Vulnerability Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .scan-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .scan-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .scan-info-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .scan-info-value {
+            font-size: 16px;
+            color: #333;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .action-bar {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .targets-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .targets-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .targets-header h2 {
+            color: #333;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #e9ecef;
+            background: white;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .target-card {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .target-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .target-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .target-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .target-function {
+            font-family: 'Courier New', monospace;
+            color: #667eea;
+            font-size: 14px;
+        }
+
+        .priority-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .priority-high {
+            background: #dc3545;
+            color: white;
+        }
+
+        .priority-medium {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .priority-low {
+            background: #28a745;
+            color: white;
+        }
+
+        .target-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+
+        .badge-bug {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-sanitizer {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .badge-cwe {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .target-message {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #495057;
+            margin-top: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .no-plan {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .no-plan h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .no-plan p {
+            color: #666;
+            margin-bottom: 25px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .bug-class-legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .legend-label {
+            font-size: 13px;
+            color: #495057;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Fuzz Plan Generator</h1>
+            <p>Module 2: Component 1 - Automated Fuzz Target Planning</p>
+
+            <div class="scan-info">
+                <div class="scan-info-item">
+                    <span class="scan-info-label">Scan ID</span>
+                    <span class="scan-info-value">{{ scan_id[:8] }}...</span>
+                </div>
+                {% if scan %}
+                <div class="scan-info-item">
+                    <span class="scan-info-label">Analysis Tool</span>
+                    <span class="scan-info-value">{{ scan.analysis_tool or 'cppcheck' }}</span>
+                </div>
+                <div class="scan-info-item">
+                    <span class="scan-info-label">Source</span>
+                    <span class="scan-info-value">{{ scan.source_type or 'Unknown' }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-secondary">
+                ← Back to Findings
+            </a>
+
+            {% if fuzz_plan %}
+            <a href="#" class="btn btn-success" onclick="generateHarnesses(); return false;">
+                Generate Harnesses →
+            </a>
+            {% else %}
+            <button class="btn btn-primary" onclick="generateFuzzPlan()">
+                Generate Fuzz Plan
+            </button>
+            {% endif %}
+        </div>
+
+        {% if fuzz_plan %}
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{{ fuzz_plan.metadata.deduplicated_targets }}</div>
+                <div class="stat-label">Fuzz Targets</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ fuzz_plan.metadata.total_findings }}</div>
+                <div class="stat-label">Total Findings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ fuzz_plan.metadata.bug_class_breakdown|length }}</div>
+                <div class="stat-label">Bug Classes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ fuzz_plan.metadata.sanitizers_used|length }}</div>
+                <div class="stat-label">Sanitizers</div>
+            </div>
+        </div>
+
+        <div class="targets-container">
+            <div class="targets-header">
+                <h2>Fuzz Targets ({{ fuzz_plan.targets|length }})</h2>
+                <div class="filter-buttons">
+                    <button class="filter-btn active" onclick="filterTargets('all')">All</button>
+                    <button class="filter-btn" onclick="filterTargets('OOB')">OOB</button>
+                    <button class="filter-btn" onclick="filterTargets('UAF')">UAF</button>
+                    <button class="filter-btn" onclick="filterTargets('Integer-UB')">Integer-UB</button>
+                    <button class="filter-btn" onclick="filterTargets('Null-Deref')">Null-Deref</button>
+                </div>
+            </div>
+
+            {% for target in fuzz_plan.targets %}
+            <div class="target-card" data-bug-class="{{ target.bug_class }}">
+                <div class="target-header">
+                    <div>
+                        <div class="target-title">Target #{{ loop.index }}</div>
+                        <div class="target-function">{{ target.function_name }}()</div>
+                    </div>
+                    <div
+                        class="priority-badge {% if target.priority >= 15 %}priority-high{% elif target.priority >= 10 %}priority-medium{% else %}priority-low{% endif %}">
+                        Priority: {{ target.priority }}
+                    </div>
+                </div>
+
+                <div class="target-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Bug Class</span>
+                        <span class="detail-value">
+                            <span class="badge badge-bug">{{ target.bug_class }}</span>
+                        </span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Severity</span>
+                        <span class="detail-value">{{ target.severity }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Confidence</span>
+                        <span class="detail-value">{{ target.confidence }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">CWE</span>
+                        <span class="detail-value">
+                            {% if target.cwe %}
+                            <span class="badge badge-cwe">CWE-{{ target.cwe }}</span>
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Location</span>
+                        <span class="detail-value">Line {{ target.line_number }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Harness Type</span>
+                        <span class="detail-value">{{ target.harness_type }}</span>
+                    </div>
+                </div>
+
+                <div class="detail-item">
+                    <span class="detail-label">Sanitizers</span>
+                    <span class="detail-value">
+                        {% for sanitizer in target.sanitizers %}
+                        <span class="badge badge-sanitizer">{{ sanitizer }}</span>
+                        {% endfor %}
+                    </span>
+                </div>
+
+                <div class="target-message">
+                    <strong>Finding:</strong> {{ target.message }}
+                </div>
+            </div>
+            {% endfor %}
+
+            <div class="bug-class-legend">
+                <strong style="margin-right: 10px;">Bug Classes:</strong>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e3f2fd;"></div>
+                    <span class="legend-label">OOB - Out of Bounds</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f3e5f5;"></div>
+                    <span class="legend-label">UAF - Use After Free</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fff3e0;"></div>
+                    <span class="legend-label">Integer-UB - Integer Undefined Behavior</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e8f5e9;"></div>
+                    <span class="legend-label">Null-Deref - Null Pointer Dereference</span>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="targets-container">
+            <div class="no-plan" id="noPlanMessage">
+                <h2>No Fuzz Plan Generated Yet</h2>
+                <p>Click the button above to generate a fuzz plan from static analysis findings.</p>
+                <p style="font-size: 13px; color: #999;">This will analyze vulnerabilities and create optimized fuzz
+                    targets.</p>
+            </div>
+            <div class="loading" id="loadingMessage" style="display: none;">
+                <div class="spinner"></div>
+                <p>Generating fuzz plan...</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Configuration data -->
+    <div id="config-data" data-scan-id="{{ scan_id }}"
+        data-target-count="{% if fuzz_plan %}{{ fuzz_plan.targets|length }}{% else %}0{% endif %}"
+        style="display: none;">
+    </div>
+
+    <script>
+        // Configuration from server
+        const configData = document.getElementById('config-data');
+        const SCAN_ID = configData.dataset.scanId;
+        const TARGET_COUNT = parseInt(configData.dataset.targetCount);
+
+        function generateFuzzPlan() {
+            document.getElementById('noPlanMessage').style.display = 'none';
+            document.getElementById('loadingMessage').style.display = 'block';
+
+            fetch('/api/fuzz-plan/generate/' + SCAN_ID, {
+                method: 'POST'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                        document.getElementById('noPlanMessage').style.display = 'block';
+                        document.getElementById('loadingMessage').style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    alert('Error generating fuzz plan: ' + error);
+                    document.getElementById('noPlanMessage').style.display = 'block';
+                    document.getElementById('loadingMessage').style.display = 'none';
+                });
+        }
+
+        function filterTargets(bugClass) {
+            const cards = document.querySelectorAll('.target-card');
+            const buttons = document.querySelectorAll('.filter-btn');
+
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            cards.forEach(card => {
+                if (bugClass === 'all' || card.dataset.bugClass === bugClass) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        function generateHarnesses() {
+            if (TARGET_COUNT > 0) {
+                alert('Harness generation will be implemented in Component 2!\n\nThis will create fuzzing harnesses for all ' + TARGET_COUNT + ' targets.');
+            } else {
+                alert('Please generate a fuzz plan first.');
+            }
+        }
+    </script>
+</body>
+
+</html>

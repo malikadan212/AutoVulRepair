@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import zipfile
 import logging
+import json
 from functools import wraps
 from pathlib import Path
 from datetime import datetime
@@ -24,6 +25,9 @@ from src.utils.validation import (
     safe_extract_zip, sanitize_filename
 )
 # validate_zip_file and safe_extract_zip are used for secure ZIP processing
+
+# Import Module 2 components
+from src.fuzz_plan.generator import FuzzPlanGenerator
 
 load_dotenv()
 
@@ -387,6 +391,132 @@ def scan_status(scan_id):
         logger.warning(f"[API] Scan not found in session: {scan_id}")
         return jsonify({'error': 'not found'}), 404
     return jsonify({'status': scan['status']})
+
+
+# ============================================================================
+# Module 2: Fuzz Plan Routes
+# ============================================================================
+
+@app.route('/fuzz-plan/<scan_id>')
+def fuzz_plan_view(scan_id):
+    """Display fuzz plan for a scan - accessible without login"""
+    logger.info(f"[FUZZ_PLAN] View requested for scan: {scan_id}")
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
+        
+        # Check if fuzz plan exists
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        fuzz_plan_path = os.path.join(scans_dir, scan_id, 'fuzz', 'fuzzplan.json')
+        
+        if not os.path.exists(fuzz_plan_path):
+            # Fuzz plan not generated yet
+            return render_template('fuzz_plan.html',
+                                 scan_id=scan_id,
+                                 fuzz_plan=None,
+                                 scan=scan)
+        
+        # Load fuzz plan
+        with open(fuzz_plan_path, 'r', encoding='utf-8') as f:
+            fuzz_plan = json.load(f)
+        
+        return render_template('fuzz_plan.html',
+                             scan_id=scan_id,
+                             fuzz_plan=fuzz_plan,
+                             scan=scan)
+    finally:
+        session_db.close()
+
+
+@app.route('/api/fuzz-plan/generate/<scan_id>', methods=['POST'])
+def generate_fuzz_plan(scan_id):
+    """Generate fuzz plan from static findings - accessible without login"""
+    logger.info(f"[FUZZ_PLAN] Generation requested for scan: {scan_id}")
+    
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        
+        # Check if scan exists
+        if not os.path.exists(scan_dir):
+            logger.warning(f"[FUZZ_PLAN] Scan directory not found: {scan_dir}")
+            return jsonify({'error': 'Scan not found'}), 404
+        
+        # Check if static findings exist
+        static_findings_path = os.path.join(scan_dir, 'static_findings.json')
+        if not os.path.exists(static_findings_path):
+            logger.warning(f"[FUZZ_PLAN] Static findings not found: {static_findings_path}")
+            return jsonify({'error': 'Static findings not found. Run static analysis first.'}), 400
+        
+        # Validate static findings file is readable and valid JSON
+        try:
+            with open(static_findings_path, 'r', encoding='utf-8') as f:
+                test_data = json.load(f)
+            if not isinstance(test_data, dict) or 'findings' not in test_data:
+                logger.error(f"[FUZZ_PLAN] Invalid static findings format")
+                return jsonify({'error': 'Invalid static findings format'}), 400
+        except json.JSONDecodeError as e:
+            logger.error(f"[FUZZ_PLAN] Invalid JSON in static findings: {e}")
+            return jsonify({'error': f'Invalid JSON in static findings: {str(e)}'}), 400
+        
+        # Create fuzz directory
+        fuzz_dir = os.path.join(scan_dir, 'fuzz')
+        os.makedirs(fuzz_dir, exist_ok=True)
+        
+        # Generate fuzz plan
+        fuzz_plan_path = os.path.join(fuzz_dir, 'fuzzplan.json')
+        generator = FuzzPlanGenerator(static_findings_path)
+        
+        try:
+            generator.save_fuzz_plan(fuzz_plan_path)
+        except ValueError as e:
+            logger.error(f"[FUZZ_PLAN] Validation error: {e}")
+            return jsonify({'error': f'Validation error: {str(e)}'}), 400
+        except Exception as e:
+            logger.error(f"[FUZZ_PLAN] Generation error: {e}", exc_info=True)
+            return jsonify({'error': f'Generation failed: {str(e)}'}), 500
+        
+        # Load generated plan
+        with open(fuzz_plan_path, 'r', encoding='utf-8') as f:
+            fuzz_plan = json.load(f)
+        
+        targets_count = len(fuzz_plan.get('targets', []))
+        logger.info(f"[FUZZ_PLAN] Generated {targets_count} targets for scan {scan_id}")
+        
+        return jsonify({
+            'success': True,
+            'targets_count': targets_count,
+            'fuzz_plan': fuzz_plan
+        })
+        
+    except Exception as e:
+        logger.error(f"[FUZZ_PLAN] Unexpected error: {e}", exc_info=True)
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
+@app.route('/api/fuzz-plan/<scan_id>')
+def get_fuzz_plan(scan_id):
+    """Get fuzz plan for a scan - accessible without login"""
+    logger.debug(f"[FUZZ_PLAN] API request for scan: {scan_id}")
+    
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        fuzz_plan_path = os.path.join(scans_dir, scan_id, 'fuzz', 'fuzzplan.json')
+        
+        if not os.path.exists(fuzz_plan_path):
+            return jsonify({'error': 'Fuzz plan not found'}), 404
+        
+        with open(fuzz_plan_path, 'r', encoding='utf-8') as f:
+            fuzz_plan = json.load(f)
+        
+        return jsonify(fuzz_plan)
+        
+    except Exception as e:
+        logger.error(f"[FUZZ_PLAN] Error loading fuzz plan: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/scan-public', methods=['POST'])
