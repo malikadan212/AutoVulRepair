@@ -71,6 +71,91 @@
             margin-top: 5px;
         }
 
+        .progress-bar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .progress-steps {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .progress-step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e9ecef;
+            color: #6c757d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-weight: bold;
+            position: relative;
+            z-index: 2;
+        }
+
+        .step-circle.completed {
+            background: #28a745;
+            color: white;
+        }
+
+        .step-circle.active {
+            background: #667eea;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+            }
+        }
+
+        .step-label {
+            font-size: 12px;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .step-label.completed {
+            color: #28a745;
+        }
+
+        .step-label.active {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .progress-line {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #e9ecef;
+            z-index: 1;
+        }
+
+        .progress-line-fill {
+            height: 100%;
+            background: #28a745;
+            transition: width 0.5s ease;
+        }
+
         .action-bar {
             background: white;
             padding: 20px 30px;
@@ -120,6 +205,26 @@
 
         .btn-success:hover {
             background: #218838;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 5px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 2px;
+            background: #f8f9fa;
+        }
+
+        .btn-group .btn {
+            padding: 10px 16px;
+            font-size: 13px;
+            border-radius: 4px;
+        }
+
+        .btn-group .btn:hover {
+            background: #e9ecef;
+            color: #333;
         }
 
         .stats-grid {
@@ -399,6 +504,46 @@
                 </div>
                 {% endif %}
             </div>
+
+            <div class="progress-bar">
+                <div class="progress-steps">
+                    <div class="progress-line">
+                        <div class="progress-line-fill" style="width: 14%;"></div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">1</div>
+                        <div class="step-label completed">Static Analysis</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle active">2</div>
+                        <div class="step-label active">Fuzz Plan</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">3</div>
+                        <div class="step-label">Harness Gen</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">4</div>
+                        <div class="step-label">Build</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">5</div>
+                        <div class="step-label">Fuzz Exec</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">6</div>
+                        <div class="step-label">Triage</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">7</div>
+                        <div class="step-label">Repro Kit</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">8</div>
+                        <div class="step-label">Repair</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="action-bar">
@@ -406,15 +551,28 @@
                 ← Back to Findings
             </a>
 
-            {% if fuzz_plan %}
-            <a href="#" class="btn btn-success" onclick="generateHarnesses(); return false;">
-                Generate Harnesses →
-            </a>
-            {% else %}
-            <button class="btn btn-primary" onclick="generateFuzzPlan()">
-                Generate Fuzz Plan
-            </button>
-            {% endif %}
+            <div style="display: flex; gap: 10px;">
+                {% if fuzz_plan %}
+                <div class="btn-group" style="display: flex; gap: 5px;">
+                    <button class="btn btn-secondary" onclick="exportFuzzPlan('json')" title="Export as JSON">
+                        📄 JSON
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportFuzzPlan('csv')" title="Export as CSV">
+                        📊 CSV
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportFuzzPlan('markdown')" title="Export as Markdown">
+                        📝 MD
+                    </button>
+                </div>
+                <a href="#" class="btn btn-success" onclick="generateHarnesses(); return false;">
+                    Generate Harnesses →
+                </a>
+                {% else %}
+                <button class="btn btn-primary" onclick="generateFuzzPlan()">
+                    Generate Fuzz Plan
+                </button>
+                {% endif %}
+            </div>
         </div>
 
         {% if fuzz_plan %}
@@ -505,6 +663,39 @@
                         {% endfor %}
                     </span>
                 </div>
+
+                {% if target.function_signature %}
+                <div class="detail-item" style="grid-column: 1 / -1;">
+                    <span class="detail-label">Function Signature</span>
+                    <div class="detail-value" style="background: #f8f9fa; padding: 12px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 13px; color: #495057; margin-top: 5px;">
+                        <span style="color: #d73a49;">{{ target.function_signature.return_type }}</span>
+                        <span style="color: #6f42c1;">{{ target.function_signature.function_name }}</span>(<span style="color: #005cc5;">{% if target.function_signature.parameters %}{% for param in target.function_signature.parameters %}{{ param.type }} {{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>)
+                    </div>
+                    {% if target.function_signature.parameters %}
+                    <div style="margin-top: 10px;">
+                        <span class="detail-label">Parameters ({{ target.function_signature.param_count }})</span>
+                        <div style="margin-top: 8px;">
+                            {% for param in target.function_signature.parameters %}
+                            <div style="background: #fff; border: 1px solid #e9ecef; padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 12px;">
+                                <span style="font-family: 'Courier New', monospace; color: #d73a49;">{{ param.type }}</span>
+                                <span style="font-family: 'Courier New', monospace; color: #6f42c1; font-weight: 600;">{{ param.name }}</span>
+                                {% if param.is_const %}<span class="badge" style="background: #e3f2fd; color: #1976d2; font-size: 10px;">const</span>{% endif %}
+                                {% if param.is_pointer %}<span class="badge" style="background: #f3e5f5; color: #7b1fa2; font-size: 10px;">pointer</span>{% endif %}
+                                {% if param.is_reference %}<span class="badge" style="background: #fff3e0; color: #e65100; font-size: 10px;">reference</span>{% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="detail-item" style="grid-column: 1 / -1;">
+                    <span class="detail-label">Function Signature</span>
+                    <div class="detail-value" style="background: #fff3cd; padding: 10px; border-radius: 6px; font-size: 12px; color: #856404; margin-top: 5px; border-left: 4px solid #ffc107;">
+                        ⚠️ Signature not extracted - using fallback harness generation
+                    </div>
+                </div>
+                {% endif %}
 
                 <div class="target-message">
                     <strong>Finding:</strong> {{ target.message }}
@@ -602,10 +793,33 @@
 
         function generateHarnesses() {
             if (TARGET_COUNT > 0) {
-                alert('Harness generation will be implemented in Component 2!\n\nThis will create fuzzing harnesses for all ' + TARGET_COUNT + ' targets.');
+                window.location.href = '/harness-generation/' + SCAN_ID;
             } else {
                 alert('Please generate a fuzz plan first.');
             }
+        }
+
+        function exportFuzzPlan(format) {
+            const url = '/api/fuzz-plan/' + SCAN_ID + '/export/' + format;
+            
+            // Create a temporary link and trigger download
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'fuzzplan_' + SCAN_ID.substring(0, 8) + '.' + format;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Show feedback
+            const formatNames = {
+                'json': 'JSON',
+                'csv': 'CSV',
+                'markdown': 'Markdown'
+            };
+            
+            setTimeout(() => {
+                alert('Downloading fuzz plan as ' + formatNames[format] + '...');
+            }, 100);
         }
     </script>
 </body>

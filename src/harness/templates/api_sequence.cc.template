@@ -1,0 +1,71 @@
+// Auto-generated fuzzing harness
+// Generated: {{generated_at}}
+// Type: api_sequence
+// Target: {{function_name}}
+// Bug Class: {{bug_class}}
+// Priority: {{priority}}
+// Sanitizers: {{sanitizers}}
+{% if signature_comment %}
+{{signature_comment}}
+{% endif %}
+
+#include <stdint.h>
+#include <stddef.h>
+#include <fuzzer/FuzzedDataProvider.h>
+#include <string>
+#include <vector>
+{% if additional_includes %}
+{{additional_includes}}
+{% endif %}
+
+// Fuzzing harness for: {{function_name}}
+// Location: {{source_file}}:{{line_number}}
+// Message: {{message}}
+
+{% if include_line %}
+{{include_line}}
+{% endif %}
+
+{% if has_signature %}
+// Function signature detected - using signature-aware parameter generation
+{% else %}
+// No signature information available - using fallback declarations
+// Declare target function with common signatures
+extern "C" {
+    void {{function_name}}(int param);
+    void {{function_name}}(const char* param);
+    void {{function_name}}(int, int);
+    void {{function_name}}();
+}
+{% endif %}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    FuzzedDataProvider fdp(data, size);
+    
+    // Generate API call sequence with fuzzer-driven parameters
+    int num_calls = fdp.ConsumeIntegralInRange<int>(1, 10);
+    
+    for (int i = 0; i < num_calls; i++) {
+{% if has_signature %}
+{{param_preparation}}
+        
+        // Call target function with prepared parameters
+        {{function_call}};
+{% else %}
+        // Generate parameter for each call
+        int param = fdp.ConsumeIntegral<int>();
+        
+        // Call target function with fuzzer-generated parameter
+        {{function_name}}(param);
+{% endif %}
+        
+        // Check for early termination
+        if (fdp.remaining_bytes() < 4) break;
+    }
+    
+    return 0;
+}
+
+// Compilation command:
+// clang++ -fsanitize=fuzzer,{{sanitizers}} -g -O1 -std=c++17 \
+//   -o {{target_id}} {{harness_file}} {{source_file}}

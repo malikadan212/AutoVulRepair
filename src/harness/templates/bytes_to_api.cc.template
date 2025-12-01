@@ -1,0 +1,67 @@
+// Auto-generated fuzzing harness
+// Generated: {{generated_at}}
+// Type: bytes_to_api
+// Target: {{function_name}}
+// Bug Class: {{bug_class}}
+// Priority: {{priority}}
+// Sanitizers: {{sanitizers}}
+// CWE: {{cwe}}
+{% if signature_comment %}
+{{signature_comment}}
+{% endif %}
+
+#include <stdint.h>
+#include <stddef.h>
+#include <cstring>
+#include <cstdlib>
+{% if additional_includes %}
+{{additional_includes}}
+{% endif %}
+
+// Fuzzing harness for: {{function_name}}
+// Location: {{source_file}}:{{line_number}}
+// Message: {{message}}
+
+{% if include_line %}
+{{include_line}}
+{% endif %}
+
+{% if has_signature %}
+// Function signature detected - using signature-aware parameter passing
+{% else %}
+// No signature information available - using fallback declarations
+// Declare target function with common signatures
+extern "C" {
+    void {{function_name}}(const uint8_t* data, size_t size);
+    void {{function_name}}(const char* data, size_t size);
+    void {{function_name}}(void* data, size_t size);
+    void {{function_name}}(const void* data, size_t size);
+    void {{function_name}}();
+}
+{% endif %}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    // Input validation
+    if (size < 1) return 0;
+    if (size > 1024 * 1024) return 0;  // 1MB limit
+    
+{% if has_signature %}
+{{param_preparation}}
+    
+    // Call target function with prepared parameters
+    {{function_call}};
+{% else %}
+    // Call target function with fuzzer data
+    // Try the most common signature: (const uint8_t* data, size_t size)
+    {{function_name}}(data, size);
+{% endif %}
+    
+    return 0;
+}
+
+// Compilation command:
+// clang++ -fsanitize=fuzzer,{{sanitizers}} -g -O1 -std=c++17 \
+//   -o {{target_id}} {{harness_file}} {{source_file}}
+//
+// Run command:
+// ./{{target_id}} -max_total_time=3600 -artifact_prefix=crashes/

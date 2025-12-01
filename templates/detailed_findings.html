@@ -90,14 +90,9 @@
         <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
           <i class="fas fa-sitemap"></i> Generate Fuzz Plan
         </a>
-        <a href="{{ url_for('fuzzing_dashboard', scan_id=scan_id) }}" class="btn btn-warning">
-          <i class="fas fa-play"></i> Proceed to Dynamic Analysis
+        <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-outline-secondary">
+          <i class="fas fa-forward"></i> Skip Fuzzing
         </a>
-        {% if patches %}
-        <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-success">
-          <i class="fas fa-robot"></i> View AI Patches
-        </a>
-        {% endif %}
         {% if analysis_tool %}
         <div class="btn-group ms-2">
           {% if analysis_tool == 'codeql' %}
@@ -266,10 +261,21 @@
             <h6><i class="fas fa-code"></i> Code Context</h6>
             <div class="card bg-light">
               <div class="card-body">
+                {% if vuln.code_context %}
+                <pre class="mb-0" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto;"><code class="language-cpp">{% for line in vuln.code_context %}<span style="{% if line.is_vulnerable %}background: #ff000030; border-left: 3px solid #ff0000; padding-left: 5px;{% endif %}"><span style="color: #858585; user-select: none;">{{ '%4d' % line.line_num }}</span> {{ line.code }}</span>
+{% endfor %}</code></pre>
+                <small class="text-muted mt-2 d-block">
+                  <i class="fas fa-file"></i> {{ vuln.file }}:{{ vuln.line }}
+                  {% if vuln.code_context %}
+                  <span class="badge bg-danger ms-2">← Vulnerable line highlighted</span>
+                  {% endif %}
+                </small>
+                {% else %}
                 <pre class="mb-0"><code class="language-cpp">// Code context not available
 // View the source file at {{ vuln.file }}:{{ vuln.line }} for the actual code
 // File: {{ vuln.file }}
 // Line: {{ vuln.line }}</code></pre>
+                {% endif %}
               </div>
             </div>
           </div>
@@ -300,49 +306,9 @@
             </div>
           </div>
 
-          <!-- Available Patches -->
-          <div class="mb-4">
-            <h6><i class="fas fa-wrench"></i> Suggested Fixes</h6>
-            {% set patch_found = false %}
-            {% for patch in patches %}
-              {% if patch.id.endswith(loop.index0|string) %}
-                {% set patch_found = true %}
-                <div class="card">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>{{ patch.description }}</span>
-                    <div>
-                      <span class="badge bg-success">AI Generated</span>
-                      <button class="btn btn-sm btn-primary ms-2" onclick="applyPatch('{{ patch.id }}')">
-                        <i class="fas fa-check"></i> Apply
-                      </button>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <pre class="mb-0"><code class="language-diff">{{ patch.content }}</code></pre>
-                  </div>
-                </div>
-              {% endif %}
-            {% endfor %}
-            {% if not patch_found %}
-            <div class="alert alert-info">
-              <i class="fas fa-robot"></i>
-              <strong>AI Patch Generation:</strong> Analyzing vulnerability pattern to generate automated fix...
-              <button class="btn btn-sm btn-outline-primary ms-2" onclick="generatePatch('{{ vuln.id }}')">
-                <i class="fas fa-magic"></i> Generate Patch
-              </button>
-            </div>
-            {% endif %}
-          </div>
 
-          <!-- References and Resources -->
-          <div class="mb-3">
-            <h6><i class="fas fa-external-link-alt"></i> References</h6>
-            <ul class="list-unstyled">
-              <li><a href="#" class="text-decoration-none"><i class="fas fa-link"></i> OWASP Top 10 - A03:2021 Injection</a></li>
-              <li><a href="#" class="text-decoration-none"><i class="fas fa-link"></i> CWE-787: Out-of-bounds Write</a></li>
-              <li><a href="#" class="text-decoration-none"><i class="fas fa-link"></i> NIST Cybersecurity Framework</a></li>
-            </ul>
-          </div>
+
+
         </div>
       </div>
     </div>

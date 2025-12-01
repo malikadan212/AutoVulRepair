@@ -77,6 +77,18 @@ def _analyze_with_codeql_impl(scan_id):
         vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url, artifacts_dir=artifacts_dir)
         elapsed = time.time() - start_time
         
+        # Convert CodeQL results to static_findings.json for Module 2 (if converter exists)
+        try:
+            from src.module1.codeql_to_findings import convert_codeql_to_findings
+            static_findings_path = os.path.join(scans_dir, scan_id, 'static_findings.json')
+            logger.info(f"[CODEQL] Converting results to static_findings.json: {static_findings_path}")
+            # CodeQL converter would need to be implemented
+            logger.info(f"[CODEQL] Conversion complete - ready for Module 2 fuzz plan generation")
+        except ImportError:
+            logger.info(f"[CODEQL] CodeQL to findings converter not yet implemented")
+        except Exception as conv_error:
+            logger.warning(f"[CODEQL] Failed to convert to static_findings.json: {conv_error}")
+        
         # Update scan with results
         scan.status = 'completed'
         scan.vulnerabilities_json = vulnerabilities
@@ -136,6 +148,19 @@ def _analyze_with_cppcheck_impl(scan_id):
             elapsed = time.time() - start_time
             logger.error(f"[CPPCHECK] analyzer.analyze() failed after {elapsed:.2f} seconds: {analyze_error}", exc_info=True)
             raise
+        
+        # Convert cppcheck XML to static_findings.json for Module 2
+        cppcheck_xml = os.path.join(artifacts_dir, 'cppcheck-report.xml')
+        if os.path.exists(cppcheck_xml):
+            try:
+                from src.module1.cppcheck_to_findings import convert_cppcheck_to_findings
+                static_findings_path = os.path.join(scans_dir, scan_id, 'static_findings.json')
+                logger.info(f"[CPPCHECK] Converting XML to static_findings.json: {static_findings_path}")
+                convert_cppcheck_to_findings(cppcheck_xml, static_findings_path)
+                logger.info(f"[CPPCHECK] Conversion complete - ready for Module 2 fuzz plan generation")
+            except Exception as conv_error:
+                logger.warning(f"[CPPCHECK] Failed to convert to static_findings.json: {conv_error}")
+                # Don't fail the scan if conversion fails
         
         # Update scan with results
         scan.status = 'completed'

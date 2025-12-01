@@ -23,40 +23,176 @@
     </div>
   </div>
 
-  <!-- Minimal controls (placeholder for future wiring) -->
+  <!-- Fuzzing Controls -->
   <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <h5 class="mb-0"><i class="fas fa-cogs"></i> Analysis Controls</h5>
+      <h5 class="mb-0"><i class="fas fa-cogs"></i> Fuzzing Campaign Controls</h5>
     </div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
           <label class="form-label">Engine</label>
-          <select class="form-select" disabled>
-            <option>libFuzzer (coming soon)</option>
+          <select class="form-select" id="fuzzEngine">
+            <option value="libfuzzer" selected>LibFuzzer + AddressSanitizer</option>
           </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label">Runtime (minutes)</label>
-          <input type="number" class="form-control" value="60" min="1" disabled>
+          <label class="form-label">Runtime per Target (minutes)</label>
+          <input type="number" class="form-control" id="runtimeMinutes" value="5" min="1" max="60">
         </div>
       </div>
       <div class="d-flex gap-2 mt-3">
-        <button class="btn btn-success" disabled>
-          <i class="fas fa-play"></i> Start Dynamic Analysis
+        <button class="btn btn-success" id="startFuzzingBtn" onclick="startFuzzing()">
+          <i class="fas fa-play"></i> Start Fuzzing Campaign
         </button>
-        <button class="btn btn-outline-danger" disabled>
-          <i class="fas fa-stop"></i> Stop
+        <button class="btn btn-outline-secondary" onclick="loadResults()">
+          <i class="fas fa-sync"></i> Refresh Results
         </button>
       </div>
-      <small class="text-muted d-block mt-2">We will wire these controls to Module 2 shortly.</small>
     </div>
   </div>
 
-  <!-- Status placeholder -->
-  <div class="alert alert-info">
-    <i class="fas fa-info-circle"></i>
-    Dynamic analysis setup is ready. When implemented, this page will orchestrate build, run, and crash triage for scan{% if scan_id %} <code>{{ scan_id }}</code>{% endif %}.
+  <!-- Campaign Status -->
+  <div id="campaignStatus" class="alert alert-info" style="display: none;">
+    <div class="d-flex align-items-center">
+      <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+      <span id="statusText">Starting fuzzing campaign...</span>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="resultsContainer" style="display: none;">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Campaign Results</h5>
+      </div>
+      <div class="card-body">
+        <div class="row mb-3">
+          <div class="col-md-3">
+            <div class="text-center p-3 bg-light rounded">
+              <h3 id="totalTargets" class="mb-0">-</h3>
+              <small class="text-muted">Targets Fuzzed</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-center p-3 bg-light rounded">
+              <h3 id="totalCrashes" class="mb-0 text-danger">-</h3>
+              <small class="text-muted">Crashes Found</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-center p-3 bg-light rounded">
+              <h3 id="totalTime" class="mb-0">-</h3>
+              <small class="text-muted">Total Time (s)</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="text-center p-3 bg-light rounded">
+              <h3 id="timestamp" class="mb-0">-</h3>
+              <small class="text-muted">Completed</small>
+            </div>
+          </div>
+        </div>
+
+        <h6 class="mt-4">Target Results</h6>
+        <div id="targetResults" class="table-responsive">
+          <!-- Results will be populated here -->
+        </div>
+      </div>
+    </div>
   </div>
 </div>
+
+<script>
+const scanId = '{{ scan_id }}';
+
+function startFuzzing() {
+  const runtime = document.getElementById('runtimeMinutes').value;
+  const btn = document.getElementById('startFuzzingBtn');
+  const status = document.getElementById('campaignStatus');
+  const statusText = document.getElementById('statusText');
+  
+  btn.disabled = true;
+  status.style.display = 'block';
+  statusText.textContent = 'Starting fuzzing campaign...';
+  
+  fetch(`/api/fuzz/start/${scanId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({runtime_minutes: parseInt(runtime)})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      alert('Error: ' + data.error);
+      status.style.display = 'none';
+    } else {
+      statusText.textContent = 'Campaign completed!';
+      setTimeout(() => {
+        status.style.display = 'none';
+        displayResults(data);
+      }, 1000);
+    }
+    btn.disabled = false;
+  })
+  .catch(err => {
+    alert('Error starting fuzzing: ' + err);
+    status.style.display = 'none';
+    btn.disabled = false;
+  });
+}
+
+function loadResults() {
+  fetch(`/api/fuzz/results/${scanId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        alert('No results found yet');
+      } else {
+        displayResults(data);
+      }
+    });
+}
+
+function displayResults(data) {
+  document.getElementById('resultsContainer').style.display = 'block';
+  document.getElementById('totalTargets').textContent = data.total_targets || 0;
+  
+  const totalCrashes = data.results.reduce((sum, r) => sum + (r.crashes_found || 0), 0);
+  document.getElementById('totalCrashes').textContent = totalCrashes;
+  document.getElementById('totalTime').textContent = data.total_time || 0;
+  
+  const ts = new Date(data.timestamp).toLocaleTimeString();
+  document.getElementById('timestamp').textContent = ts;
+  
+  // Display target results
+  let html = '<table class="table table-sm"><thead><tr><th>Target</th><th>Status</th><th>Runtime</th><th>Crashes</th><th>Coverage</th></tr></thead><tbody>';
+  
+  data.results.forEach(r => {
+    const statusBadge = r.status === 'completed' ? 
+      '<span class="badge bg-success">Completed</span>' :
+      '<span class="badge bg-warning">'+r.status+'</span>';
+    
+    const crashBadge = r.crashes_found > 0 ?
+      `<span class="badge bg-danger">${r.crashes_found}</span>` :
+      '<span class="badge bg-secondary">0</span>';
+    
+    html += `<tr>
+      <td><code>${r.target}</code></td>
+      <td>${statusBadge}</td>
+      <td>${r.runtime}s</td>
+      <td>${crashBadge}</td>
+      <td>${r.stats?.coverage || 'N/A'}</td>
+    </tr>`;
+  });
+  
+  html += '</tbody></table>';
+  document.getElementById('targetResults').innerHTML = html;
+}
+
+// Load existing results on page load
+window.addEventListener('load', () => {
+  loadResults();
+});
+</script>
 {% endblock %}

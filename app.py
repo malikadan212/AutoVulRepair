@@ -28,6 +28,9 @@ from src.utils.validation import (
 
 # Import Module 2 components
 from src.fuzz_plan.generator import FuzzPlanGenerator
+from src.harness.generator import HarnessGenerator
+from src.build.orchestrator import BuildOrchestrator
+from src.fuzz_exec.executor import FuzzExecutor
 
 load_dotenv()
 
@@ -270,6 +273,44 @@ def scan_progress(scan_id):
         session_db.close()
 
 
+def extract_code_context(scan_id, file_path, line_number, context_lines=5):
+    """Extract code context around a specific line"""
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        source_dir = os.path.join(scan_dir, 'source')
+        
+        # Handle different path formats
+        if file_path.startswith('/source/'):
+            file_path = file_path[8:]  # Remove /source/ prefix
+        
+        full_path = os.path.join(source_dir, file_path)
+        
+        if not os.path.exists(full_path):
+            return None
+        
+        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+        
+        line_num = int(line_number)
+        start = max(0, line_num - context_lines - 1)
+        end = min(len(lines), line_num + context_lines)
+        
+        context = []
+        for i in range(start, end):
+            is_vuln_line = (i == line_num - 1)
+            context.append({
+                'line_num': i + 1,
+                'code': lines[i].rstrip(),
+                'is_vulnerable': is_vuln_line
+            })
+        
+        return context
+    except Exception as e:
+        logger.error(f"Error extracting code context: {e}")
+        return None
+
+
 @app.route('/detailed-findings/<scan_id>')
 def detailed_findings(scan_id):
     """Show detailed vulnerability findings - accessible without login"""
@@ -289,6 +330,15 @@ def detailed_findings(scan_id):
         # Get vulnerabilities and patches from database
         vulnerabilities = scan.vulnerabilities_json or []
         patches = scan.patches_json or []
+        
+        # Add code context to each vulnerability
+        for vuln in vulnerabilities:
+            if vuln.get('file') and vuln.get('line'):
+                vuln['code_context'] = extract_code_context(
+                    scan_id, 
+                    vuln['file'], 
+                    vuln['line']
+                )
         
         logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} has {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
         
@@ -466,9 +516,10 @@ def generate_fuzz_plan(scan_id):
         fuzz_dir = os.path.join(scan_dir, 'fuzz')
         os.makedirs(fuzz_dir, exist_ok=True)
         
-        # Generate fuzz plan
+        # Generate fuzz plan with source directory for signature extraction
         fuzz_plan_path = os.path.join(fuzz_dir, 'fuzzplan.json')
-        generator = FuzzPlanGenerator(static_findings_path)
+        source_dir = os.path.join(scan_dir, 'source')
+        generator = FuzzPlanGenerator(static_findings_path, source_dir=source_dir)
         
         try:
             generator.save_fuzz_plan(fuzz_plan_path)
@@ -517,6 +568,450 @@ def get_fuzz_plan(scan_id):
     except Exception as e:
         logger.error(f"[FUZZ_PLAN] Error loading fuzz plan: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fuzz-plan/<scan_id>/export/<format>')
+def export_fuzz_plan(scan_id, format):
+    """Export fuzz plan in different formats - accessible without login"""
+    logger.info(f"[FUZZ_PLAN] Export requested for scan {scan_id} in format {format}")
+    
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        static_findings_path = os.path.join(scan_dir, 'static_findings.json')
+        
+        if not os.path.exists(static_findings_path):
+            return jsonify({'error': 'Static findings not found'}), 404
+        
+        # Generate export file with source directory for signature extraction
+        source_dir = os.path.join(scan_dir, 'source')
+        generator = FuzzPlanGenerator(static_findings_path, source_dir=source_dir)
+        
+        if format == 'json':
+            output_path = os.path.join(scan_dir, 'fuzz', 'fuzzplan.json')
+            if os.path.exists(output_path):
+                return send_file(output_path, 
+                               as_attachment=True,
+                               download_name=f'fuzzplan_{scan_id[:8]}.json',
+                               mimetype='application/json')
+            else:
+                return jsonify({'error': 'Fuzz plan not generated yet'}), 404
+                
+        elif format == 'csv':
+            output_path = os.path.join(scan_dir, 'fuzz', 'fuzzplan.csv')
+            generator.export_to_csv(output_path)
+            return send_file(output_path,
+                           as_attachment=True,
+                           download_name=f'fuzzplan_{scan_id[:8]}.csv',
+                           mimetype='text/csv')
+                           
+        elif format == 'markdown' or format == 'md':
+            output_path = os.path.join(scan_dir, 'fuzz', 'fuzzplan.md')
+            generator.export_to_markdown(output_path)
+            return send_file(output_path,
+                           as_attachment=True,
+                           download_name=f'fuzzplan_{scan_id[:8]}.md',
+                           mimetype='text/markdown')
+        else:
+            return jsonify({'error': 'Invalid format. Use: json, csv, or markdown'}), 400
+            
+    except Exception as e:
+        logger.error(f"[FUZZ_PLAN] Export error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# Module 2: Harness Generation Routes
+# ============================================================================
+
+@app.route('/harness-generation/<scan_id>')
+def harness_generation_view(scan_id):
+    """Display harness generation page - accessible without login"""
+    logger.info(f"[HARNESS_GEN] View requested for scan: {scan_id}")
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
+        
+        # Check if fuzz plan exists
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        fuzz_plan_path = os.path.join(scans_dir, scan_id, 'fuzz', 'fuzzplan.json')
+        
+        if not os.path.exists(fuzz_plan_path):
+            flash('Please generate a fuzz plan first.', 'warning')
+            return redirect(url_for('fuzz_plan_view', scan_id=scan_id))
+        
+        # Check if harnesses exist
+        harness_dir = os.path.join(scans_dir, scan_id, 'fuzz', 'harnesses')
+        harnesses = []
+        harness_stats = {
+            'total_lines': 0,
+            'harness_types': set(),
+            'sanitizers_used': set()
+        }
+        
+        if os.path.exists(harness_dir):
+            # Load harness metadata
+            for filename in os.listdir(harness_dir):
+                if filename.endswith('.cc') or filename.endswith('.cpp'):
+                    file_path = os.path.join(harness_dir, filename)
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Read file for preview and metadata extraction
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        lines = content.split('\n')
+                        preview = '\n'.join(lines[:20])
+                        if len(lines) > 20:
+                            preview += '\n... (truncated)'
+                    
+                    # Extract metadata from comments
+                    bug_class = 'Unknown'
+                    sanitizers = ['ASan', 'UBSan']
+                    
+                    for line in lines[:15]:  # Check first 15 lines for metadata
+                        if '// Bug Class:' in line:
+                            bug_class = line.split('// Bug Class:')[1].strip()
+                        elif '// Sanitizers:' in line:
+                            san_str = line.split('// Sanitizers:')[1].strip()
+                            sanitizers = [s.strip() for s in san_str.split(',')]
+                    
+                    # Extract metadata from filename or content
+                    harness_info = {
+                        'name': filename,
+                        'file_path': filename,
+                        'function_name': filename.replace('_harness.cc', '').replace('_harness.cpp', ''),
+                        'harness_type': 'bytes-to-api',
+                        'bug_class': bug_class,
+                        'file_size': file_size,
+                        'sanitizers': sanitizers,
+                        'code_preview': preview
+                    }
+                    harnesses.append(harness_info)
+                    
+                    harness_stats['total_lines'] += len(lines)
+                    harness_stats['harness_types'].add(harness_info['harness_type'])
+                    harness_stats['sanitizers_used'].update(harness_info['sanitizers'])
+        
+        # Convert sets to lists for template
+        harness_stats['harness_types'] = list(harness_stats['harness_types'])
+        harness_stats['sanitizers_used'] = list(harness_stats['sanitizers_used'])
+        
+        return render_template('harness_generation.html',
+                             scan_id=scan_id,
+                             harnesses=harnesses,
+                             harness_stats=harness_stats,
+                             scan=scan)
+    finally:
+        session_db.close()
+
+
+@app.route('/api/harness/generate/<scan_id>', methods=['POST'])
+def generate_harnesses(scan_id):
+    """Generate fuzzing harnesses from fuzz plan - accessible without login"""
+    logger.info(f"[HARNESS_GEN] Generation requested for scan: {scan_id}")
+    
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        fuzz_plan_path = os.path.join(scan_dir, 'fuzz', 'fuzzplan.json')
+        
+        # Check if fuzz plan exists
+        if not os.path.exists(fuzz_plan_path):
+            logger.warning(f"[HARNESS_GEN] Fuzz plan not found: {fuzz_plan_path}")
+            return jsonify({'error': 'Fuzz plan not found. Generate fuzz plan first.'}), 404
+        
+        # Create harness directory
+        harness_dir = os.path.join(scan_dir, 'fuzz', 'harnesses')
+        os.makedirs(harness_dir, exist_ok=True)
+        
+        # Generate harnesses using HarnessGenerator
+        generator = HarnessGenerator(fuzz_plan_path)
+        harnesses = generator.generate_all_harnesses(harness_dir)
+        
+        if not harnesses:
+            return jsonify({'error': 'No harnesses generated. Check fuzz plan targets.'}), 400
+        
+        # Generate build script and README
+        generator.generate_build_script(harness_dir, harnesses)
+        generator.generate_readme(harness_dir, harnesses)
+        
+        logger.info(f"[HARNESS_GEN] Generated {len(harnesses)} harnesses for scan {scan_id}")
+        
+        return jsonify({
+            'success': True,
+            'harnesses_count': len(harnesses),
+            'harnesses': harnesses
+        })
+        
+    except Exception as e:
+        logger.error(f"[HARNESS_GEN] Unexpected error: {e}", exc_info=True)
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
+@app.route('/api/harness/download/<scan_id>')
+def download_harness(scan_id):
+    """Download a single harness file - accessible without login"""
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'File parameter required'}), 400
+    
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    harness_path = os.path.join(scans_dir, scan_id, 'fuzz', 'harnesses', file_name)
+    
+    if not os.path.exists(harness_path):
+        return jsonify({'error': 'Harness file not found'}), 404
+    
+    return send_file(harness_path, as_attachment=True, download_name=file_name)
+
+
+@app.route('/api/harness/download-all/<scan_id>')
+def download_all_harnesses(scan_id):
+    """Download all harnesses as ZIP - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    harness_dir = os.path.join(scans_dir, scan_id, 'fuzz', 'harnesses')
+    
+    if not os.path.exists(harness_dir):
+        return jsonify({'error': 'No harnesses found'}), 404
+    
+    # Create ZIP file
+    zip_path = os.path.join(scans_dir, scan_id, 'fuzz', f'harnesses_{scan_id[:8]}.zip')
+    
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for filename in os.listdir(harness_dir):
+            if filename.endswith('.cc') or filename.endswith('.cpp'):
+                file_path = os.path.join(harness_dir, filename)
+                zipf.write(file_path, filename)
+    
+    return send_file(zip_path, as_attachment=True, download_name=f'harnesses_{scan_id[:8]}.zip')
+
+
+@app.route('/api/harness/view/<scan_id>')
+def view_harness(scan_id):
+    """View full harness code - accessible without login"""
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'File parameter required'}), 400
+    
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    harness_path = os.path.join(scans_dir, scan_id, 'fuzz', 'harnesses', file_name)
+    
+    if not os.path.exists(harness_path):
+        return jsonify({'error': 'Harness file not found'}), 404
+    
+    with open(harness_path, 'r', encoding='utf-8') as f:
+        code = f.read()
+    
+    # Return as plain text for viewing
+    return f"<pre style='font-family: monospace; padding: 20px;'>{code}</pre>"
+
+
+# ============================================================================
+# Module 2: Build Orchestration Routes
+# ============================================================================
+
+@app.route('/build-orchestration/<scan_id>')
+def build_orchestration_view(scan_id):
+    """Display build orchestration page - accessible without login"""
+    logger.info(f"[BUILD] View requested for scan: {scan_id}")
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
+        
+        # Check if harnesses exist
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        harness_dir = os.path.join(scans_dir, scan_id, 'fuzz', 'harnesses')
+        
+        if not os.path.exists(harness_dir):
+            flash('Please generate harnesses first.', 'warning')
+            return redirect(url_for('harness_generation_view', scan_id=scan_id))
+        
+        # Check if builds exist
+        scan_dir = os.path.join(scans_dir, scan_id)
+        orchestrator = BuildOrchestrator(scan_dir)
+        build_log = orchestrator.get_build_results()
+        
+        builds = []
+        build_stats = {
+            'success_count': 0,
+            'error_count': 0,
+            'pending_count': 0,
+            'total_time': 0
+        }
+        
+        if build_log:
+            builds = build_log.get('builds', [])
+            build_stats['success_count'] = build_log.get('successful', 0)
+            build_stats['error_count'] = build_log.get('failed', 0)
+            build_stats['total_time'] = sum(b.get('build_time', 0) for b in builds)
+        
+        return render_template('build_orchestration.html',
+                             scan_id=scan_id,
+                             builds=builds,
+                             build_stats=build_stats,
+                             scan=scan)
+    finally:
+        session_db.close()
+
+
+@app.route('/api/build/start/<scan_id>', methods=['POST'])
+def start_build(scan_id):
+    """Start building all fuzz targets - accessible without login"""
+    logger.info(f"[BUILD] Build requested for scan: {scan_id}")
+    
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        
+        # Check if scan exists
+        if not os.path.exists(scan_dir):
+            return jsonify({'error': 'Scan not found'}), 404
+        
+        # Check if harnesses exist
+        harness_dir = os.path.join(scan_dir, 'fuzz', 'harnesses')
+        if not os.path.exists(harness_dir):
+            return jsonify({'error': 'No harnesses found. Generate harnesses first.'}), 404
+        
+        # Start build
+        orchestrator = BuildOrchestrator(scan_dir)
+        build_results = orchestrator.build_all_targets()
+        
+        if not build_results:
+            return jsonify({'error': 'No targets to build'}), 400
+        
+        success_count = sum(1 for r in build_results if r['status'] == 'success')
+        error_count = sum(1 for r in build_results if r['status'] == 'error')
+        
+        logger.info(f"[BUILD] Completed for scan {scan_id}: {success_count} success, {error_count} failed")
+        
+        return jsonify({
+            'success': True,
+            'total': len(build_results),
+            'successful': success_count,
+            'failed': error_count,
+            'builds': build_results
+        })
+        
+    except Exception as e:
+        logger.error(f"[BUILD] Unexpected error: {e}", exc_info=True)
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
+@app.route('/api/build/status/<scan_id>')
+def build_status(scan_id):
+    """Get build status - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    orchestrator = BuildOrchestrator(scan_dir)
+    build_log = orchestrator.get_build_results()
+    
+    if not build_log:
+        return jsonify({'complete': False})
+    
+    return jsonify({
+        'complete': True,
+        'successful': build_log.get('successful', 0),
+        'failed': build_log.get('failed', 0),
+        'total': build_log.get('total_targets', 0)
+    })
+
+
+@app.route('/api/build/log/<scan_id>')
+def download_build_log(scan_id):
+    """Download build log - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    log_path = os.path.join(scans_dir, scan_id, 'build', '.build_log.json')
+    
+    if not os.path.exists(log_path):
+        return jsonify({'error': 'Build log not found'}), 404
+    
+    return send_file(log_path, 
+                    as_attachment=True,
+                    download_name=f'build_log_{scan_id[:8]}.json',
+                    mimetype='application/json')
+
+
+@app.route('/api/build/download/<scan_id>')
+def download_build_binary(scan_id):
+    """Download built binary - accessible without login"""
+    file_name = request.args.get('file')
+    if not file_name:
+        return jsonify({'error': 'File parameter required'}), 400
+    
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    binary_path = os.path.join(scans_dir, scan_id, 'build', os.path.basename(file_name))
+    
+    if not os.path.exists(binary_path):
+        return jsonify({'error': 'Binary not found'}), 404
+    
+    return send_file(binary_path, as_attachment=True, download_name=os.path.basename(file_name))
+
+
+@app.route('/api/build/test-run/<scan_id>/<target_name>', methods=['POST'])
+def test_run_target(scan_id, target_name):
+    """Test run a built target - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    orchestrator = BuildOrchestrator(scan_dir)
+    result = orchestrator.test_run_target(target_name, runs=100)
+    
+    return jsonify(result)
+
+
+# ============================================================================
+# Module 2: Fuzz Execution Routes
+# ============================================================================
+
+@app.route('/fuzz-execution/<scan_id>')
+def fuzz_execution_view(scan_id):
+    """Display fuzz execution page - accessible without login"""
+    logger.info(f"[FUZZ_EXEC] View requested for scan: {scan_id}")
+    return render_template('fuzz_execution.html', scan_id=scan_id)
+
+
+@app.route('/api/fuzz/start/<scan_id>', methods=['POST'])
+def start_fuzzing(scan_id):
+    """Start fuzzing campaign - accessible without login"""
+    logger.info(f"[FUZZ_EXEC] Campaign start requested for scan: {scan_id}")
+    
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    # Get parameters
+    runtime_minutes = int(request.json.get('runtime_minutes', 5))
+    max_targets = request.json.get('max_targets')
+    
+    try:
+        executor = FuzzExecutor(scan_dir)
+        results = executor.run_campaign(runtime_minutes=runtime_minutes, max_targets=max_targets)
+        
+        logger.info(f"[FUZZ_EXEC] Campaign completed for scan: {scan_id}")
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"[FUZZ_EXEC] Campaign failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fuzz/results/<scan_id>')
+def fuzz_results(scan_id):
+    """Get fuzzing campaign results - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    executor = FuzzExecutor(scan_dir)
+    results = executor.get_campaign_results()
+    
+    if results:
+        return jsonify(results)
+    else:
+        return jsonify({'error': 'No results found'}), 404
 
 
 @app.route('/scan-public', methods=['POST'])

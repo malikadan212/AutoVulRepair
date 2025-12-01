@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.kiro/
+
+# Git
+.git/
+.gitignore
+
+# Scans (will be mounted as volume)
+scans/
+
+# Logs
+logs/
+*.log
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+tests/
+pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

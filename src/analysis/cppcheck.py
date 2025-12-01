@@ -9,6 +9,14 @@ from pathlib import Path
 # Try to import Docker helper, fall back to direct execution if unavailable
 logger = logging.getLogger(__name__)
 
+# Import security manager
+try:
+    from src.utils.repo_security import RepoSecurityManager
+    SECURITY_AVAILABLE = True
+except ImportError:
+    logger.warning("RepoSecurityManager not available - security features disabled")
+    SECURITY_AVAILABLE = False
+
 DOCKER_AVAILABLE = False
 try:
     from src.utils.docker_helper import DockerToolRunner
@@ -26,6 +34,7 @@ class CppcheckAnalyzer:
         self.tool_name = 'cppcheck'
         self.timeout = 120  # 2 minutes
         self.docker_runner = None
+        self.security_manager = None
         
         # Try to initialize Docker runner
         if DOCKER_AVAILABLE:
@@ -36,6 +45,15 @@ class CppcheckAnalyzer:
             except Exception as e:
                 logger.warning(f"[CPPCHECK_INIT] Failed to initialize Docker runner: {e}")
                 self.docker_runner = None
+        
+        # Initialize security manager
+        if SECURITY_AVAILABLE:
+            try:
+                self.security_manager = RepoSecurityManager()
+                logger.info("[CPPCHECK_INIT] Security manager initialized")
+            except Exception as e:
+                logger.warning(f"[CPPCHECK_INIT] Failed to initialize security manager: {e}")
+                self.security_manager = None
     
     def is_available(self):
         """Check if Cppcheck is available (via Docker or direct)"""
@@ -94,7 +112,14 @@ class CppcheckAnalyzer:
         return cpp_files
     
     def analyze(self, source_path, source_type, repo_url=None, artifacts_dir=None):
-        """Run Cppcheck analysis on the source code"""
+        """Run Cppcheck analysis on the source code
+        
+        Args:
+            source_path: Path to source directory (used as clone destination for repos)
+            source_type: Type of source ('repo_url', 'zip', 'code_snippet')
+            repo_url: GitHub repository URL (if source_type is 'repo_url')
+            artifacts_dir: Directory to store analysis artifacts
+        """
         logger.info(f"[CPPCHECK_ANALYZE] Starting analyze() - source_path: {source_path}, source_type: {source_type}, repo_url: {repo_url}")
         if not self.is_available():
             logger.warning("[CPPCHECK_ANALYZE] Cppcheck not available, using simulation")
@@ -103,36 +128,99 @@ class CppcheckAnalyzer:
         logger.info(f"[CPPCHECK_ANALYZE] Cppcheck is available, proceeding with analysis")
         # Handle different source types
         if source_type == 'repo_url' and repo_url:
-            logger.info(f"[CPPCHECK_ANALYZE] Detected repo_url, calling _analyze_repo()")
-            return self._analyze_repo(repo_url, artifacts_dir=artifacts_dir)
+            logger.info(f"[CPPCHECK_ANALYZE] Detected repo_url, calling _analyze_repo() with clone_dir={source_path}")
+            # Clone to source_path to preserve the repository for signature extraction
+            return self._analyze_repo(repo_url, artifacts_dir=artifacts_dir, clone_dir=source_path)
         else:
             logger.info(f"[CPPCHECK_ANALYZE] Local analysis, calling _analyze_local()")
             return self._analyze_local(source_path, artifacts_dir=artifacts_dir)
     
-    def _analyze_repo(self, repo_url, artifacts_dir=None):
-        """Analyze a GitHub repository"""
+    def _analyze_repo(self, repo_url, artifacts_dir=None, clone_dir=None):
+        """Analyze a GitHub repository
+        
+        Args:
+            repo_url: GitHub repository URL
+            artifacts_dir: Directory to store analysis artifacts
+            clone_dir: Directory to clone repository to (if None, uses temp directory)
+        """
         logger.info(f"[CPPCHECK_REPO] Starting repository analysis for: {repo_url}")
         temp_dir = None
+        cleanup_needed = False
+        
         try:
-            # Clone repository
-            temp_dir = tempfile.mkdtemp(prefix='cppcheck_repo_')
-            logger.info(f"[CPPCHECK_REPO] Cloning repository to: {temp_dir}")
-            clone_result = subprocess.run([
-                'git', 'clone', '--depth', '1', repo_url, temp_dir
-            ], capture_output=True, text=True, timeout=60)
+            # Security check: Verify repository size before cloning
+            if self.security_manager:
+                is_safe, size_kb, error_msg = self.security_manager.check_repo_size(repo_url)
+                if not is_safe:
+                    logger.error(f"[CPPCHECK_REPO] Security check failed: {error_msg}")
+                    return self._simulate_analysis()
             
-            if clone_result.returncode != 0:
-                logger.error(f"[CPPCHECK_REPO] Failed to clone repository: {clone_result.stderr}")
-                return self._simulate_analysis()
+            # Determine clone directory
+            if clone_dir:
+                # Use provided directory (persistent)
+                target_dir = clone_dir
+                
+                # Ensure parent directory exists
+                parent_dir = os.path.dirname(target_dir)
+                os.makedirs(parent_dir, exist_ok=True)
+                
+                # If directory already exists with content, use it (already cloned)
+                if os.path.exists(target_dir) and os.listdir(target_dir):
+                    logger.info(f"[CPPCHECK_REPO] Directory already contains files, using existing: {target_dir}")
+                else:
+                    # Remove empty directory if it exists (git clone fails with existing dir)
+                    if os.path.exists(target_dir):
+                        try:
+                            os.rmdir(target_dir)
+                        except OSError:
+                            pass  # Directory not empty, that's fine
+                    
+                    logger.info(f"[CPPCHECK_REPO] Cloning repository to persistent directory: {target_dir}")
+                    
+                    # Clone repository
+                    clone_result = subprocess.run([
+                        'git', 'clone', '--depth', '1', repo_url, target_dir
+                    ], capture_output=True, text=True, timeout=60)
+                    
+                    if clone_result.returncode != 0:
+                        logger.error(f"[CPPCHECK_REPO] Failed to clone repository: {clone_result.stderr}")
+                        return self._simulate_analysis()
+                    
+                    logger.info(f"[CPPCHECK_REPO] Repository cloned successfully")
+                    
+                    # Security: Sanitize cloned repository
+                    if self.security_manager:
+                        removed = self.security_manager.sanitize_cloned_repo(target_dir)
+                        logger.info(f"[CPPCHECK_REPO] Sanitized repository: removed {removed} non-source files")
+                        
+                        # Set read-only permissions
+                        self.security_manager.set_readonly_permissions(target_dir)
+            else:
+                # Use temporary directory (will be cleaned up)
+                target_dir = tempfile.mkdtemp(prefix='cppcheck_repo_')
+                temp_dir = target_dir
+                cleanup_needed = True
+                logger.info(f"[CPPCHECK_REPO] Cloning repository to temporary directory: {target_dir}")
+                
+                # Clone repository
+                clone_result = subprocess.run([
+                    'git', 'clone', '--depth', '1', repo_url, target_dir
+                ], capture_output=True, text=True, timeout=60)
+                
+                if clone_result.returncode != 0:
+                    logger.error(f"[CPPCHECK_REPO] Failed to clone repository: {clone_result.stderr}")
+                    return self._simulate_analysis()
             
             logger.info(f"[CPPCHECK_REPO] Repository cloned successfully, starting local analysis")
-            return self._analyze_local(temp_dir, artifacts_dir=artifacts_dir)
+            return self._analyze_local(target_dir, artifacts_dir=artifacts_dir)
             
         except Exception as e:
             logger.error(f"Repository analysis failed: {e}")
             return self._simulate_analysis()
         finally:
-            if temp_dir and os.path.exists(temp_dir):
+            # Only cleanup if we used a temporary directory
+            if cleanup_needed and temp_dir and os.path.exists(temp_dir):
+                logger.info(f"[CPPCHECK_REPO] Cleaning up temporary directory: {temp_dir}")
                 shutil.rmtree(temp_dir, ignore_errors=True)
     
     def _analyze_local(self, source_path, artifacts_dir=None):
@@ -261,6 +349,12 @@ class CppcheckAnalyzer:
                 severity = error.get('severity', 'style')
                 msg = error.get('msg', 'No description')
                 verbose_msg = error.get('verbose', msg)
+                
+                # Skip informational/configuration messages
+                if error_id in ['missingIncludeSystem', 'missingInclude', 'unmatchedSuppression', 'toomanyconfigs']:
+                    continue
+                if 'cannot find all the include files' in msg.lower():
+                    continue
                 
                 # Get location
                 location = error.find('location')

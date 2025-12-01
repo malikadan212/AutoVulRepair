@@ -10,10 +10,12 @@ Implements FR1-FR4:
 - FR4: Generate complete target metadata
 """
 import json
+import os
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 from collections import defaultdict
+from src.harness.signature_extractor import SignatureExtractor, FunctionSignature
 
 
 class FuzzPlanGenerator:
@@ -125,12 +127,14 @@ class FuzzPlanGenerator:
         'Type-Confusion': ['fuzz/types.dict'],
     }
     
-    def __init__(self, findings_path: str, max_targets: int = 100):
+    def __init__(self, findings_path: str, max_targets: int = 100, source_dir: Optional[str] = None):
         """Initialize generator with static findings - Issue #7 fixed"""
         self.findings_path = findings_path
         self.findings_data = None
         self.targets = []
         self.max_targets = max_targets  # Resource limit
+        self.source_dir = source_dir  # Optional source directory for signature extraction
+        self.signature_extractor = SignatureExtractor()
         
     def load_findings(self) -> None:
         """Load static findings from JSON"""
@@ -364,6 +368,83 @@ class FuzzPlanGenerator:
         # Default to bytes-to-api (most flexible, works for everything)
         return 'bytes_to_api'
     
+    def extract_signature_from_source(self, finding: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Extract function signature from source file if available
+        
+        Args:
+            finding: Finding dictionary with source file and function name
+            
+        Returns:
+            Signature dictionary or None if extraction fails
+        """
+        if not self.source_dir:
+            return None
+        
+        source_file = finding.get('file', '')
+        function_name = finding.get('function', '')
+        
+        if not source_file or not function_name:
+            return None
+        
+        # Construct source file path
+        # The source_file in findings is typically an absolute path like "/source/test.cpp"
+        # We need to map this to the actual source directory
+        
+        # Try multiple strategies to find the source file:
+        # 1. Just the filename (for flat structures)
+        # 2. Relative path from /source/ (for nested structures)
+        # 3. Search recursively in source_dir
+        
+        source_path = None
+        
+        # Strategy 1: Just filename
+        source_filename = Path(source_file).name
+        candidate = Path(self.source_dir) / source_filename
+        if candidate.exists():
+            source_path = candidate
+        else:
+            # Strategy 2: Extract relative path after /source/
+            if '/source/' in source_file:
+                relative_part = source_file.split('/source/', 1)[1]
+                candidate = Path(self.source_dir) / relative_part
+                if candidate.exists():
+                    source_path = candidate
+            
+            # Strategy 3: Search recursively (slower but more thorough)
+            if source_path is None:
+                for root, dirs, files in os.walk(self.source_dir):
+                    if source_filename in files:
+                        candidate = Path(root) / source_filename
+                        source_path = candidate
+                        break
+        
+        if source_path is None or not source_path.exists():
+            print(f"[FUZZ_PLAN] Source file not found: {source_file} (searched in {self.source_dir})")
+            return None
+        
+        try:
+            # Read source file
+            with open(source_path, 'r', encoding='utf-8', errors='ignore') as f:
+                source_code = f.read()
+            
+            # Extract signature
+            signature = self.signature_extractor.extract_function_signature(
+                source_code,
+                function_name
+            )
+            
+            if signature:
+                print(f"[FUZZ_PLAN] Extracted signature for {function_name}: {signature.return_type} {signature.function_name}(...)")
+                return signature.to_dict()
+            else:
+                print(f"[FUZZ_PLAN] Could not extract signature for {function_name}")
+                return None
+                
+        except Exception as e:
+            print(f"[FUZZ_PLAN] Error extracting signature for {function_name}: {e}")
+            return None
+    
     def validate_finding(self, finding: Dict[str, Any]) -> bool:
         """Validate that finding has all required fields"""
         required_fields = ['rule_id', 'file', 'file_stem', 'function', 
@@ -421,6 +502,16 @@ class FuzzPlanGenerator:
             'harness_template': harness_type,
         }
         
+        # Extract function signature if source directory is available
+        if self.source_dir:
+            signature = self.extract_signature_from_source(finding)
+            if signature:
+                target['function_signature'] = signature
+            else:
+                target['signature_status'] = 'not_extracted'
+        else:
+            target['signature_status'] = 'no_source_dir'
+        
         return target
     
     def generate_fuzz_plan(self) -> Dict[str, Any]:
@@ -469,8 +560,14 @@ class FuzzPlanGenerator:
         
         # Calculate metadata
         bug_class_breakdown = defaultdict(int)
+        signatures_extracted = 0
+        signatures_failed = 0
         for target in targets:
             bug_class_breakdown[target['bug_class']] += 1
+            if 'function_signature' in target:
+                signatures_extracted += 1
+            elif target.get('signature_status') == 'not_extracted':
+                signatures_failed += 1
         
         fuzz_plan = {
             'version': '1.0',
@@ -484,23 +581,24 @@ class FuzzPlanGenerator:
                 'sanitizers_used': list(set(
                     san for t in targets for san in t['sanitizers']
                 )),
+                'signatures_extracted': signatures_extracted,
+                'signatures_failed': signatures_failed,
+                'signature_extraction_rate': f"{signatures_extracted}/{len(targets)}" if len(targets) > 0 else "0/0"
             }
         }
         
         print(f"[FUZZ_PLAN] Generated {len(targets)} fuzz targets")
         print(f"[FUZZ_PLAN] Bug class breakdown: {dict(bug_class_breakdown)}")
+        print(f"[FUZZ_PLAN] Signatures extracted: {signatures_extracted}/{len(targets)}")
         
         return fuzz_plan
     
     def create_required_directories(self, base_path: str) -> None:
-        """Create required seed and dictionary directories"""
+        """Create required directories for fuzzing"""
         required_dirs = [
-            'fuzz/seeds/parser',
-            'fuzz/seeds/api',
-            'fuzz/seeds/generic',
-            'fuzz/corpus',
-            'fuzz/artifacts',
-            'fuzz/targets',
+            'fuzz/corpus',      # LibFuzzer corpus (filled during fuzzing)
+            'fuzz/artifacts',   # Crash artifacts (filled when bugs found)
+            'fuzz/targets',     # Compiled binaries (filled after build)
         ]
         
         base = Path(base_path).parent.parent  # Go up from fuzz/fuzzplan.json to project root
@@ -554,8 +652,13 @@ class FuzzPlanGenerator:
         print(f"[FUZZ_PLAN] Output validation passed")
         return True
     
-    def save_fuzz_plan(self, output_path: str) -> None:
-        """Save fuzz plan to JSON file"""
+    def save_fuzz_plan(self, output_path: str, generate_seeds: bool = True) -> None:
+        """Save fuzz plan to JSON file
+        
+        Args:
+            output_path: Path to save fuzzplan.json
+            generate_seeds: Whether to auto-generate seed files (default: True)
+        """
         fuzz_plan = self.generate_fuzz_plan()
         
         # Validate output before saving (Issue #8)
@@ -572,6 +675,127 @@ class FuzzPlanGenerator:
             json.dump(fuzz_plan, f, indent=2)
         
         print(f"[FUZZ_PLAN] Fuzz plan saved successfully!")
+        
+        # Auto-generate seed files using OSS-Fuzz strategy
+        if generate_seeds:
+            try:
+                from src.fuzz_plan.seed_generator import SeedGenerator
+                seed_gen = SeedGenerator()
+                base_dir = str(Path(output_path).parent)
+                
+                # Pass source directory for test file extraction (OSS-Fuzz strategy)
+                results = seed_gen.generate_seeds_for_fuzz_plan(
+                    fuzz_plan, 
+                    base_dir, 
+                    repo_dir=self.source_dir
+                )
+                total_seeds = sum(results.values())
+                print(f"[FUZZ_PLAN] Auto-generated {total_seeds} seed files using OSS-Fuzz strategy")
+            except Exception as e:
+                print(f"[FUZZ_PLAN] Warning: Could not auto-generate seeds: {e}")
+
+
+    def export_to_csv(self, output_path: str) -> None:
+        """Export fuzz plan to CSV format"""
+        import csv
+        
+        fuzz_plan = self.generate_fuzz_plan()
+        
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                'target_id', 'function_name', 'bug_class', 'priority',
+                'severity', 'confidence', 'line_number', 'sanitizers',
+                'harness_type', 'cwe', 'message'
+            ])
+            writer.writeheader()
+            
+            for target in fuzz_plan['targets']:
+                writer.writerow({
+                    'target_id': target['target_id'],
+                    'function_name': target['function_name'],
+                    'bug_class': target['bug_class'],
+                    'priority': target['priority'],
+                    'severity': target['severity'],
+                    'confidence': target['confidence'],
+                    'line_number': target['line_number'],
+                    'sanitizers': ','.join(target['sanitizers']),
+                    'harness_type': target['harness_type'],
+                    'cwe': target.get('cwe', ''),
+                    'message': target['message']
+                })
+        
+        print(f"[FUZZ_PLAN] Exported to CSV: {output_path}")
+    
+    def export_to_markdown(self, output_path: str) -> None:
+        """Export fuzz plan to Markdown report"""
+        fuzz_plan = self.generate_fuzz_plan()
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write("# Fuzz Plan Report\n\n")
+            f.write(f"**Generated:** {fuzz_plan['generated_at']}\n\n")
+            f.write(f"**Total Targets:** {len(fuzz_plan['targets'])}\n\n")
+            
+            # Summary
+            f.write("## Summary\n\n")
+            f.write(f"- Total Findings: {fuzz_plan['metadata']['total_findings']}\n")
+            f.write(f"- Deduplicated Targets: {fuzz_plan['metadata']['deduplicated_targets']}\n\n")
+            
+            # Bug class breakdown
+            f.write("### Bug Class Breakdown\n\n")
+            for bug_class, count in fuzz_plan['metadata']['bug_class_breakdown'].items():
+                f.write(f"- **{bug_class}**: {count}\n")
+            f.write("\n")
+            
+            # Targets table
+            f.write("## Fuzz Targets\n\n")
+            f.write("| Priority | Function | Bug Class | Sanitizers | Harness Type | Signature |\n")
+            f.write("|----------|----------|-----------|------------|--------------|----------|\n")
+            
+            for target in fuzz_plan['targets']:
+                f.write(f"| {target['priority']} | `{target['function_name']}` | {target['bug_class']} | ")
+                f.write(f"{', '.join(target['sanitizers'])} | {target['harness_type']} | ")
+                
+                # Add signature information
+                if 'function_signature' in target and target['function_signature']:
+                    sig = target['function_signature']
+                    params_str = ', '.join([f"{p['type']} {p['name']}" for p in sig.get('parameters', [])])
+                    f.write(f"`{sig['return_type']} {sig['function_name']}({params_str})`")
+                else:
+                    f.write("N/A")
+                f.write(" |\n")
+            
+            # Add detailed signature information section
+            f.write("\n## Detailed Signature Information\n\n")
+            targets_with_sigs = [t for t in fuzz_plan['targets'] if 'function_signature' in t and t['function_signature']]
+            
+            if targets_with_sigs:
+                f.write(f"**Targets with extracted signatures:** {len(targets_with_sigs)} / {len(fuzz_plan['targets'])}\n\n")
+                
+                for target in targets_with_sigs:
+                    sig = target['function_signature']
+                    f.write(f"### {target['function_name']}\n\n")
+                    f.write(f"**Full Signature:**\n```cpp\n")
+                    params_str = ', '.join([f"{p['type']} {p['name']}" for p in sig.get('parameters', [])])
+                    f.write(f"{sig['return_type']} {sig['function_name']}({params_str})\n```\n\n")
+                    
+                    if sig.get('parameters'):
+                        f.write(f"**Parameters ({sig.get('param_count', 0)}):**\n\n")
+                        for param in sig['parameters']:
+                            qualifiers = []
+                            if param.get('is_const'):
+                                qualifiers.append('const')
+                            if param.get('is_pointer'):
+                                qualifiers.append('pointer')
+                            if param.get('is_reference'):
+                                qualifiers.append('reference')
+                            
+                            qual_str = f" ({', '.join(qualifiers)})" if qualifiers else ""
+                            f.write(f"- `{param['type']} {param['name']}`{qual_str}\n")
+                        f.write("\n")
+            else:
+                f.write("No signatures were extracted. Source code may not have been available during fuzz plan generation.\n\n")
+        
+        print(f"[FUZZ_PLAN] Exported to Markdown: {output_path}")
 
 
 def main():
@@ -579,14 +803,34 @@ def main():
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python generator.py <static_findings.json> [output_path]")
+        print("Usage: python generator.py <static_findings.json> [output_path] [--format json|csv|md] [--source-dir <path>]")
         sys.exit(1)
     
     findings_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else 'fuzz/fuzzplan.json'
     
-    generator = FuzzPlanGenerator(findings_path)
-    generator.save_fuzz_plan(output_path)
+    # Check for format flag
+    format_type = 'json'
+    if '--format' in sys.argv:
+        idx = sys.argv.index('--format')
+        if idx + 1 < len(sys.argv):
+            format_type = sys.argv[idx + 1]
+    
+    # Check for source directory flag
+    source_dir = None
+    if '--source-dir' in sys.argv:
+        idx = sys.argv.index('--source-dir')
+        if idx + 1 < len(sys.argv):
+            source_dir = sys.argv[idx + 1]
+    
+    generator = FuzzPlanGenerator(findings_path, source_dir=source_dir)
+    
+    if format_type == 'csv':
+        generator.export_to_csv(output_path)
+    elif format_type == 'md' or format_type == 'markdown':
+        generator.export_to_markdown(output_path)
+    else:
+        generator.save_fuzz_plan(output_path)
 
 
 if __name__ == '__main__':
