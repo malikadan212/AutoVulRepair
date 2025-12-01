@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +57,35 @@ class FuzzExecutor:
         
         logger.info(f"Found {len(targets)} fuzz targets")
         
-        # Run each target
+        # Run targets in parallel
         results = []
         start_time = time.time()
         
-        for i, target in enumerate(targets, 1):
-            logger.info(f"Running target {i}/{len(targets)}: {target}")
-            result = self._run_single_target(target, runtime_minutes)
-            results.append(result)
+        # Use ThreadPoolExecutor for parallel execution
+        max_workers = min(len(targets), 4)  # Limit to 4 parallel containers
+        logger.info(f"Running {len(targets)} targets in parallel with {max_workers} workers")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_target = {
+                executor.submit(self._run_single_target, target, runtime_minutes): target 
+                for target in targets
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_target):
+                target = future_to_target[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    logger.info(f"Completed target: {target} (status: {result.get('status', 'unknown')})")
+                except Exception as e:
+                    logger.error(f"Target {target} failed: {e}")
+                    results.append({
+                        'target': target,
+                        'status': 'error',
+                        'error': str(e)
+                    })
         
         total_time = time.time() - start_time
         
