@@ -130,44 +130,7 @@ Preparing workspace...</pre>
             </div>
           </div>
           
-          <!-- Automated Workflow Preview -->
-          <div class="mt-4">
-            <div class="alert alert-success">
-              <h6><i class="fas fa-magic"></i> Automated Workflow Preview</h6>
-              <p class="mb-2">Once static analysis completes, the system will automatically:</p>
-              <div class="row">
-                <div class="col-md-4">
-                  <div class="d-flex align-items-center mb-2">
-                    <i class="fas fa-random text-warning me-2"></i>
-                    <small><strong>Generate fuzz targets</strong> from findings</small>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="d-flex align-items-center mb-2">
-                    <i class="fas fa-robot text-success me-2"></i>
-                    <small><strong>Create AI patches</strong> using Vul-RAG</small>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="d-flex align-items-center mb-2">
-                    <i class="fas fa-chart-line text-info me-2"></i>
-                    <small><strong>Monitor deployment</strong> in real-time</small>
-                  </div>
-                </div>
-              </div>
-              <div class="btn-group-sm mt-2" role="group">
-                <a href="{{ url_for('fuzzing_dashboard') }}" class="btn btn-outline-warning btn-sm">
-                  <i class="fas fa-eye"></i> Preview Fuzzing
-                </a>
-                <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-outline-success btn-sm">
-                  <i class="fas fa-eye"></i> Preview AI Patches
-                </a>
-                <a href="{{ url_for('monitoring_dashboard') }}" class="btn btn-outline-info btn-sm">
-                  <i class="fas fa-eye"></i> Preview Monitoring
-                </a>
-              </div>
-            </div>
-          </div>
+
         </div>
       </div>
     </div>

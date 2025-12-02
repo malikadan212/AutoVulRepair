@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfuzzer-19-dev \
     libc++-dev \
     libc++abi-dev \
+    libc++1-19 \
+    libclang-rt-19-dev \
     wget \
     && rm -rf /var/lib/apt/lists/*
 

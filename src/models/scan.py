@@ -25,7 +25,9 @@ class Scan(Base):
 
 # Database setup
 def get_database_url():
-    return f"sqlite:///{os.getenv('DATABASE_PATH', './scans.db')}"
+    # Ensure both app and celery use the same database path
+    db_path = os.getenv('DATABASE_PATH', '/app/scans.db')
+    return f"sqlite:///{db_path}"
 
 def create_database():
     """Create database tables if they don't exist"""

@@ -848,7 +848,7 @@ def build_orchestration_view(scan_id):
             builds = build_log.get('builds', [])
             build_stats['success_count'] = build_log.get('successful', 0)
             build_stats['error_count'] = build_log.get('failed', 0)
-            build_stats['total_time'] = sum(b.get('build_time', 0) for b in builds)
+            build_stats['total_time'] = round(sum(b.get('build_time', 0) for b in builds), 2)
         
         return render_template('build_orchestration.html',
                              scan_id=scan_id,

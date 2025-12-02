@@ -84,58 +84,84 @@ class DockerToolRunner:
         source_path = os.path.abspath(source_path)
         
         try:
-            # Run Cppcheck container
-            container = self.client.containers.run(
+            # Copy source files into container instead of volume mounting (Windows compatibility)
+            import tarfile
+            import io
+            
+            # Create tar archive of source directory
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+                tar.add(source_path, arcname='source')
+            tar_buffer.seek(0)
+            
+            # Create container (don't start yet)
+            container = self.client.containers.create(
                 'vuln-scanner/cppcheck:latest',
                 command=[
                     '--enable=all',
                     '--inconclusive',
                     '--xml',
                     '--xml-version=2',
-                    f'--output-file=/output/{output_filename}',
-                    '/source'
+                    '--output-file=/tmp/cppcheck-report.xml',
+                    '/tmp/source'
                 ],
-                volumes={
-                    source_path: {'bind': '/source', 'mode': 'ro'},
-                    output_dir: {'bind': '/output', 'mode': 'rw'}
-                },
-                remove=True,  # Auto-remove container after run
+                working_dir='/tmp',
                 mem_limit='2g',
-                network_disabled=True  # Security: disable network
+                network_disabled=True
             )
             
-            # Note: containers.run with remove=True doesn't return logs,
-            # so we need to check the output file
-            output_path = os.path.join(output_dir, output_filename)
-            if os.path.exists(output_path):
-                with open(output_path, 'rb') as f:
-                    stdout = f.read().decode('utf-8', errors='ignore')
-                stderr = ""
-                return_code = 0
-            else:
-                stdout = ""
-                stderr = "Cppcheck did not produce output file"
-                return_code = 1
+            # Copy source files into container
+            container.put_archive('/tmp', tar_buffer)
             
-            return stdout, stderr, return_code
+            # Start container and wait for completion
+            container.start()
+            result = container.wait()
+            exit_code = result['StatusCode']
+            
+            # Get the XML output from container
+            try:
+                archive_data, _ = container.get_archive('/tmp/cppcheck-report.xml')
+                
+                # Extract XML content from tar archive
+                tar_buffer = io.BytesIO()
+                for chunk in archive_data:
+                    tar_buffer.write(chunk)
+                tar_buffer.seek(0)
+                
+                with tarfile.open(fileobj=tar_buffer, mode='r') as tar:
+                    xml_file = tar.extractfile('cppcheck-report.xml')
+                    if xml_file:
+                        stdout = xml_file.read().decode('utf-8', errors='ignore')
+                        
+                        # Save to final destination if specified
+                        if output_file:
+                            try:
+                                os.makedirs(os.path.dirname(output_file), exist_ok=True)
+                                with open(output_file, 'w', encoding='utf-8') as f:
+                                    f.write(stdout)
+                            except Exception as copy_err:
+                                logger.warning(f"Failed to save output file: {copy_err}")
+                        
+                        # Remove container
+                        container.remove()
+                        
+                        # Return success - exit code doesn't matter if we have XML
+                        return stdout, "", 0
+                    else:
+                        container.remove()
+                        return "", f"Could not extract XML from container (exit code: {exit_code})", 1
+                        
+            except docker.errors.NotFound:
+                # XML file not created
+                container.remove()
+                return "", f"Cppcheck did not produce output file (exit code: {exit_code})", 1
             
         except docker.errors.ContainerError as e:
-            # Container exited with non-zero code - might still have results
-            output_path = os.path.join(output_dir, output_filename)
-            if os.path.exists(output_path):
-                with open(output_path, 'rb') as f:
-                    stdout = f.read().decode('utf-8', errors='ignore')
-                return stdout, str(e), e.exit_status
             return "", str(e), e.exit_status
         except docker.errors.APIError as e:
             raise RuntimeError(f"Docker API error: {e}")
-        finally:
-            # Clean up temporary directory if we created it
-            if output_file is None and output_dir and os.path.exists(output_dir):
-                try:
-                    shutil.rmtree(output_dir)
-                except:
-                    pass
+        except Exception as e:
+            return "", f"Unexpected error: {e}", 1
     
     def run_codeql_database_create(self, source_path, db_path, languages, timeout=300):
         """
