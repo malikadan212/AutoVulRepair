@@ -236,18 +236,42 @@ def scan():
 
 
 @app.route('/results/<scan_id>')
-@login_required
 def results(scan_id):
-    scans = session.get('scans', {})
-    scan = scans.get(scan_id)
-    if not scan:
-        flash('Scan not found.')
-        return redirect(url_for('dashboard'))
-
-    # Placeholder progress (in a real app, poll background job status)
-    progress = 100 if scan['status'] == 'completed' else 0
-
-    return render_template('results.html', scan_id=scan_id, scan=scan, progress=progress)
+    """Show comprehensive final results - accessible without login"""
+    session_db = get_session()
+    try:
+        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        if not scan:
+            return redirect(url_for('no_login_scan'))
+        
+        # Get static analysis results
+        vulnerabilities = scan.vulnerabilities_json or []
+        patches = scan.patches_json or []
+        
+        # Get fuzzing results
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        fuzz_results_path = os.path.join(scans_dir, scan_id, 'fuzz', 'results', 'campaign_results.json')
+        fuzz_results = None
+        if os.path.exists(fuzz_results_path):
+            with open(fuzz_results_path, 'r') as f:
+                fuzz_results = json.load(f)
+        
+        # Get triage results
+        triage_results_path = os.path.join(scans_dir, scan_id, 'fuzz', 'triage', 'triage_results.json')
+        triage_results = None
+        if os.path.exists(triage_results_path):
+            with open(triage_results_path, 'r') as f:
+                triage_results = json.load(f)
+        
+        return render_template('final_results.html',
+                             scan_id=scan_id,
+                             scan=scan,
+                             vulnerabilities=vulnerabilities,
+                             patches=patches,
+                             fuzz_results=fuzz_results,
+                             triage_results=triage_results)
+    finally:
+        session_db.close()
 
 
 @app.route('/scan-progress/<scan_id>')
@@ -1991,8 +2015,8 @@ def get_crash_details(scan_id, crash_id):
         if not results:
             return jsonify({'error': 'No triage results found'}), 404
         
-        # Find the crash
-        crash = next((c for c in results['crashes'] if c['crash_id'] == crash_id), None)
+        # Find the crash (using 'id' key, not 'crash_id')
+        crash = next((c for c in results['crashes'] if c['id'] == crash_id), None)
         
         if not crash:
             return jsonify({'error': 'Crash not found'}), 404

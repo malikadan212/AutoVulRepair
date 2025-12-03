@@ -13,7 +13,7 @@ class ReproKitGenerator:
         
     def generate_all_repros(self):
         """Generate reproduction kits for all triaged crashes"""
-        triage_file = self.scan_dir / "triage_results.json"
+        triage_file = self.scan_dir / "fuzz" / "triage" / "triage_results.json"
         
         if not triage_file.exists():
             return {'status': 'error', 'message': 'No triage results found'}
@@ -24,6 +24,9 @@ class ReproKitGenerator:
         repro_kits = []
         for crash in triage_data.get('crashes', []):
             if crash['severity'] in ['Critical', 'High']:
+                # Add crash_id field if it doesn't exist (use 'id' field)
+                if 'crash_id' not in crash:
+                    crash['crash_id'] = crash.get('id', 'unknown')
                 repro = self.generate_repro(crash)
                 repro_kits.append(repro)
         
@@ -42,12 +45,12 @@ class ReproKitGenerator:
     
     def generate_repro(self, crash_data):
         """Generate reproduction kit for a single crash"""
-        crash_id = crash_data['crash_id']
+        crash_id = crash_data.get('crash_id', crash_data.get('id', 'unknown'))
         
         repro_kit = {
             'crash_id': crash_id,
-            'crash_type': crash_data['crash_type'],
-            'severity': crash_data['severity'],
+            'crash_type': crash_data.get('crash_type', 'Unknown'),
+            'severity': crash_data.get('severity', 'Unknown'),
             'components': {
                 'minimal_input': self._minimize_input(crash_data),
                 'standalone_reproducer': self._generate_standalone_reproducer(crash_data),
@@ -56,7 +59,9 @@ class ReproKitGenerator:
             }
         }
         
-        if crash_data.get('exploitability') in ['High', 'Medium']:
+        # Check if exploitable (map "Exploitable" and "Likely Exploitable" to High/Medium)
+        exploitability = crash_data.get('exploitability', '')
+        if exploitability in ['Exploitable', 'Likely Exploitable']:
             repro_kit['components']['exploit_template'] = self._generate_exploit_template(crash_data)
         
         self._save_repro_kit(crash_id, repro_kit)
@@ -132,14 +137,19 @@ int main() {{
         }
     
     def _generate_patch_suggestion(self, crash_data):
-        patch = f"""// Fix for {crash_data['crash_type']}
+        crash_type = crash_data.get('crash_type', 'Unknown')
+        patch = f"""// Fix for {crash_type}
 // Add bounds checking and validation"""
         
+        # Extract location from crash_file or use target
+        location = crash_data.get('crash_file', crash_data.get('target', 'unknown'))
+        function = crash_data.get('target', 'unknown')
+        
         return {
-            'location': f"{crash_data.get('file', 'unknown')}:{crash_data.get('line', '?')}",
-            'function': crash_data.get('function', 'unknown'),
+            'location': location,
+            'function': function,
             'suggested_fix': patch,
-            'description': f"Fix {crash_data['crash_type']}",
+            'description': f"Fix {crash_type}",
             'diff': f"--- a/file.c\n+++ b/file.c\n@@ -1,1 +1,2 @@\n+{patch}"
         }
     

@@ -381,11 +381,7 @@
                     </div>
                     <div class="progress-step">
                         <div class="step-circle">7</div>
-                        <div class="step-label">Repro Kit</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="step-circle">8</div>
-                        <div class="step-label">Repair</div>
+                        <div class="step-label">Results</div>
                     </div>
                 </div>
             </div>
@@ -416,6 +412,9 @@
                 <button class="btn btn-secondary" onclick="refreshResults()">
                     <span>🔄</span> Refresh Results
                 </button>
+                <a href="/triage/{{ scan_id }}" class="btn btn-primary" style="text-decoration: none;">
+                    <span>🔍</span> Proceed to Triage Analysis
+                </a>
             </div>
 
             <div id="statusBanner" style="display: none;"></div>
@@ -451,9 +450,11 @@
                 <hr style="margin: 30px 0;">
                 <h3 style="margin-bottom: 15px;">Next Step: Crash Triage</h3>
                 <p style="color: #666; margin-bottom: 20px;">Analyze and classify the discovered crashes to prioritize security impact</p>
-                <a href="/triage/{{ scan_id }}" class="btn btn-primary" style="text-decoration: none; font-size: 16px; padding: 15px 30px;">
-                    <span>🔍</span> Proceed to Triage Analysis
-                </a>
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <a href="/triage/{{ scan_id }}" class="btn btn-primary" style="text-decoration: none; font-size: 16px; padding: 15px 30px;">
+                        <span>🔍</span> Proceed to Triage Analysis
+                    </a>
+                </div>
             </div>
         </div>
     </div>

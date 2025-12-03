@@ -42,9 +42,30 @@ class CrashTriageAnalyzer:
         
         # Analyze each crash
         triaged_crashes = []
+        
+        for result in campaign_results.get('results', []):
+            if result.get('crashes_found', 0) > 0:
+                target_name = result['target']
+                crashes = result.get('crashes', [])
+                output = result.get('output', '')
+                
+                for crash in crashes:
+                    # Analyze crash
+                    analysis = self._analyze_crash(
+                        target_name=target_name,
+                        crash_file=crash,
+                        sanitizer_output=output
+                    )
+                    
+                    triaged_crashes.append(analysis)
+        
+        # Deduplicate crashes first
+        unique_crashes = self._deduplicate_crashes(triaged_crashes)
+        
+        # Now count stats from unique crashes only
         crash_stats = {
-            'total_crashes': 0,
-            'unique_crashes': 0,
+            'total_crashes': len(unique_crashes),
+            'unique_crashes': len(unique_crashes),
             'critical': 0,
             'high': 0,
             'medium': 0,
@@ -54,36 +75,16 @@ class CrashTriageAnalyzer:
             'unlikely_exploitable': 0
         }
         
-        for result in campaign_results.get('results', []):
-            if result.get('crashes_found', 0) > 0:
-                target_name = result['target']
-                crashes = result.get('crashes', [])
-                output = result.get('output', '')
-                
-                for crash in crashes:
-                    crash_stats['total_crashes'] += 1
-                    
-                    # Analyze crash
-                    analysis = self._analyze_crash(
-                        target_name=target_name,
-                        crash_file=crash,
-                        sanitizer_output=output
-                    )
-                    
-                    triaged_crashes.append(analysis)
-                    
-                    # Update stats
-                    severity = analysis['severity'].lower()
-                    if severity in crash_stats:
-                        crash_stats[severity] += 1
-                    
-                    exploitability = analysis['exploitability'].lower().replace(' ', '_')
-                    if exploitability in crash_stats:
-                        crash_stats[exploitability] += 1
-        
-        # Deduplicate crashes
-        unique_crashes = self._deduplicate_crashes(triaged_crashes)
-        crash_stats['unique_crashes'] = len(unique_crashes)
+        for crash in unique_crashes:
+            # Update severity stats
+            severity = crash['severity'].lower()
+            if severity in crash_stats:
+                crash_stats[severity] += 1
+            
+            # Update exploitability stats
+            exploitability = crash['exploitability'].lower().replace(' ', '_')
+            if exploitability in crash_stats:
+                crash_stats[exploitability] += 1
         
         # Build summary for template
         summary = {
@@ -186,8 +187,8 @@ class CrashTriageAnalyzer:
     
     def _assess_exploitability(self, crash_type: str, output: str) -> str:
         """Assess exploitability"""
-        exploitable_types = ['Heap Buffer Overflow', 'Stack Buffer Overflow', 'Use After Free']
-        likely_types = ['Double Free', 'Stack Overflow', 'Memory Corruption']
+        exploitable_types = ['Heap Buffer Overflow', 'Stack Buffer Overflow', 'Use After Free', 'Double Free']
+        likely_types = ['Stack Overflow', 'Memory Corruption']
         
         if crash_type in exploitable_types:
             return 'Exploitable'
