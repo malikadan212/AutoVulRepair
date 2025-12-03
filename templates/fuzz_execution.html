@@ -446,6 +446,15 @@
                 <h3 style="margin-bottom: 15px;">Target Results</h3>
                 <div class="target-list" id="targetList"></div>
             </div>
+
+            <div id="nextStepSection" style="display: none; margin-top: 30px; text-align: center;">
+                <hr style="margin: 30px 0;">
+                <h3 style="margin-bottom: 15px;">Next Step: Crash Triage</h3>
+                <p style="color: #666; margin-bottom: 20px;">Analyze and classify the discovered crashes to prioritize security impact</p>
+                <a href="/triage/{{ scan_id }}" class="btn btn-primary" style="text-decoration: none; font-size: 16px; padding: 15px 30px;">
+                    <span>🔍</span> Proceed to Triage Analysis
+                </a>
+            </div>
         </div>
     </div>
 
@@ -550,6 +559,11 @@
             });
             
             document.getElementById('targetList').innerHTML = html;
+            
+            // Show next step button if crashes were found
+            if (totalCrashes > 0) {
+                document.getElementById('nextStepSection').style.display = 'block';
+            }
         }
 
         // Load existing results on page load

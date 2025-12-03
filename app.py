@@ -1943,5 +1943,173 @@ def simulate_scan(directory):
     return vulnerabilities, patches
 
 
+# ============================================================================
+# TRIAGE MODULE ROUTES
+# ============================================================================
+
+@app.route('/triage/<scan_id>')
+def triage_dashboard(scan_id):
+    """Triage dashboard for crash analysis"""
+    from src.triage.analyzer import CrashTriageAnalyzer
+    
+    analyzer = CrashTriageAnalyzer(scan_id)
+    results = analyzer.get_results()
+    
+    return render_template('triage_dashboard.html', 
+                         scan_id=scan_id, 
+                         results=results)
+
+@app.route('/api/triage/<scan_id>/start', methods=['POST'])
+def start_triage(scan_id):
+    """Start triage analysis"""
+    try:
+        from src.triage.analyzer import CrashTriageAnalyzer
+        
+        analyzer = CrashTriageAnalyzer(scan_id)
+        results = analyzer.analyze_all_crashes()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Triage analysis completed',
+            'results': results
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/triage/<scan_id>/crash/<crash_id>')
+def get_crash_details(scan_id, crash_id):
+    """Get detailed information about a specific crash"""
+    try:
+        from src.triage.analyzer import CrashTriageAnalyzer
+        
+        analyzer = CrashTriageAnalyzer(scan_id)
+        results = analyzer.get_results()
+        
+        if not results:
+            return jsonify({'error': 'No triage results found'}), 404
+        
+        # Find the crash
+        crash = next((c for c in results['crashes'] if c['crash_id'] == crash_id), None)
+        
+        if not crash:
+            return jsonify({'error': 'Crash not found'}), 404
+        
+        return jsonify(crash)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# REPRO-KIT MODULE ROUTES
+# ============================================================================
+
+@app.route('/repro-kit/<scan_id>')
+def repro_kit(scan_id):
+    """Repro-kit dashboard for generating reproducers"""
+    from src.repro.generator import ReproKitGenerator
+    
+    generator = ReproKitGenerator(scan_id)
+    results = generator.get_results()
+    
+    return render_template('repro_kit.html', 
+                         scan_id=scan_id, 
+                         results=results)
+
+@app.route('/api/repro/<scan_id>/generate', methods=['POST'])
+def generate_repro_kits(scan_id):
+    """Generate reproduction kits for all crashes"""
+    try:
+        from src.repro.generator import ReproKitGenerator
+        
+        generator = ReproKitGenerator(scan_id)
+        results = generator.generate_all_repros()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Generated {results["total_repros"]} reproduction kits',
+            'results': results
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/repro/<scan_id>/code/<crash_id>/<code_type>')
+def get_repro_code(scan_id, crash_id, code_type):
+    """Get code for a specific repro component"""
+    try:
+        from src.repro.generator import ReproKitGenerator
+        
+        generator = ReproKitGenerator(scan_id)
+        results = generator.get_results()
+        
+        if not results:
+            return jsonify({'error': 'No repro results found'}), 404
+        
+        # Find the repro kit
+        kit = next((k for k in results['repro_kits'] if k['crash_id'] == crash_id), None)
+        
+        if not kit:
+            return jsonify({'error': 'Repro kit not found'}), 404
+        
+        # Get the requested code
+        code_map = {
+            'reproducer': ('Standalone Reproducer', kit['components']['standalone_reproducer']['code']),
+            'gdb': ('GDB Debug Script', kit['components']['gdb_script']['script']),
+            'exploit': ('Exploit Template', kit['components'].get('exploit_template', {}).get('code', 'Not available'))
+        }
+        
+        if code_type not in code_map:
+            return jsonify({'error': 'Invalid code type'}), 400
+        
+        title, code = code_map[code_type]
+        
+        return jsonify({
+            'title': title,
+            'code': code
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/repro/<scan_id>/download/<crash_id>/<file_type>')
+def download_repro_file(scan_id, crash_id, file_type):
+    """Download a repro kit file"""
+    try:
+        from pathlib import Path
+        
+        scan_dir = Path(f"scans/{scan_id}")
+        repro_dir = scan_dir / "repro_kits"
+        
+        file_map = {
+            'reproducer': f"{crash_id}_reproducer.c",
+            'gdb': f"{crash_id}_debug.gdb",
+            'exploit': f"{crash_id}_exploit.c"
+        }
+        
+        if file_type not in file_map:
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        file_path = repro_dir / file_map[file_type]
+        
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+        
+        return send_file(file_path, as_attachment=True, download_name=file_map[file_type])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/repro/<scan_id>/apply-patch/<crash_id>', methods=['POST'])
+def apply_patch(scan_id, crash_id):
+    """Apply suggested patch (placeholder for now)"""
+    # This would integrate with version control to apply patches
+    return jsonify({
+        'status': 'info',
+        'message': 'Patch application requires manual review. Download the patch diff and apply manually.'
+    })
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True, extra_files=['templates/', 'src/'])

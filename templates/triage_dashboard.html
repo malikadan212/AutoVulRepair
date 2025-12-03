@@ -1,0 +1,286 @@
+{% extends "layout.html" %}
+
+{% block title %}Crash Triage - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-stethoscope"></i> Crash Triage Analysis</h2>
+            <p class="text-muted">Scan ID: {{ scan_id }}</p>
+        </div>
+    </div>
+
+    {% if results %}
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Critical</h5>
+                    <h2>{{ results.summary.by_severity.Critical }}</h2>
+                    <small>Immediate attention required</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <h5 class="card-title">High</h5>
+                    <h2>{{ results.summary.by_severity.High }}</h2>
+                    <small>High priority fixes</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Medium</h5>
+                    <h2>{{ results.summary.by_severity.Medium }}</h2>
+                    <small>Should be addressed</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-secondary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Low</h5>
+                    <h2>{{ results.summary.by_severity.Low }}</h2>
+                    <small>Minor issues</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Crash Type Distribution -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-pie"></i> Crash Types</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for crash_type, count in results.summary.by_type.items() %}
+                            <tr>
+                                <td>{{ crash_type }}</td>
+                                <td><span class="badge bg-primary">{{ count }}</span></td>
+                                <td>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar" role="progressbar" 
+                                             style="width: {{ (count / results.summary.total_crashes * 100)|round }}%">
+                                            {{ (count / results.summary.total_crashes * 100)|round }}%
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-shield-alt"></i> Exploitability Assessment</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th>Count</th>
+                                <th>Risk</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for level, count in results.summary.by_exploitability.items() %}
+                            <tr>
+                                <td>{{ level }}</td>
+                                <td><span class="badge bg-danger">{{ count }}</span></td>
+                                <td>
+                                    {% if level == 'High' %}
+                                    <span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Critical Risk</span>
+                                    {% elif level == 'Medium' %}
+                                    <span class="text-warning"><i class="fas fa-exclamation-circle"></i> Moderate Risk</span>
+                                    {% else %}
+                                    <span class="text-info"><i class="fas fa-info-circle"></i> Low Risk</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Crash List -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-list"></i> Triaged Crashes</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="filterBySeverity('all')">All</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="filterBySeverity('Critical')">Critical</button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="filterBySeverity('High')">High</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="crashTable">
+                            <thead>
+                                <tr>
+                                    <th>Crash ID</th>
+                                    <th>Type</th>
+                                    <th>Severity</th>
+                                    <th>Exploitability</th>
+                                    <th>CVSS Score</th>
+                                    <th>Function</th>
+                                    <th>Location</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for crash in results.crashes %}
+                                <tr data-severity="{{ crash.severity }}">
+                                    <td><code>{{ crash.crash_id[:8] }}</code></td>
+                                    <td><span class="badge bg-dark">{{ crash.crash_type }}</span></td>
+                                    <td>
+                                        {% if crash.severity == 'Critical' %}
+                                        <span class="badge bg-danger">{{ crash.severity }}</span>
+                                        {% elif crash.severity == 'High' %}
+                                        <span class="badge bg-warning text-dark">{{ crash.severity }}</span>
+                                        {% elif crash.severity == 'Medium' %}
+                                        <span class="badge bg-info">{{ crash.severity }}</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ crash.severity }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge 
+                                            {% if crash.exploitability == 'High' %}bg-danger
+                                            {% elif crash.exploitability == 'Medium' %}bg-warning
+                                            {% else %}bg-secondary{% endif %}">
+                                            {{ crash.exploitability }}
+                                        </span>
+                                    </td>
+                                    <td><strong>{{ crash.cvss_score }}</strong></td>
+                                    <td><code>{{ crash.function }}</code></td>
+                                    <td><small>{{ crash.file }}:{{ crash.line }}</small></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" onclick="viewCrashDetails('{{ crash.crash_id }}')">
+                                            <i class="fas fa-eye"></i> Details
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Buttons -->
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between">
+            <a href="{{ url_for('fuzz_execution', scan_id=scan_id) }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Fuzzing
+            </a>
+            <a href="{{ url_for('repro_kit', scan_id=scan_id) }}" class="btn btn-success btn-lg">
+                <i class="fas fa-arrow-right"></i> Generate Repro Kits
+            </a>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Results Yet -->
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <h4><i class="fas fa-info-circle"></i> Triage Not Started</h4>
+                <p>Click the button below to start crash triage analysis.</p>
+                <button class="btn btn-primary" onclick="startTriage()">
+                    <i class="fas fa-play"></i> Start Triage Analysis
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Crash Details Modal -->
+<div class="modal fade" id="crashDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Crash Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="crashDetailsContent">
+                <!-- Details loaded via JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function startTriage() {
+    fetch('/api/triage/{{ scan_id }}/start', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    });
+}
+
+function filterBySeverity(severity) {
+    const rows = document.querySelectorAll('#crashTable tbody tr');
+    rows.forEach(row => {
+        if (severity === 'all' || row.dataset.severity === severity) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function viewCrashDetails(crashId) {
+    fetch(`/api/triage/{{ scan_id }}/crash/${crashId}`)
+        .then(response => response.json())
+        .then(data => {
+            const content = `
+                <h6>Crash Type: ${data.crash_type}</h6>
+                <p><strong>Severity:</strong> ${data.severity} | <strong>CVSS:</strong> ${data.cvss_score}</p>
+                <h6>Stack Trace:</h6>
+                <pre class="bg-dark text-light p-3">${data.stack_trace}</pre>
+                <h6>Root Cause:</h6>
+                <p>${data.root_cause}</p>
+                <h6>Mitigation:</h6>
+                <p>${data.mitigation}</p>
+            `;
+            document.getElementById('crashDetailsContent').innerHTML = content;
+            new bootstrap.Modal(document.getElementById('crashDetailsModal')).show();
+        });
+}
+</script>
+{% endblock %}
