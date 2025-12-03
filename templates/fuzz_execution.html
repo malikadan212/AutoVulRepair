@@ -551,9 +551,9 @@
                         </div>
                         <div class="target-stats">
                             <span>⏱️ Runtime: ${r.runtime}s</span>
-                            <span>📊 Coverage: ${r.stats?.coverage || 'N/A'}</span>
-                            <span>🔢 Corpus: ${r.stats?.corpus || 'N/A'}</span>
-                            <span>⚡ Exec/s: ${r.stats?.exec_per_sec || 'N/A'}</span>
+                            ${r.stats?.coverage ? `<span>📊 Coverage: ${r.stats.coverage}</span>` : ''}
+                            ${r.stats?.corpus ? `<span>🔢 Corpus: ${r.stats.corpus}</span>` : ''}
+                            ${r.stats?.exec_per_sec ? `<span>⚡ Exec/s: ${r.stats.exec_per_sec}</span>` : ''}
                         </div>
                     </div>
                 `;
