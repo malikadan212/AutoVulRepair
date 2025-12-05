@@ -1042,26 +1042,36 @@ def fuzz_results(scan_id):
 def scan_public():
     """New ingestion API endpoint for public scanning"""
     try:
-        # Get form data
-        repo_url = request.form.get('repo_url', '').strip()
-        zip_file = request.files.get('zip_file')
-        code_snippet = request.form.get('code_snippet', '').strip()
-        analysis_tool = request.form.get('analysis_tool', 'cppcheck')
-        
-        # Check if this is a form submission (for proper error handling)
-        # Check both multipart (file upload) and urlencoded (text form) content types
+        # Check if this is a JSON request or form submission
+        is_json_request = request.content_type and 'application/json' in request.content_type
         is_form_submission = request.content_type and (
             'multipart/form-data' in request.content_type or 
             'application/x-www-form-urlencoded' in request.content_type
         )
         
+        # Get data from appropriate source
+        if is_json_request:
+            data = request.get_json() or {}
+            repo_url = data.get('repo_url', '').strip()
+            zip_file = None  # JSON requests don't support file uploads
+            code_snippet = data.get('code_snippet', '').strip()
+            analysis_tool = data.get('analysis_tool', 'cppcheck')
+        else:
+            # Form data
+            repo_url = request.form.get('repo_url', '').strip()
+            zip_file = request.files.get('zip_file')
+            code_snippet = request.form.get('code_snippet', '').strip()
+            analysis_tool = request.form.get('analysis_tool', 'cppcheck')
+        
         logger.info(f"[SCAN_SUBMISSION] New scan request received")
-        logger.info(f"[SCAN_SUBMISSION] Content-Type: {request.content_type}, Is Form: {is_form_submission}")
+        logger.info(f"[SCAN_SUBMISSION] Content-Type: {request.content_type}, Is JSON: {is_json_request}, Is Form: {is_form_submission}")
         logger.info(f"[SCAN_SUBMISSION] Source types - repo_url: {bool(repo_url)}, zip_file: {bool(zip_file and zip_file.filename)}, code_snippet: {bool(code_snippet)}")
         logger.info(f"[SCAN_SUBMISSION] Analysis tool: {analysis_tool}")
         
         # Validate that only one source type is provided
-        source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, code_snippet])
+        # For code snippets, check if it's not just whitespace
+        has_code_snippet = code_snippet and code_snippet.strip()
+        source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, has_code_snippet])
         if source_count != 1:
             logger.warning(f"[SCAN_SUBMISSION] Validation failed: Exactly one source type must be provided (found {source_count})")
             if is_form_submission:
@@ -1308,7 +1318,7 @@ def scan_public():
                     flash(f'Scan submitted successfully (ID: {scan_id})', 'success')
                     return redirect(url_for('no_login_scan'))
             
-            # For API calls, return JSON
+            # For API calls (JSON), return JSON
             logger.info(f"[SCAN_SUBMISSION] Returning JSON response for scan {scan_id}")
             return jsonify({
                 'scan_id': scan_id,
@@ -1325,11 +1335,12 @@ def scan_public():
         if 'scan_dir' in locals() and os.path.exists(scan_dir):
             shutil.rmtree(scan_dir, ignore_errors=True)
         # Check if form submission for proper error handling
+        is_json_request = request.content_type and 'application/json' in request.content_type
         is_form_submission = request.content_type and ('multipart/form-data' in request.content_type or 'application/x-www-form-urlencoded' in request.content_type)
         
         import traceback
         print(f"ERROR in /scan-public: {e}")
-        print(f"Content-Type: {request.content_type}, Is Form: {is_form_submission}")
+        print(f"Content-Type: {request.content_type}, Is JSON: {is_json_request}, Is Form: {is_form_submission}")
         traceback.print_exc()
         
         if is_form_submission:

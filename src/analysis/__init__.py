@@ -1,1 +1,1 @@
-# Empty file to make analysis a Python package
+# Analysis module for static analysis tools
