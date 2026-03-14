@@ -1,0 +1,37 @@
+name: 'AutoVulRepair Security Audit'
+description: 'Automated C/C++ vulnerability detection, fuzzing harness generation, and AI-assisted patching.'
+author: 'malikadan212'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  analysis_tool:
+    description: 'Static analysis tool to use: cppcheck or codeql'
+    required: false
+    default: 'cppcheck'
+
+  source_dir:
+    description: 'Subdirectory to scan (leave as . for whole repo)'
+    required: false
+    default: '.'
+
+  fail_on_vuln:
+    description: 'Fail the CI build if vulnerabilities are detected'
+    required: false
+    default: 'false'
+
+outputs:
+  vuln_count:
+    description: 'Number of vulnerabilities found'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile.action'
+  args:
+    - ${{ inputs.analysis_tool }}
+    - ${{ inputs.source_dir }}
+    - ${{ inputs.fail_on_vuln }}
+  env:
+    GITHUB_TOKEN: ${{ github.token }}

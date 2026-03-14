@@ -1,0 +1,59 @@
+name: 🛡️ AutoVulRepair Security Scan
+
+# ─── WHEN DOES THIS RUN? ────────────────────────────────────────────────────
+on:
+  # Run on every Pull Request targeting main
+  pull_request:
+    branches: [ main ]
+
+  # Also run on every direct push to main
+  push:
+    branches: [ main ]
+
+  # Run the HEAVY modules (fuzzing) every night at 2 AM
+  schedule:
+    - cron: '0 2 * * *'   # 2:00 AM UTC daily
+
+  # Allow manually triggering from GitHub's UI
+  workflow_dispatch:
+
+# ─── PERMISSIONS ─────────────────────────────────────────────────────────────
+permissions:
+  contents: read
+  pull-requests: write    # Needed to post comments on PRs
+
+# ─── JOBS ────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── JOB 1: Fast scan — runs on every PR (takes ~3 min) ───────────────────
+  fast-scan:
+    name: 🔍 Static Analysis + Harness Generation
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the code being scanned
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Run AutoVulRepair (uses THIS repo's action.yml)
+      - name: 🔍 Run AutoVulRepair (Fast Modules)
+        uses: ./
+        with:
+          analysis_tool: 'cppcheck'
+          source_dir: '.'
+          fail_on_vuln: 'false'    # ← Keep false while testing!
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Save the generated harnesses so you can download them
+      - name: 📦 Save Generated Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autovulrepair-results
+          path: |
+            /tmp/avr_scans/*/static_findings.json
+            /tmp/avr_scans/*/fuzz/fuzzplan.json
+            /tmp/avr_scans/*/fuzz/harnesses/
+          retention-days: 7
+          if-no-files-found: warn
