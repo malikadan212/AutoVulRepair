@@ -1,0 +1,350 @@
+{
+  "report_metadata": {
+    "report_id": "comprehensive-report-2024-001",
+    "generated_at": "2024-01-27T17:00:00Z",
+    "scan_id": "sample-scan-2024-001",
+    "report_version": "1.0",
+    "report_type": "comprehensive_security_analysis"
+  },
+  "executive_summary": {
+    "project_name": "Vulnerable C Project",
+    "scan_duration": "2h 15m",
+    "total_vulnerabilities_found": 5,
+    "critical_vulnerabilities": 2,
+    "high_vulnerabilities": 2,
+    "medium_vulnerabilities": 1,
+    "vulnerabilities_fixed": 4,
+    "fix_success_rate": "80%",
+    "overall_security_posture": "significantly_improved",
+    "risk_reduction": "85%"
+  },
+  "project_overview": {
+    "source_info": {
+      "repository": "https://github.com/example/vulnerable-c-project",
+      "commit_hash": "abc123def456",
+      "branch": "main",
+      "scan_timestamp": "2024-01-27T14:30:00Z"
+    },
+    "codebase_metrics": {
+      "total_files": 45,
+      "c_cpp_files": 23,
+      "header_files": 15,
+      "total_lines_of_code": 8542,
+      "lines_analyzed": 6234,
+      "analysis_coverage": "73%"
+    },
+    "build_information": {
+      "compiler": "gcc 11.4.0",
+      "build_system": "make",
+      "dependencies": 12,
+      "build_status": "successful"
+    }
+  },
+  "vulnerability_analysis": {
+    "discovery_methods": {
+      "static_analysis": {
+        "tools_used": ["cppcheck", "clang-static-analyzer"],
+        "vulnerabilities_found": 12,
+        "false_positives": 7,
+        "true_positives": 5
+      },
+      "dynamic_analysis": {
+        "fuzzing_campaigns": 7,
+        "total_executions": 2847392,
+        "crashes_discovered": 8,
+        "unique_vulnerabilities": 5
+      },
+      "correlation_analysis": {
+        "static_dynamic_matches": 5,
+        "static_only_findings": 0,
+        "dynamic_only_findings": 0,
+        "correlation_rate": "100%"
+      }
+    },
+    "vulnerability_categories": {
+      "memory_safety": {
+        "count": 3,
+        "types": ["buffer_overflow", "use_after_free", "double_free"],
+        "severity_distribution": {"critical": 2, "high": 1}
+      },
+      "input_validation": {
+        "count": 1,
+        "types": ["format_string"],
+        "severity_distribution": {"high": 1}
+      },
+      "integer_handling": {
+        "count": 1,
+        "types": ["integer_overflow"],
+        "severity_distribution": {"medium": 1}
+      }
+    },
+    "cwe_mapping": {
+      "CWE-119": {"count": 1, "description": "Buffer Overflow"},
+      "CWE-416": {"count": 1, "description": "Use After Free"},
+      "CWE-134": {"count": 1, "description": "Format String"},
+      "CWE-190": {"count": 1, "description": "Integer Overflow"},
+      "CWE-476": {"count": 1, "description": "Null Pointer Dereference"}
+    }
+  },
+  "detailed_findings": [
+    {
+      "vulnerability_id": "VULN-2024-001",
+      "title": "Critical Buffer Overflow in parse_input()",
+      "severity": "critical",
+      "cvss_score": 9.8,
+      "cwe": "CWE-119",
+      "location": {
+        "file": "src/parser.c",
+        "function": "parse_input",
+        "line": 145
+      },
+      "description": "The parse_input function uses strcpy() without bounds checking, allowing attackers to overflow the destination buffer with crafted input.",
+      "impact": "Remote code execution, memory corruption",
+      "exploitability": "high",
+      "discovery_method": "static_analysis_and_fuzzing",
+      "proof_of_concept": {
+        "input_size": 1024,
+        "crash_type": "heap-buffer-overflow",
+        "reproducer_available": true
+      },
+      "fix_status": "fixed",
+      "fix_details": {
+        "patch_id": "patch_001",
+        "fix_type": "bounds_checking",
+        "validation_status": "passed"
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-002",
+      "title": "Critical Use-After-Free in cleanup_session()",
+      "severity": "critical",
+      "cvss_score": 9.1,
+      "cwe": "CWE-416",
+      "location": {
+        "file": "src/session.c",
+        "function": "cleanup_session",
+        "line": 89
+      },
+      "description": "Session data is accessed after being freed, leading to use-after-free condition that can be exploited for arbitrary code execution.",
+      "impact": "Memory corruption, potential code execution",
+      "exploitability": "high",
+      "discovery_method": "static_analysis_and_fuzzing",
+      "proof_of_concept": {
+        "input_size": 32,
+        "crash_type": "heap-use-after-free",
+        "reproducer_available": true
+      },
+      "fix_status": "fixed",
+      "fix_details": {
+        "patch_id": "patch_002",
+        "fix_type": "memory_safety",
+        "validation_status": "passed"
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-003",
+      "title": "High Severity Format String in log_error()",
+      "severity": "high",
+      "cvss_score": 8.2,
+      "cwe": "CWE-134",
+      "location": {
+        "file": "src/logging.c",
+        "function": "log_error",
+        "line": 78
+      },
+      "description": "User-controlled format string passed directly to printf() allows format string attacks.",
+      "impact": "Information disclosure, potential code execution",
+      "exploitability": "medium",
+      "discovery_method": "static_analysis_and_fuzzing",
+      "proof_of_concept": {
+        "input_size": 256,
+        "crash_type": "stack-buffer-overflow",
+        "reproducer_available": true
+      },
+      "fix_status": "fixed",
+      "fix_details": {
+        "patch_id": "patch_003",
+        "fix_type": "format_string_safety",
+        "validation_status": "passed"
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-004",
+      "title": "Medium Severity Integer Overflow in allocate_buffer()",
+      "severity": "medium",
+      "cvss_score": 6.5,
+      "cwe": "CWE-190",
+      "location": {
+        "file": "src/memory.c",
+        "function": "allocate_buffer",
+        "line": 67
+      },
+      "description": "Integer overflow in size calculation (count * item_size) can wrap around, leading to undersized allocation and subsequent heap overflow.",
+      "impact": "Memory corruption, potential heap overflow",
+      "exploitability": "medium",
+      "discovery_method": "static_analysis_and_fuzzing",
+      "proof_of_concept": {
+        "input_size": 16,
+        "crash_type": "signed-integer-overflow",
+        "reproducer_available": true
+      },
+      "fix_status": "fixed",
+      "fix_details": {
+        "patch_id": "patch_004",
+        "fix_type": "overflow_protection",
+        "validation_status": "passed_with_warnings"
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-005",
+      "title": "Medium Severity Null Pointer Dereference in process_request()",
+      "severity": "medium",
+      "cvss_score": 5.3,
+      "cwe": "CWE-476",
+      "location": {
+        "file": "src/request.c",
+        "function": "process_request",
+        "line": 234
+      },
+      "description": "Function does not validate request parameter before dereferencing, leading to null pointer dereference when called with NULL.",
+      "impact": "Denial of service",
+      "exploitability": "low",
+      "discovery_method": "static_analysis_and_fuzzing",
+      "proof_of_concept": {
+        "input_size": 4,
+        "crash_type": "segv",
+        "reproducer_available": true
+      },
+      "fix_status": "requires_manual_review",
+      "fix_details": {
+        "reason": "Requires understanding of proper error handling semantics for this API",
+        "manual_guidance_provided": true
+      }
+    }
+  ],
+  "testing_and_validation": {
+    "fuzzing_results": {
+      "total_campaigns": 7,
+      "total_executions": 2847392,
+      "execution_time": "1h 23m",
+      "coverage_achieved": "67.3%",
+      "crashes_found": 8,
+      "unique_crashes": 5,
+      "harnesses_generated": 7,
+      "harness_success_rate": "100%"
+    },
+    "static_analysis_results": {
+      "tools_used": ["cppcheck", "clang-static-analyzer"],
+      "total_findings": 12,
+      "true_positives": 5,
+      "false_positives": 7,
+      "analysis_time": "45s",
+      "coverage": "100%"
+    },
+    "validation_testing": {
+      "total_tests_run": 158,
+      "tests_passed": 158,
+      "tests_failed": 0,
+      "test_coverage": "94.25%",
+      "regression_tests": 127,
+      "new_tests_added": 18
+    }
+  },
+  "repair_and_remediation": {
+    "repair_summary": {
+      "total_vulnerabilities": 5,
+      "automated_repairs": 4,
+      "manual_repairs_required": 1,
+      "repair_success_rate": "80%",
+      "total_repair_time": "45m"
+    },
+    "patch_statistics": {
+      "total_patches_generated": 4,
+      "lines_added": 21,
+      "lines_removed": 10,
+      "lines_modified": 12,
+      "files_modified": 4
+    },
+    "deployment_status": {
+      "deployment_strategy": "staged_rollout",
+      "current_phase": "production_deployment",
+      "deployment_progress": "75%",
+      "rollback_plan_tested": true
+    }
+  },
+  "risk_assessment": {
+    "pre_repair_risk_score": 9.2,
+    "post_repair_risk_score": 1.4,
+    "risk_reduction_percentage": "85%",
+    "remaining_risks": [
+      {
+        "vulnerability_id": "VULN-2024-005",
+        "risk_level": "medium",
+        "mitigation_status": "pending_manual_review"
+      }
+    ],
+    "security_posture": "significantly_improved"
+  },
+  "recommendations": {
+    "immediate_actions": [
+      {
+        "priority": "high",
+        "action": "Complete manual review and fix for VULN-2024-005",
+        "timeline": "within_24h"
+      },
+      {
+        "priority": "medium",
+        "action": "Monitor performance impact of patch_004 in production",
+        "timeline": "ongoing"
+      }
+    ],
+    "long_term_improvements": [
+      {
+        "category": "process",
+        "recommendation": "Integrate automated security scanning into CI/CD pipeline",
+        "benefit": "Early detection of vulnerabilities"
+      },
+      {
+        "category": "tooling",
+        "recommendation": "Implement continuous fuzzing for critical components",
+        "benefit": "Ongoing vulnerability discovery"
+      },
+      {
+        "category": "training",
+        "recommendation": "Provide secure coding training for development team",
+        "benefit": "Prevention of common vulnerability patterns"
+      }
+    ]
+  },
+  "compliance_and_standards": {
+    "standards_evaluated": ["OWASP Top 10", "CWE Top 25", "NIST Cybersecurity Framework"],
+    "compliance_status": {
+      "owasp_top_10": "compliant",
+      "cwe_top_25": "mostly_compliant",
+      "nist_framework": "compliant"
+    },
+    "remaining_gaps": [
+      "Manual review required for null pointer handling patterns"
+    ]
+  },
+  "appendices": {
+    "tool_versions": {
+      "cppcheck": "2.12.1",
+      "clang_static_analyzer": "15.0.0",
+      "libfuzzer": "15.0.0",
+      "address_sanitizer": "15.0.0"
+    },
+    "reference_links": [
+      "https://cwe.mitre.org/data/definitions/119.html",
+      "https://cwe.mitre.org/data/definitions/416.html",
+      "https://cwe.mitre.org/data/definitions/134.html",
+      "https://cwe.mitre.org/data/definitions/190.html",
+      "https://cwe.mitre.org/data/definitions/476.html"
+    ],
+    "contact_information": {
+      "security_team": "security@example.com",
+      "development_team": "dev@example.com",
+      "report_author": "automated_security_scanner"
+    }
+  }
+}

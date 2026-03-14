@@ -23,6 +23,18 @@ env/
 # Scans (will be mounted as volume)
 scans/
 
+# Large database files (cves.db is already converted to FAISS indexes)
+cves.db
+
+faiss_indexes/
+*.index
+*.metadata
+
+# Environment files (contain API keys)
+.env
+.env.*
+!.env.example
+
 # Logs
 logs/
 *.log

@@ -1,0 +1,214 @@
+{
+  "version": "1.0",
+  "generated_at": "2024-01-27T14:31:00Z",
+  "source": "static_analysis_results.json",
+  "targets": [
+    {
+      "target_id": "parser_parse_input_oob",
+      "source_file": "src/parser.c",
+      "file_stem": "parser",
+      "function_name": "parse_input",
+      "bug_class": "OOB",
+      "rule_id": "bufferAccessOutOfBounds",
+      "severity": "critical",
+      "confidence": "high",
+      "line_number": 145,
+      "column_number": 12,
+      "message": "Potential buffer overflow when copying user input without bounds checking",
+      "cwe": "CWE-119",
+      "sanitizers": ["address", "undefined"],
+      "seed_directories": ["fuzz/seeds/parser/", "fuzz/seeds/generic/"],
+      "dictionaries": ["fuzz/auto.dict", "fuzz/bounds.dict"],
+      "priority": 9.75,
+      "harness_type": "parser_wrapper",
+      "harness_template": "parser_wrapper",
+      "function_signature": {
+        "return_type": "int",
+        "function_name": "parse_input",
+        "parameters": [
+          {"name": "input", "type": "char*", "is_pointer": true},
+          {"name": "buffer", "type": "char*", "is_pointer": true},
+          {"name": "max_size", "type": "size_t", "is_pointer": false}
+        ]
+      }
+    },
+    {
+      "target_id": "session_cleanup_session_uaf",
+      "source_file": "src/session.c",
+      "file_stem": "session",
+      "function_name": "cleanup_session",
+      "bug_class": "UAF",
+      "rule_id": "useAfterFree",
+      "severity": "critical",
+      "confidence": "high",
+      "line_number": 89,
+      "column_number": 8,
+      "message": "Memory is accessed after being freed in session cleanup",
+      "cwe": "CWE-416",
+      "sanitizers": ["address"],
+      "seed_directories": ["fuzz/seeds/generic/", "fuzz/seeds/api/"],
+      "dictionaries": [],
+      "priority": 9.5,
+      "harness_type": "api_sequence",
+      "harness_template": "api_sequence",
+      "function_signature": {
+        "return_type": "void",
+        "function_name": "cleanup_session",
+        "parameters": [
+          {"name": "session", "type": "session_t*", "is_pointer": true}
+        ]
+      }
+    },
+    {
+      "target_id": "memory_allocate_buffer_integer-ub",
+      "source_file": "src/memory.c",
+      "file_stem": "memory",
+      "function_name": "allocate_buffer",
+      "bug_class": "Integer-UB",
+      "rule_id": "integerOverflow",
+      "severity": "critical",
+      "confidence": "medium",
+      "line_number": 67,
+      "column_number": 15,
+      "message": "Integer overflow in size calculation can lead to heap overflow",
+      "cwe": "CWE-190",
+      "sanitizers": ["undefined"],
+      "seed_directories": ["fuzz/seeds/api/", "fuzz/seeds/numeric/"],
+      "dictionaries": ["fuzz/numeric.dict"],
+      "priority": 8.8,
+      "harness_type": "fdp_adapter",
+      "harness_template": "fdp_adapter",
+      "function_signature": {
+        "return_type": "void*",
+        "function_name": "allocate_buffer",
+        "parameters": [
+          {"name": "count", "type": "size_t", "is_pointer": false},
+          {"name": "item_size", "type": "size_t", "is_pointer": false}
+        ]
+      }
+    },
+    {
+      "target_id": "request_process_request_null-deref",
+      "source_file": "src/request.c",
+      "file_stem": "request",
+      "function_name": "process_request",
+      "bug_class": "Null-Deref",
+      "rule_id": "nullPointer",
+      "severity": "high",
+      "confidence": "high",
+      "line_number": 234,
+      "column_number": 5,
+      "message": "Function parameter not validated before use",
+      "cwe": "CWE-476",
+      "sanitizers": ["address", "undefined"],
+      "seed_directories": ["fuzz/seeds/generic/", "fuzz/seeds/api/"],
+      "dictionaries": [],
+      "priority": 7.5,
+      "harness_type": "bytes_to_api",
+      "harness_template": "bytes_to_api",
+      "function_signature": {
+        "return_type": "int",
+        "function_name": "process_request",
+        "parameters": [
+          {"name": "request", "type": "request_t*", "is_pointer": true}
+        ]
+      }
+    },
+    {
+      "target_id": "logging_log_error_format-string",
+      "source_file": "src/logging.c",
+      "file_stem": "logging",
+      "function_name": "log_error",
+      "bug_class": "Format-String",
+      "rule_id": "formatString",
+      "severity": "high",
+      "confidence": "high",
+      "line_number": 78,
+      "column_number": 12,
+      "message": "User-controlled format string in logging function",
+      "cwe": "CWE-134",
+      "sanitizers": ["address"],
+      "seed_directories": ["fuzz/seeds/parser/", "fuzz/seeds/strings/"],
+      "dictionaries": ["fuzz/auto.dict", "fuzz/format.dict"],
+      "priority": 7.2,
+      "harness_type": "parser_wrapper",
+      "harness_template": "parser_wrapper",
+      "function_signature": {
+        "return_type": "void",
+        "function_name": "log_error",
+        "parameters": [
+          {"name": "error_msg", "type": "const char*", "is_pointer": true}
+        ]
+      }
+    },
+    {
+      "target_id": "config_get_config_value_oob",
+      "source_file": "src/config.c",
+      "file_stem": "config",
+      "function_name": "get_config_value",
+      "bug_class": "OOB",
+      "rule_id": "outOfBounds",
+      "severity": "high",
+      "confidence": "medium",
+      "line_number": 156,
+      "column_number": 20,
+      "message": "Array access without bounds checking",
+      "cwe": "CWE-125",
+      "sanitizers": ["address", "undefined"],
+      "seed_directories": ["fuzz/seeds/parser/", "fuzz/seeds/generic/"],
+      "dictionaries": ["fuzz/auto.dict", "fuzz/bounds.dict"],
+      "priority": 6.8,
+      "harness_type": "fdp_adapter",
+      "harness_template": "fdp_adapter",
+      "function_signature": {
+        "return_type": "const char*",
+        "function_name": "get_config_value",
+        "parameters": [
+          {"name": "index", "type": "int", "is_pointer": false}
+        ]
+      }
+    },
+    {
+      "target_id": "error_error_cleanup_uaf",
+      "source_file": "src/error.c",
+      "file_stem": "error",
+      "function_name": "error_cleanup",
+      "bug_class": "UAF",
+      "rule_id": "doubleFree",
+      "severity": "high",
+      "confidence": "high",
+      "line_number": 45,
+      "column_number": 8,
+      "message": "Memory freed twice in error handling path",
+      "cwe": "CWE-415",
+      "sanitizers": ["address"],
+      "seed_directories": ["fuzz/seeds/generic/", "fuzz/seeds/api/"],
+      "dictionaries": [],
+      "priority": 6.5,
+      "harness_type": "api_sequence",
+      "harness_template": "api_sequence",
+      "function_signature": {
+        "return_type": "void",
+        "function_name": "error_cleanup",
+        "parameters": [
+          {"name": "buffer", "type": "void*", "is_pointer": true}
+        ]
+      }
+    }
+  ],
+  "metadata": {
+    "total_findings": 12,
+    "deduplicated_targets": 7,
+    "bug_class_breakdown": {
+      "OOB": 2,
+      "UAF": 2,
+      "Integer-UB": 1,
+      "Null-Deref": 1,
+      "Format-String": 1
+    },
+    "sanitizers_used": ["address", "undefined"],
+    "signatures_extracted": 7,
+    "signatures_failed": 0,
+    "signature_extraction_rate": "7/7"
+  }
+}

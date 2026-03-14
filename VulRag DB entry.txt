@@ -1,0 +1,10 @@
+{
+  "cve_id": "...",
+  "cwe_id": "...",
+  "vulnerability_type": "...",
+  "root_cause": "...",
+  "attack_condition": "...",
+  "fix_strategy": "...",
+  "code_pattern": "...",
+  "description": "..."
+}

@@ -1,0 +1,38 @@
+{
+  "scan_id": "sample-scan-2024-001",
+  "timestamp": "2024-01-27T14:30:00Z",
+  "source_info": {
+    "type": "github_repo",
+    "url": "https://github.com/example/vulnerable-c-project",
+    "commit_hash": "abc123def456",
+    "total_files": 45,
+    "c_cpp_files": 23,
+    "lines_of_code": 8542
+  },
+  "analysis_tools": ["cppcheck", "codeql"],
+  "pipeline_status": {
+    "static_analysis": "completed",
+    "fuzz_plan_generation": "completed",
+    "harness_generation": "completed",
+    "fuzzing_execution": "completed",
+    "triage": "completed"
+  },
+  "execution_time": {
+    "static_analysis": "45s",
+    "fuzz_plan_generation": "12s",
+    "harness_generation": "38s",
+    "fuzzing_execution": "1h 23m",
+    "triage": "8m"
+  },
+  "summary": {
+    "total_vulnerabilities": 12,
+    "critical": 3,
+    "high": 4,
+    "medium": 3,
+    "low": 2,
+    "crashes_found": 8,
+    "unique_crashes": 5,
+    "harnesses_generated": 7,
+    "code_coverage": "67.3%"
+  }
+}

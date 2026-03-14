@@ -1,0 +1,299 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="AutoVulRepair Architecture" id="arch">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- LAYER 1: PRESENTATION LAYER -->
+        <mxCell id="layer1" value="PRESENTATION LAYER" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1520" height="200" as="geometry"/>
+        </mxCell>
+        
+        <!-- Web Application -->
+        <mxCell id="webapp" value="Flask Web Application&#xa;(app.py)&#xa;&#xa;• OAuth (GitHub)&#xa;• Session Management&#xa;• File Upload&#xa;• Dashboard UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="200" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Templates -->
+        <mxCell id="templates" value="HTML Templates&#xa;&#xa;• Dashboard&#xa;• Scan Progress&#xa;• Fuzz Plan View&#xa;• Harness Generation&#xa;• Results Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="200" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- REST API -->
+        <mxCell id="api" value="REST API Endpoints&#xa;&#xa;• /api/scan-status&#xa;• /api/fuzz-plan/generate&#xa;• /api/harness/generate&#xa;• /api/build/orchestrate&#xa;• /api/fuzz/execute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="560" y="80" width="200" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Monitoring -->
+        <mxCell id="monitoring" value="Monitoring Dashboard&#xa;&#xa;• Prometheus Metrics&#xa;• Grafana Visualization&#xa;• System Health&#xa;• Scan Statistics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="800" y="80" width="200" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Kubernetes -->
+        <mxCell id="k8s" value="Kubernetes Orchestration&#xa;&#xa;• Pod Management&#xa;• Auto-scaling&#xa;• Load Balancing&#xa;• Service Discovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="80" width="200" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Docker -->
+        <mxCell id="docker" value="Docker Containers&#xa;&#xa;• App Container&#xa;• Celery Worker&#xa;• Redis&#xa;• Analysis Tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="80" width="200" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- LAYER 2: APPLICATION/BUSINESS LOGIC LAYER -->
+        <mxCell id="layer2" value="APPLICATION / BUSINESS LOGIC LAYER" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="1520" height="360" as="geometry"/>
+        </mxCell>
+        
+        <!-- Static Analysis Module -->
+        <mxCell id="static" value="Static Analysis Module&#xa;(src/analysis)&#xa;&#xa;• Cppcheck Analyzer&#xa;• CodeQL Analyzer&#xa;• XML/JSON Parsing&#xa;• Vulnerability Detection&#xa;• Security Checks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="200" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Fuzz Plan Generator -->
+        <mxCell id="fuzzplan" value="Fuzz Plan Generator&#xa;(src/fuzz_plan)&#xa;&#xa;• Bug Classification&#xa;• Priority Calculation&#xa;• Sanitizer Selection&#xa;• Seed Generation&#xa;• Target Deduplication" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="320" y="340" width="200" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Harness Generator -->
+        <mxCell id="harness" value="Harness Generator&#xa;(src/harness)&#xa;&#xa;• Signature Extraction&#xa;• Parameter Mapping&#xa;• Template Engine&#xa;• LibFuzzer Integration&#xa;• Build Scripts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="560" y="340" width="200" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Fuzz Executor -->
+        <mxCell id="fuzzexec" value="Fuzz Executor&#xa;(src/fuzz_exec)&#xa;&#xa;• Campaign Management&#xa;• LibFuzzer Execution&#xa;• Crash Detection&#xa;• Coverage Tracking&#xa;• Artifact Collection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="800" y="340" width="200" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Triage Module -->
+        <mxCell id="triage" value="Triage Analyzer&#xa;(src/triage)&#xa;&#xa;• Crash Analysis&#xa;• Deduplication&#xa;• Severity Assessment&#xa;• Root Cause Analysis&#xa;• Report Generation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="340" width="200" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Repro Kit Generator -->
+        <mxCell id="repro" value="Repro Kit Generator&#xa;(src/repro)&#xa;&#xa;• Minimal Test Case&#xa;• Environment Setup&#xa;• Build Instructions&#xa;• Debugging Info&#xa;• Patch Suggestions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="340" width="200" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Queue/Task Management -->
+        <mxCell id="queue" value="Task Queue (Celery)&#xa;(src/queue)&#xa;&#xa;• Async Task Processing&#xa;• Job Scheduling&#xa;• Worker Management&#xa;• Result Backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="80" y="520" width="200" height="100" as="geometry"/>
+        </mxCell>
+        
+        <!-- Utils -->
+        <mxCell id="utils" value="Utilities&#xa;(src/utils)&#xa;&#xa;• Docker Helper&#xa;• Repo Security&#xa;• Validation&#xa;• File Operations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="320" y="520" width="200" height="100" as="geometry"/>
+        </mxCell>
+        
+        <!-- LLM Integration (Future) -->
+        <mxCell id="llm" value="LLM Integration (Future)&#xa;&#xa;• RAG Database Query&#xa;• Patch Generation&#xa;• Code Analysis&#xa;• Vulnerability Explanation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="520" width="200" height="100" as="geometry"/>
+        </mxCell>
+        
+        <!-- LAYER 3: DATA/INFRASTRUCTURE LAYER -->
+        <mxCell id="layer3" value="DATA / INFRASTRUCTURE LAYER" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="680" width="1520" height="240" as="geometry"/>
+        </mxCell>
+        
+        <!-- Database -->
+        <mxCell id="database" value="SQLite Database&#xa;(scans.db)&#xa;&#xa;• Scan Records&#xa;• Vulnerabilities&#xa;• Patches&#xa;• Metadata&#xa;• Audit Logs" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="80" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Redis -->
+        <mxCell id="redis" value="Redis&#xa;&#xa;• Task Queue&#xa;• Result Backend&#xa;• Session Cache&#xa;• Job Status" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="280" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- RAG Database (Future) -->
+        <mxCell id="rag" value="RAG Vector Database&#xa;(Future)&#xa;&#xa;• Vulnerability Patterns&#xa;• Patch Templates&#xa;• Code Examples&#xa;• Security Knowledge" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f8cecc;strokeColor=#b85450;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- File Storage -->
+        <mxCell id="storage" value="File Storage&#xa;(./scans)&#xa;&#xa;• Source Code&#xa;• Analysis Reports&#xa;• Fuzz Plans&#xa;• Harnesses&#xa;• Crash Artifacts&#xa;• Build Outputs" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="680" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Prometheus -->
+        <mxCell id="prometheus" value="Prometheus&#xa;&#xa;• Metrics Collection&#xa;• Time Series Data&#xa;• Alerting Rules&#xa;• Query Engine" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="880" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Grafana -->
+        <mxCell id="grafana" value="Grafana&#xa;&#xa;• Dashboard Storage&#xa;• Visualization Config&#xa;• User Preferences&#xa;• Alert History" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- Docker Registry -->
+        <mxCell id="registry" value="Docker Registry&#xa;&#xa;• Analysis Tool Images&#xa;• Fuzzing Images&#xa;• Build Images&#xa;• Custom Tools" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="740" width="160" height="140" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: Layer 1 to Layer 2 -->
+        <mxCell id="arrow1" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="webapp" target="static">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="arrow2" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="api" target="fuzzplan">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="arrow3" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="api" target="harness">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="arrow4" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="api" target="fuzzexec">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="arrow5" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;" edge="1" parent="1" source="monitoring" target="triage">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: Layer 2 Internal Flow -->
+        <mxCell id="flow1" value="findings" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="static" target="fuzzplan">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="flow2" value="fuzz plan" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="fuzzplan" target="harness">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="flow3" value="harnesses" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="harness" target="fuzzexec">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="flow4" value="crashes" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="fuzzexec" target="triage">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="flow5" value="repro kits" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="triage" target="repro">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: Layer 2 to Queue -->
+        <mxCell id="queue1" value="async tasks" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#d79b00;" edge="1" parent="1" source="static" target="queue">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="queue2" value="async tasks" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#d79b00;" edge="1" parent="1" source="fuzzexec" target="queue">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: Layer 2 to Layer 3 -->
+        <mxCell id="data1" value="read/write" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="queue" target="database">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="data2" value="queue ops" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="queue" target="redis">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="data3" value="store artifacts" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="harness" target="storage">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="data4" value="metrics" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="fuzzexec" target="prometheus">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="data5" value="query" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="monitoring" target="grafana">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="data6" value="pull images" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="docker" target="registry">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: Prometheus to Grafana -->
+        <mxCell id="prom_graf" value="data source" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="prometheus" target="grafana">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: K8s orchestration -->
+        <mxCell id="k8s1" value="orchestrate" style="endArrow=classic;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeWidth=2;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="k8s" target="monitoring">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="k8s2" value="manage" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="k8s" target="docker">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- ARROWS: Docker to Utils -->
+        <mxCell id="docker_util" value="docker helper" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="docker" target="utils">
+          <mxGeometry width="50" height="50" relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- LEGEND -->
+        <mxCell id="legend" value="LEGEND" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="40" width="280" height="400" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg1" value="Presentation Layer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="80" width="240" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg2" value="Business Logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="120" width="240" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg3" value="Infrastructure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="160" width="240" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg4" value="Task Queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="200" width="240" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg5" value="Future Component" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="240" width="240" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg6" value="Data Storage" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="280" width="240" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_arrow1" value="" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1620" y="340" as="sourcePoint"/>
+            <mxPoint x="1700" y="340" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_text1" value="Data Flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1710" y="330" width="150" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_arrow2" value="" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#9673a6;dashed=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1620" y="370" as="sourcePoint"/>
+            <mxPoint x="1700" y="370" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_text2" value="Orchestration" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1710" y="360" width="150" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_arrow3" value="" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#d79b00;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1620" y="400" as="sourcePoint"/>
+            <mxPoint x="1700" y="400" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_text3" value="Async Tasks" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1710" y="390" width="150" height="20" as="geometry"/>
+        </mxCell>
+        
+        <!-- NOTES -->
+        <mxCell id="notes" value="SYSTEM NOTES" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontStyle=1;verticalAlign=top;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="480" width="280" height="440" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="note_text" value="&#xa;Key Features:&#xa;&#xa;• Static Analysis: Cppcheck, CodeQL&#xa;• Dynamic Analysis: LibFuzzer&#xa;• Async Processing: Celery + Redis&#xa;• Containerization: Docker&#xa;• Orchestration: Kubernetes&#xa;• Monitoring: Prometheus + Grafana&#xa;• Database: SQLite (scans)&#xa;• Future: RAG for LLM patching&#xa;&#xa;Data Flow:&#xa;1. User submits code via Web UI&#xa;2. Static analysis finds vulnerabilities&#xa;3. Fuzz plan generated from findings&#xa;4. Harnesses auto-generated&#xa;5. Fuzzing executed in containers&#xa;6. Crashes triaged and analyzed&#xa;7. Repro kits generated&#xa;8. Results displayed in dashboard&#xa;&#xa;Infrastructure:&#xa;• Docker Compose for local dev&#xa;• Kubernetes for production&#xa;• Prometheus scrapes metrics&#xa;• Grafana visualizes data&#xa;• Redis handles task queue&#xa;• SQLite stores scan data" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1610" y="510" width="260" height="400" as="geometry"/>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

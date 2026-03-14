@@ -1,0 +1,107 @@
+{
+  "generation_timestamp": "2024-01-27T14:31:38Z",
+  "total_targets": 7,
+  "harnesses_generated": 7,
+  "generation_time": "38s",
+  "harnesses": [
+    {
+      "target_id": "parser_parse_input_oob",
+      "harness_file": "parser_parse_input_harness.cc",
+      "harness_type": "parser_wrapper",
+      "function_name": "parse_input",
+      "bug_class": "OOB",
+      "sanitizers": ["address", "undefined"],
+      "file_size": 2847,
+      "lines_of_code": 89,
+      "build_status": "success",
+      "binary_path": "binaries/parser_parse_input_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <string.h>\n#include <stdlib.h>\n\n// Target function declaration\nextern \"C\" int parse_input(char* input, char* buffer, size_t max_size);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    if (size < 1) return 0;\n    \n    // Create null-terminated input\n    char* input = (char*)malloc(size + 1);\n    if (!input) return 0;\n    memcpy(input, data, size);\n    input[size] = '\\0';\n    \n    // Create buffer for parsing\n    char buffer[1024];\n    \n    // Call target function\n    parse_input(input, buffer, sizeof(buffer));\n    \n    free(input);\n    return 0;\n}"
+    },
+    {
+      "target_id": "session_cleanup_session_uaf",
+      "harness_file": "session_cleanup_session_harness.cc",
+      "harness_type": "api_sequence",
+      "function_name": "cleanup_session",
+      "bug_class": "UAF",
+      "sanitizers": ["address"],
+      "file_size": 3156,
+      "lines_of_code": 102,
+      "build_status": "success",
+      "binary_path": "binaries/session_cleanup_session_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <stdlib.h>\n\n// Session structure (mock)\ntypedef struct {\n    void* data;\n    int active;\n} session_t;\n\n// Target function declaration\nextern \"C\" void cleanup_session(session_t* session);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    if (size < sizeof(session_t)) return 0;\n    \n    // Create session from fuzz data\n    session_t* session = (session_t*)malloc(sizeof(session_t));\n    if (!session) return 0;\n    \n    // Initialize with fuzz data\n    memcpy(session, data, sizeof(session_t));\n    \n    // Call target function\n    cleanup_session(session);\n    \n    return 0;\n}"
+    },
+    {
+      "target_id": "memory_allocate_buffer_integer-ub",
+      "harness_file": "memory_allocate_buffer_harness.cc",
+      "harness_type": "fdp_adapter",
+      "function_name": "allocate_buffer",
+      "bug_class": "Integer-UB",
+      "sanitizers": ["undefined"],
+      "file_size": 2634,
+      "lines_of_code": 76,
+      "build_status": "success",
+      "binary_path": "binaries/memory_allocate_buffer_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <fuzzer/FuzzedDataProvider.h>\n\n// Target function declaration\nextern \"C\" void* allocate_buffer(size_t count, size_t item_size);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    FuzzedDataProvider fdp(data, size);\n    \n    // Generate parameters from fuzz data\n    size_t count = fdp.ConsumeIntegral<size_t>();\n    size_t item_size = fdp.ConsumeIntegral<size_t>();\n    \n    // Call target function\n    void* result = allocate_buffer(count, item_size);\n    \n    // Clean up if allocation succeeded\n    if (result) {\n        free(result);\n    }\n    \n    return 0;\n}"
+    },
+    {
+      "target_id": "request_process_request_null-deref",
+      "harness_file": "request_process_request_harness.cc",
+      "harness_type": "bytes_to_api",
+      "function_name": "process_request",
+      "bug_class": "Null-Deref",
+      "sanitizers": ["address", "undefined"],
+      "file_size": 2923,
+      "lines_of_code": 94,
+      "build_status": "success",
+      "binary_path": "binaries/request_process_request_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <stdlib.h>\n#include <string.h>\n\n// Request structure (mock)\ntypedef struct {\n    int type;\n    char* data;\n    size_t length;\n} request_t;\n\n// Target function declaration\nextern \"C\" int process_request(request_t* request);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    if (size < sizeof(int)) return 0;\n    \n    // Sometimes pass NULL to trigger null deref\n    if (size % 10 == 0) {\n        process_request(nullptr);\n        return 0;\n    }\n    \n    // Create request from fuzz data\n    request_t* request = (request_t*)malloc(sizeof(request_t));\n    if (!request) return 0;\n    \n    request->type = *(int*)data;\n    request->data = (char*)malloc(size);\n    request->length = size;\n    \n    if (request->data) {\n        memcpy(request->data, data, size);\n    }\n    \n    // Call target function\n    process_request(request);\n    \n    // Cleanup\n    if (request->data) free(request->data);\n    free(request);\n    \n    return 0;\n}"
+    },
+    {
+      "target_id": "logging_log_error_format-string",
+      "harness_file": "logging_log_error_harness.cc",
+      "harness_type": "parser_wrapper",
+      "function_name": "log_error",
+      "bug_class": "Format-String",
+      "sanitizers": ["address"],
+      "file_size": 2456,
+      "lines_of_code": 67,
+      "build_status": "success",
+      "binary_path": "binaries/logging_log_error_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <stdlib.h>\n#include <string.h>\n\n// Target function declaration\nextern \"C\" void log_error(const char* error_msg);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    if (size < 1) return 0;\n    \n    // Create null-terminated string\n    char* error_msg = (char*)malloc(size + 1);\n    if (!error_msg) return 0;\n    \n    memcpy(error_msg, data, size);\n    error_msg[size] = '\\0';\n    \n    // Call target function\n    log_error(error_msg);\n    \n    free(error_msg);\n    return 0;\n}"
+    },
+    {
+      "target_id": "config_get_config_value_oob",
+      "harness_file": "config_get_config_value_harness.cc",
+      "harness_type": "fdp_adapter",
+      "function_name": "get_config_value",
+      "bug_class": "OOB",
+      "sanitizers": ["address", "undefined"],
+      "file_size": 2234,
+      "lines_of_code": 58,
+      "build_status": "success",
+      "binary_path": "binaries/config_get_config_value_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <fuzzer/FuzzedDataProvider.h>\n\n// Target function declaration\nextern \"C\" const char* get_config_value(int index);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    FuzzedDataProvider fdp(data, size);\n    \n    // Generate index from fuzz data\n    int index = fdp.ConsumeIntegral<int>();\n    \n    // Call target function\n    const char* result = get_config_value(index);\n    \n    // Use result to prevent optimization\n    if (result) {\n        volatile char c = result[0];\n    }\n    \n    return 0;\n}"
+    },
+    {
+      "target_id": "error_error_cleanup_uaf",
+      "harness_file": "error_error_cleanup_harness.cc",
+      "harness_type": "api_sequence",
+      "function_name": "error_cleanup",
+      "bug_class": "UAF",
+      "sanitizers": ["address"],
+      "file_size": 2789,
+      "lines_of_code": 83,
+      "build_status": "success",
+      "binary_path": "binaries/error_error_cleanup_harness",
+      "code_preview": "#include <stdint.h>\n#include <stddef.h>\n#include <stdlib.h>\n\n// Target function declaration\nextern \"C\" void error_cleanup(void* buffer);\n\n// LibFuzzer entry point\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {\n    if (size < 1) return 0;\n    \n    // Allocate buffer\n    void* buffer = malloc(size);\n    if (!buffer) return 0;\n    \n    // Fill with fuzz data\n    memcpy(buffer, data, size);\n    \n    // Call target function (may double-free)\n    error_cleanup(buffer);\n    \n    return 0;\n}"
+    }
+  ],
+  "build_summary": {
+    "successful_builds": 7,
+    "failed_builds": 0,
+    "total_lines_generated": 569,
+    "average_harness_size": 2720,
+    "sanitizers_used": ["address", "undefined"],
+    "harness_types": ["parser_wrapper", "api_sequence", "fdp_adapter", "bytes_to_api"]
+  }
+}

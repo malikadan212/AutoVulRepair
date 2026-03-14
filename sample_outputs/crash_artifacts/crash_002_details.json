@@ -1,0 +1,92 @@
+{
+  "crash_id": "crash_002",
+  "vulnerability_id": "VULN-2024-001",
+  "timestamp": "2024-01-27T14:47:15Z",
+  "crash_type": "heap-buffer-overflow",
+  "sanitizer": "AddressSanitizer",
+  "severity": "critical",
+  "exploitability": "high",
+  "crash_details": {
+    "signal": "SIGSEGV",
+    "exit_code": 1,
+    "crash_address": "0x7f8b4c001020",
+    "access_type": "WRITE",
+    "access_size": 8,
+    "thread_id": "T0"
+  },
+  "stack_trace": {
+    "full_trace": [
+      "#0 0x4a2b5d in parse_input src/parser.c:147:8",
+      "#1 0x4a2a1f in LLVMFuzzerTestOneInput parser_parse_input_harness.cc:23:5",
+      "#2 0x4a1234 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long)",
+      "#3 0x4a1567 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool*)",
+      "#4 0x4a1890 in fuzzer::Fuzzer::MutateAndTestOne()",
+      "#5 0x4a1abc in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile> >&)",
+      "#6 0x4a1def in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long))",
+      "#7 0x4a2123 in main",
+      "#8 0x7f8b4c123456 in __libc_start_main"
+    ],
+    "crash_frame": {
+      "function": "parse_input",
+      "file": "src/parser.c",
+      "line": 147,
+      "column": 8,
+      "instruction": "movq %rax, (%rcx)"
+    }
+  },
+  "memory_layout": {
+    "heap_info": {
+      "allocated_size": 1024,
+      "requested_size": 1024,
+      "overflow_bytes": 8,
+      "allocation_site": "malloc in LLVMFuzzerTestOneInput"
+    },
+    "shadow_memory": {
+      "crash_address": "0x7f8b4c001020",
+      "shadow_byte": "fa",
+      "meaning": "heap-buffer-overflow (right of allocated region)"
+    }
+  },
+  "input_analysis": {
+    "input_size": 2048,
+    "input_hash": "sha256:b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+    "input_characteristics": {
+      "printable_chars": 85,
+      "null_bytes": 0,
+      "high_entropy_regions": 5,
+      "repeated_patterns": ["CCCC", "DDDD", "EEEE"]
+    },
+    "triggering_bytes": {
+      "offset": 1024,
+      "value": "0x43434343",
+      "context": "8-byte write overflow at buffer boundary"
+    }
+  },
+  "source_code_context": {
+    "vulnerable_function": "parse_input",
+    "code_lines": [
+      {"line": 142, "code": "    "},
+      {"line": 143, "code": "    // Vulnerable line - no bounds checking"},
+      {"line": 144, "code": "    strcpy(buffer, input);  // VULNERABLE"},
+      {"line": 145, "code": "    "},
+      {"line": 146, "code": "    // Additional processing that triggers overflow"},
+      {"line": 147, "code": "    *(uint64_t*)(buffer + strlen(buffer)) = 0x4141414141414141;"},
+      {"line": 148, "code": "    "},
+      {"line": 149, "code": "    return strlen(buffer);"}
+    ],
+    "vulnerable_line": 147,
+    "vulnerability_pattern": "Write beyond buffer bounds after string copy"
+  },
+  "fix_recommendations": {
+    "immediate_fix": {
+      "description": "Add bounds checking before writing additional data",
+      "code_change": "if (strlen(buffer) + 8 < max_size) {\n    *(uint64_t*)(buffer + strlen(buffer)) = 0x4141414141414141;\n}",
+      "risk_level": "low"
+    },
+    "robust_fix": {
+      "description": "Redesign function to track buffer usage properly",
+      "code_change": "size_t used = strlen(buffer);\nif (used + 8 < max_size) {\n    *(uint64_t*)(buffer + used) = 0x4141414141414141;\n    used += 8;\n}",
+      "risk_level": "very_low"
+    }
+  }
+}
