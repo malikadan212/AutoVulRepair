@@ -69,12 +69,43 @@ def _analyze_with_codeql_impl(scan_id):
         artifacts_dir = os.path.join(scans_dir, scan_id, 'artifacts')
         os.makedirs(artifacts_dir, exist_ok=True)
 
+        # Clone repository if source_type is repo_url
+        if scan.source_type == 'repo_url' and scan.repo_url:
+            logger.info(f"[CODEQL] Cloning repository: {scan.repo_url}")
+            try:
+                import subprocess
+                clone_result = subprocess.run(
+                    ['git', 'clone', '--depth', '1', scan.repo_url, source_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                if clone_result.returncode != 0:
+                    error_msg = f"Git clone failed: {clone_result.stderr}"
+                    logger.error(f"[CODEQL] {error_msg}")
+                    scan.status = 'failed'
+                    session.commit()
+                    return {'status': 'failed', 'error': error_msg}
+                logger.info(f"[CODEQL] Repository cloned successfully")
+            except subprocess.TimeoutExpired:
+                error_msg = "Git clone timed out after 300 seconds"
+                logger.error(f"[CODEQL] {error_msg}")
+                scan.status = 'failed'
+                session.commit()
+                return {'status': 'failed', 'error': error_msg}
+            except Exception as clone_error:
+                error_msg = f"Failed to clone repository: {str(clone_error)}"
+                logger.error(f"[CODEQL] {error_msg}")
+                scan.status = 'failed'
+                session.commit()
+                return {'status': 'failed', 'error': error_msg}
+
         # Run analysis
         logger.info(f"[CODEQL] Starting analysis for scan {scan_id}")
         logger.info(f"[CODEQL] Source path: {source_path}, Source type: {scan.source_type}")
         import time
         start_time = time.time()
-        vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url, artifacts_dir=artifacts_dir)
+        vulnerabilities, patches = analyzer.analyze(source_path)
         elapsed = time.time() - start_time
         
         # Convert CodeQL results to static_findings.json for Module 2 (if converter exists)
@@ -134,6 +165,38 @@ def _analyze_with_cppcheck_impl(scan_id):
         artifacts_dir = os.path.join(scans_dir, scan_id, 'artifacts')
         os.makedirs(artifacts_dir, exist_ok=True)
 
+        # Clone repository if source_type is repo_url
+        logger.info(f"[CPPCHECK] DEBUG: source_type={scan.source_type}, repo_url={scan.repo_url}")
+        if scan.source_type == 'repo_url' and scan.repo_url:
+            logger.info(f"[CPPCHECK] Cloning repository: {scan.repo_url}")
+            try:
+                import subprocess
+                clone_result = subprocess.run(
+                    ['git', 'clone', '--depth', '1', scan.repo_url, source_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                if clone_result.returncode != 0:
+                    error_msg = f"Git clone failed: {clone_result.stderr}"
+                    logger.error(f"[CPPCHECK] {error_msg}")
+                    scan.status = 'failed'
+                    session.commit()
+                    return {'status': 'failed', 'error': error_msg}
+                logger.info(f"[CPPCHECK] Repository cloned successfully")
+            except subprocess.TimeoutExpired:
+                error_msg = "Git clone timed out after 300 seconds"
+                logger.error(f"[CPPCHECK] {error_msg}")
+                scan.status = 'failed'
+                session.commit()
+                return {'status': 'failed', 'error': error_msg}
+            except Exception as clone_error:
+                error_msg = f"Failed to clone repository: {str(clone_error)}"
+                logger.error(f"[CPPCHECK] {error_msg}")
+                scan.status = 'failed'
+                session.commit()
+                return {'status': 'failed', 'error': error_msg}
+
         # Run analysis
         logger.info(f"[CPPCHECK] Starting analysis for scan {scan_id}")
         logger.info(f"[CPPCHECK] Source path: {source_path}, Source type: {scan.source_type}, Repo URL: {scan.repo_url}")
@@ -141,7 +204,7 @@ def _analyze_with_cppcheck_impl(scan_id):
         import time
         start_time = time.time()
         try:
-            vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url, artifacts_dir=artifacts_dir)
+            vulnerabilities, patches = analyzer.analyze(source_path, scan.source_type, scan.repo_url)
             elapsed = time.time() - start_time
             logger.info(f"[CPPCHECK] analyzer.analyze() returned - vulnerabilities: {len(vulnerabilities)}, patches: {len(patches)}")
         except Exception as analyze_error:

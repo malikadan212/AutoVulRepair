@@ -2,6 +2,13 @@
 
 {% block title %}Results - {{ scan_id }}{% endblock %}
 
+{% block extra_js %}
+<script>
+  // Initialize progress bars on page load
+  document.addEventListener('DOMContentLoaded', () => Utils.initProgressBars());
+</script>
+{% endblock %}
+
 {% block content %}
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Scan Results</h2>
@@ -147,15 +154,4 @@
     </a>
     {% endif %}
   </div>
-  <script>
-    (function () {
-      var bars = document.querySelectorAll('.progress-bar[data-progress]');
-      bars.forEach(function(bar) {
-        var p = parseInt(bar.getAttribute('data-progress')) || 0;
-        bar.style.width = p + '%';
-        bar.setAttribute('aria-valuenow', p);
-        bar.textContent = p + '%';
-      });
-    })();
-  </script>
 {% endblock %}

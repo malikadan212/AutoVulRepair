@@ -162,6 +162,13 @@ cython_debug/
 #  - .idea/vcs.xml
 .idea/
 
+# VS Code Extension build artifacts
+vscode-extension/dist/
+vscode-extension/out/
+vscode-extension/node_modules/
+vscode-extension/*.vsix
+vscode-extension/.vscode-test/
+
 # VS Code
 .vscode/
 

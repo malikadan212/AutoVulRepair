@@ -23,7 +23,7 @@
       <div class="card text-center border-primary">
         <div class="card-body">
           <i class="fas fa-search fa-2x text-primary mb-2"></i>
-          <h4 class="text-primary">23</h4>
+          <h4 class="text-primary">{{ stats.total_scans }}</h4>
           <p class="card-text">Total Scans</p>
         </div>
       </div>
@@ -32,7 +32,7 @@
       <div class="card text-center border-danger">
         <div class="card-body">
           <i class="fas fa-bug fa-2x text-danger mb-2"></i>
-          <h4 class="text-danger">147</h4>
+          <h4 class="text-danger">{{ stats.total_vulnerabilities }}</h4>
           <p class="card-text">Vulnerabilities Found</p>
         </div>
       </div>
@@ -41,7 +41,7 @@
       <div class="card text-center border-success">
         <div class="card-body">
           <i class="fas fa-wrench fa-2x text-success mb-2"></i>
-          <h4 class="text-success">132</h4>
+          <h4 class="text-success">{{ stats.total_patches }}</h4>
           <p class="card-text">Patches Generated</p>
         </div>
       </div>
@@ -50,7 +50,7 @@
       <div class="card text-center border-info">
         <div class="card-body">
           <i class="fas fa-check-circle fa-2x text-info mb-2"></i>
-          <h4 class="text-info">89.2%</h4>
+          <h4 class="text-info">{{ stats.success_rate }}%</h4>
           <p class="card-text">Success Rate</p>
         </div>
       </div>
@@ -322,78 +322,8 @@
     </div>
   </div>
 </div>
+{% endblock %}
 
-<script>
-function startFuzzCampaign() {
-  alert('Starting new fuzzing campaign...\nThis would redirect to the fuzzing dashboard with campaign creation wizard.');
-}
-
-function generatePatch() {
-  alert('Generating AI patch...\nThis would trigger the Vul-RAG module to create patches for detected vulnerabilities.');
-}
-
-function viewCloudStatus() {
-  alert('Cloud Infrastructure Status:\n\n✅ Kubernetes Cluster: Healthy\n✅ Container Registry: Online\n✅ CI/CD Pipeline: Active\n⚠️ Memory Usage: 87%');
-}
-
-function deployPipeline() {
-  alert('Deploying analysis pipeline...\nThis would trigger Kubernetes deployment of analysis containers.');
-}
-
-function runSandboxTest() {
-  alert('Running sandbox test...\nThis would execute patches in isolated environment with performance validation.');
-}
-
-function viewTestResults() {
-  alert('Test Results Summary:\n\n✅ Compilation: Passed\n✅ Unit Tests: 15/15 passed\n✅ Security Tests: Clean\n⚠️ Performance: -2.1% slower');
-}
-
-function viewAlerts() {
-  alert('System Alerts:\n\n⚠️ High Memory Usage (87%)\nℹ️ Queue Backlog (45 jobs)\n⚠️ Slow CodeQL Response');
-}
-
-function bulkScan() {
-  alert('Bulk Repository Scan:\nThis would allow scanning multiple repositories simultaneously.');
-}
-
-function scheduleScans() {
-  alert('Schedule Scans:\nThis would set up automated scanning schedules for repositories.');
-}
-
-function exportReport() {
-  alert('Exporting comprehensive security report...\nThis would generate PDF/CSV reports of all findings.');
-}
-</script>
-
-<style>
-.card {
-  transition: transform 0.2s ease-in-out;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-.card-header {
-  font-weight: 600;
-}
-
-.badge {
-  font-size: 0.8rem;
-}
-
-.alert {
-  border-left: 4px solid;
-  margin-bottom: 0.5rem;
-}
-
-.alert-warning {
-  border-left-color: #ffc107;
-}
-
-.alert-info {
-  border-left-color: #0dcaf0;
-}
-</style>
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/modules/dashboard.js') }}"></script>
 {% endblock %}

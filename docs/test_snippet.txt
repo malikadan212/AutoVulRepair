@@ -1,0 +1,17 @@
+﻿Test code with buffer overflow:
+#include <stdio.h>
+#include <string.h>
+
+void vulnerable_function(char* input) {
+    char buffer[10];
+    strcpy(buffer, input);  // Buffer overflow!
+    printf("Buffer: %s\n", buffer);
+}
+
+int main() {
+    char large_input[100];
+    memset(large_input, 'A', 99);
+    large_input[99] = '\0';
+    vulnerable_function(large_input);
+    return 0;
+}

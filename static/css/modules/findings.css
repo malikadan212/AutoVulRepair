@@ -1,0 +1,26 @@
+/* ============================================
+   Findings & Results Module Styles
+   ============================================ */
+
+.finding-card {
+  transition: all 0.3s ease;
+}
+
+.finding-card:hover {
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+pre code {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+mark {
+  background-color: #fff3cd;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.collapse.show {
+  display: block !important;
+}

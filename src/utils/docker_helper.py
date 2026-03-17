@@ -6,6 +6,7 @@ import docker
 import logging
 import tempfile
 import shutil
+import platform
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -18,10 +19,68 @@ class DockerToolRunner:
             self.client = docker.from_env()
             self.client.ping()  # Test connection
             self.available = True
+            
+            # Detect platform and isolation capabilities
+            self.is_windows = platform.system() == 'Windows'
+            self.is_linux = platform.system() == 'Linux'
+            
+            # Check for Hyper-V on Windows
+            if self.is_windows:
+                self.hyperv_available = self._check_hyperv()
+                if self.hyperv_available:
+                    logger.info("[DOCKER] Hyper-V isolation available")
+                else:
+                    logger.info("[DOCKER] Using process isolation (Hyper-V not available)")
+            
+            # Check for gVisor on Linux
+            if self.is_linux:
+                self.gvisor_available = self._check_gvisor()
+                if self.gvisor_available:
+                    logger.info("[DOCKER] gVisor runtime available")
+            
         except Exception as e:
             logger.warning(f"Docker not available: {e}")
             self.available = False
             self.client = None
+            self.hyperv_available = False
+            self.gvisor_available = False
+    
+    def _check_hyperv(self):
+        """Check if Hyper-V isolation is available"""
+        try:
+            # Try creating a test container with Hyper-V isolation
+            test = self.client.containers.create(
+                'hello-world',
+                isolation='hyperv',
+                detach=True
+            )
+            test.remove()
+            return True
+        except Exception as e:
+            logger.debug(f"Hyper-V check failed: {e}")
+            return False
+    
+    def _check_gvisor(self):
+        """Check if gVisor runtime is available"""
+        try:
+            info = self.client.info()
+            runtimes = info.get('Runtimes', {})
+            return 'runsc' in runtimes
+        except Exception:
+            return False
+    
+    def _get_isolation_config(self):
+        """Get platform-specific isolation configuration"""
+        config = {}
+        
+        if self.is_windows and self.hyperv_available:
+            config['isolation'] = 'hyperv'
+            logger.info("[SECURITY] Using Hyper-V isolation (VM-level)")
+        elif self.is_linux and self.gvisor_available:
+            config['runtime'] = 'runsc'
+            logger.info("[SECURITY] Using gVisor runtime")
+        
+        return config
     
     def is_docker_available(self):
         """Check if Docker daemon is accessible"""
@@ -91,8 +150,18 @@ class DockerToolRunner:
             # Create tar archive of source directory
             tar_buffer = io.BytesIO()
             with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
-                tar.add(source_path, arcname='source')
+                # Add all files from source directory directly (not the directory itself)
+                logger.info(f"[DOCKER] Creating tar archive from {source_path}")
+                for item in os.listdir(source_path):
+                    item_path = os.path.join(source_path, item)
+                    arcname = os.path.join('source', item)
+                    logger.info(f"[DOCKER] Adding {item_path} as {arcname}")
+                    tar.add(item_path, arcname=arcname)
             tar_buffer.seek(0)
+            logger.info(f"[DOCKER] Tar archive created, size: {len(tar_buffer.getvalue())} bytes")
+            
+            # Get isolation configuration
+            isolation_config = self._get_isolation_config()
             
             # Create container (don't start yet)
             container = self.client.containers.create(
@@ -102,16 +171,33 @@ class DockerToolRunner:
                     '--inconclusive',
                     '--xml',
                     '--xml-version=2',
-                    '--output-file=/tmp/cppcheck-report.xml',
-                    '/tmp/source'
+                    '--output-file=/work/cppcheck-report.xml',
+                    '/work/source'
                 ],
-                working_dir='/tmp',
-                mem_limit='2g',
-                network_disabled=True
+                working_dir='/work',
+                
+                # Platform-specific isolation
+                **isolation_config,
+                
+                # Security hardening
+                mem_limit='2g',              # Memory limit
+                memswap_limit='2g',          # Disable swap
+                cpu_quota=100000,            # CPU limit (1 core = 100000)
+                pids_limit=100,              # Max 100 processes
+                network_disabled=True,       # No network access
+                
+                # Security options
+                cap_drop=['ALL'],            # Drop all capabilities
+                security_opt=[
+                    'no-new-privileges'      # Prevent privilege escalation
+                ]
+                # Note: tmpfs removed - it was wiping out copied files
             )
             
-            # Copy source files into container
-            container.put_archive('/tmp', tar_buffer)
+            # Copy source files into container BEFORE starting
+            logger.info(f"[DOCKER] Copying tar archive to container /work")
+            container.put_archive('/work', tar_buffer)
+            logger.info(f"[DOCKER] Files copied successfully")
             
             # Start container and wait for completion
             container.start()
@@ -120,7 +206,7 @@ class DockerToolRunner:
             
             # Get the XML output from container
             try:
-                archive_data, _ = container.get_archive('/tmp/cppcheck-report.xml')
+                archive_data, _ = container.get_archive('/work/cppcheck-report.xml')
                 
                 # Extract XML content from tar archive
                 tar_buffer = io.BytesIO()
@@ -139,20 +225,30 @@ class DockerToolRunner:
                                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
                                 with open(output_file, 'w', encoding='utf-8') as f:
                                     f.write(stdout)
+                                logger.info(f"[DOCKER] Saved Cppcheck output to {output_file}")
                             except Exception as copy_err:
                                 logger.warning(f"Failed to save output file: {copy_err}")
                         
                         # Remove container
                         container.remove()
                         
-                        # Return success - exit code doesn't matter if we have XML
+                        # Return success - Cppcheck exit code doesn't matter if we have XML
+                        # Cppcheck returns 1 when it finds issues, which is actually success
+                        logger.info(f"[DOCKER] Cppcheck completed with exit code {exit_code}, XML extracted successfully")
                         return stdout, "", 0
                     else:
                         container.remove()
-                        return "", f"Could not extract XML from container (exit code: {exit_code})", 1
+                        return "", f"Could not extract XML from container (Cppcheck exit code: {exit_code})", 1
                         
             except docker.errors.NotFound:
-                # XML file not created
+                # XML file not created - this is the real error
+                logger.error(f"[DOCKER] Cppcheck did not produce output file (exit code: {exit_code})")
+                # Get container logs for debugging
+                try:
+                    logs = container.logs().decode('utf-8', errors='ignore')
+                    logger.error(f"[DOCKER] Container logs:\n{logs}")
+                except:
+                    pass
                 container.remove()
                 return "", f"Cppcheck did not produce output file (exit code: {exit_code})", 1
             
@@ -198,11 +294,34 @@ class DockerToolRunner:
             # Use full path to ensure it works regardless of PATH
             codeql_path = '/usr/local/codeql-home/codeql/codeql'
             
-            # For compiled languages (C++/Java/C#), let autobuild detect build system
-            # If Makefile/CMakeLists.txt exists, autobuild will use it
-            # If not, analysis will fail (which is correct behavior)
+            # For compiled languages (C++/Java/C#), try to detect and run build system
+            # Check if Makefile exists and use it explicitly
             logger.info(f"[CODEQL_DOCKER] Creating database for language: {language_str}")
-            cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src'
+            
+            # For C++, check if Makefile exists in the source directory
+            has_makefile = os.path.exists(os.path.join(source_path, 'Makefile'))
+            has_cmake = os.path.exists(os.path.join(source_path, 'CMakeLists.txt'))
+            
+            if 'cpp' in language_str or 'c' in language_str:
+                if has_makefile:
+                    logger.info("[CODEQL_DOCKER] Makefile detected, using make with -C flag")
+                    # Use make with -C to change to source directory
+                    cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src --command="cd /opt/src && make"'
+                    working_dir = '/opt'
+                elif has_cmake:
+                    logger.info("[CODEQL_DOCKER] CMakeLists.txt detected, using cmake build")
+                    cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src --command="cd /opt/src && mkdir -p build && cd build && cmake .. && make"'
+                    working_dir = '/opt'
+                else:
+                    logger.info("[CODEQL_DOCKER] No build system detected, using autobuild")
+                    cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src'
+                    working_dir = '/opt'
+            else:
+                # For interpreted languages, no build command needed
+                cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src'
+                working_dir = '/opt'
+            
+            # Run as root to avoid permission issues on Windows volume mounts
             container = self.client.containers.run(
                 image_name,
                 command=[cmd],  # Pass as list with single string for /bin/sh -c
@@ -210,6 +329,8 @@ class DockerToolRunner:
                     source_path: {'bind': '/opt/src', 'mode': 'rw'},  # RW needed for symlink creation
                     db_path: {'bind': '/opt/results', 'mode': 'rw'}
                 },
+                working_dir=working_dir,  # Set working directory
+                user='root',  # Run as root to avoid Windows volume permission issues
                 remove=False,  # Keep container to check logs
                 mem_limit='4g',
                 network_disabled=False,
@@ -238,7 +359,7 @@ class DockerToolRunner:
                 if exit_code == 0 and os.path.exists(db_expected_path):
                     return log_text, "", 0
                 else:
-                    return "", f"Exit code: {exit_code}. Logs: {log_text[:500]}", exit_code
+                    return "", f"Exit code: {exit_code}. Logs: {log_text[:1000]}", exit_code
                     
             except Exception as wait_error:
                 # Container timed out or failed
@@ -307,6 +428,8 @@ class DockerToolRunner:
             
             # Write SARIF to a dedicated output mount so it lands at sarif_output_path on host
             cmd = f'{codeql_path} database analyze --format=sarif-latest --output=/opt/out/{sarif_filename} /opt/results/source_db {query_suite}'
+            
+            # Run as root to avoid permission issues on Windows volume mounts
             container = self.client.containers.run(
                 image_name,
                 command=[cmd],  # Pass as list with single string for /bin/sh -c
@@ -314,6 +437,7 @@ class DockerToolRunner:
                     db_path: {'bind': '/opt/results', 'mode': 'rw'},
                     sarif_dir: {'bind': '/opt/out', 'mode': 'rw'}
                 },
+                user='root',  # Run as root to avoid Windows volume permission issues
                 remove=False,  # Keep to check logs
                 mem_limit='4g',
                 network_disabled=False,

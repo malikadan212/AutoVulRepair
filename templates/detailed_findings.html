@@ -2,6 +2,10 @@
 
 {% block title %}Detailed Findings - {{ scan_id }}{% endblock %}
 
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/modules/findings.css') }}" rel="stylesheet">
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
   <!-- Header -->
@@ -90,8 +94,8 @@
         <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
           <i class="fas fa-sitemap"></i> Generate Fuzz Plan
         </a>
-        <a href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}" class="btn btn-outline-secondary">
-          <i class="fas fa-forward"></i> Skip Fuzzing
+        <a href="{{ url_for('patch_review', scan_id=scan_id) }}" class="btn btn-success">
+          <i class="fas fa-magic"></i> Generate Patches
         </a>
         {% if analysis_tool %}
         <div class="btn-group ms-2">
@@ -582,29 +586,4 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
-
-<style>
-.finding-card {
-  transition: all 0.3s ease;
-}
-
-.finding-card:hover {
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-pre code {
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-mark {
-  background-color: #fff3cd;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
-.collapse.show {
-  display: block !important;
-}
-</style>
 {% endblock %}

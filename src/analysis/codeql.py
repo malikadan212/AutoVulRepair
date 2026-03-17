@@ -20,6 +20,18 @@ class CodeQLAnalyzer:
     def __init__(self):
         self.tool_name = 'codeql'
         self.timeout = 300  # 5 minutes default timeout
+        
+        # Try to use Docker if available
+        try:
+            from src.utils.docker_helper import DockerToolRunner
+            self.docker_runner = DockerToolRunner()
+            self.use_docker = self.docker_runner.is_docker_available()
+            if self.use_docker:
+                logger.info("[CODEQL] Docker is available, will use Docker for analysis")
+        except Exception as e:
+            logger.warning(f"[CODEQL] Failed to initialize Docker: {e}")
+            self.docker_runner = None
+            self.use_docker = False
     
     def is_available(self) -> bool:
         """Check if CodeQL is available on the system"""
@@ -51,38 +63,91 @@ class CodeQLAnalyzer:
         Returns:
             Tuple of (vulnerabilities, patches)
         """
-        if not self.is_available():
-            logger.warning("CodeQL not available, using simulation")
-            return self._simulate_analysis(source_dir)
+        # Detect languages first
+        languages = self._detect_languages(source_dir)
+        if not languages:
+            logger.warning("No supported languages detected for CodeQL")
+            return [], []
         
-        try:
-            # Detect languages
-            languages = self._detect_languages(source_dir)
-            if not languages:
-                logger.info("No supported languages detected for CodeQL")
-                return [], []
-            
-            # Create temporary database
-            with tempfile.TemporaryDirectory() as temp_dir:
-                db_path = os.path.join(temp_dir, 'codeql-db')
-                sarif_path = os.path.join(temp_dir, 'results.sarif')
+        logger.info(f"[CODEQL] Detected languages: {', '.join(languages)}")
+        
+        # Try Docker first if available
+        if self.use_docker and self.docker_runner:
+            logger.info("[CODEQL] Using Docker for analysis")
+            try:
+                # Create artifacts directory for output
+                artifacts_dir = os.path.join(os.path.dirname(source_dir), 'artifacts')
+                os.makedirs(artifacts_dir, exist_ok=True)
                 
-                # Create database
-                if not self._create_database(source_dir, db_path, languages):
-                    logger.error("Failed to create CodeQL database")
-                    return [], []
+                # Create database directory
+                db_path = os.path.join(artifacts_dir, 'codeql-db')
+                os.makedirs(db_path, exist_ok=True)
                 
-                # Run analysis
-                if not self._run_analysis(db_path, sarif_path):
-                    logger.error("Failed to run CodeQL analysis")
-                    return [], []
+                # Create SARIF output path
+                sarif_path = os.path.join(artifacts_dir, 'codeql-results.sarif')
                 
-                # Parse results
-                return self._parse_sarif_results(sarif_path)
+                # Create database via Docker
+                logger.info(f"[CODEQL] Creating database for languages: {', '.join(languages)}")
+                stdout, stderr, returncode = self.docker_runner.run_codeql_database_create(
+                    source_dir, db_path, languages, timeout=600
+                )
                 
-        except Exception as e:
-            logger.error(f"CodeQL analysis failed: {e}")
-            return self._simulate_analysis(source_dir)
+                if returncode != 0:
+                    error_msg = f"CodeQL database creation failed with return code {returncode}: {stderr[:200]}"
+                    logger.error(f"[CODEQL] {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                logger.info("[CODEQL] Database created successfully")
+                
+                # Run analysis via Docker
+                logger.info("[CODEQL] Running analysis queries")
+                # Use the first detected language for query pack selection
+                primary_language = languages[0]
+                stdout, stderr, returncode = self.docker_runner.run_codeql_analyze(
+                    db_path, sarif_path, language=primary_language, timeout=600
+                )
+                
+                if returncode == 0 and os.path.exists(sarif_path):
+                    logger.info(f"[CODEQL] Docker analysis completed, parsing results from {sarif_path}")
+                    vulnerabilities, patches = self._parse_sarif_results(sarif_path)
+                    logger.info(f"[CODEQL] Found {len(vulnerabilities)} vulnerabilities via Docker")
+                    return vulnerabilities, patches
+                else:
+                    error_msg = f"CodeQL analysis failed with return code {returncode}"
+                    logger.error(f"[CODEQL] {error_msg}")
+                    raise RuntimeError(error_msg)
+            except Exception as e:
+                logger.error(f"[CODEQL] Docker analysis error: {e}")
+                raise RuntimeError(f"CodeQL analysis failed: {e}")
+        
+        # Try local CodeQL
+        if self.is_available():
+            logger.info("[CODEQL] Using local CodeQL installation")
+            try:
+                # Create temporary database
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    db_path = os.path.join(temp_dir, 'codeql-db')
+                    sarif_path = os.path.join(temp_dir, 'results.sarif')
+                    
+                    # Create database
+                    if not self._create_database(source_dir, db_path, languages):
+                        raise RuntimeError("Failed to create CodeQL database")
+                    
+                    # Run analysis
+                    if not self._run_analysis(db_path, sarif_path):
+                        raise RuntimeError("Failed to run CodeQL analysis")
+                    
+                    # Parse results
+                    return self._parse_sarif_results(sarif_path)
+                    
+            except Exception as e:
+                logger.error(f"CodeQL analysis failed: {e}")
+                raise RuntimeError(f"CodeQL analysis failed: {e}")
+        
+        # No analysis tool available - fail hard
+        error_msg = "CodeQL is not available. Docker is not running or CodeQL is not installed."
+        logger.error(f"[CODEQL] {error_msg}")
+        raise RuntimeError(error_msg)
     
     def _detect_languages(self, source_dir: str) -> List[str]:
         """Detect programming languages in the source directory"""
@@ -277,54 +342,3 @@ class CodeQLAnalyzer:
             return f'''# Security Issue in {file_path}:{line_num}
 # {vulnerability["message"]}
 # Manual review and fix required'''
-    
-    def _simulate_analysis(self, source_dir: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Simulate CodeQL analysis when tool is not available"""
-        logger.info("Simulating CodeQL analysis")
-        
-        vulnerabilities = [
-            {
-                'rule_id': 'py/sql-injection',
-                'type': 'SQL Injection',
-                'severity': 'high',
-                'confidence': 'high',
-                'file': 'database.py',
-                'file_stem': 'database',
-                'line': 42,
-                'message': 'SQL injection vulnerability detected',
-                'function': 'get_user',
-                'tool': 'CodeQL (Simulated)'
-            },
-            {
-                'rule_id': 'cpp/buffer-overflow',
-                'type': 'Buffer Overflow',
-                'severity': 'high',
-                'confidence': 'medium',
-                'file': 'utils.cpp',
-                'file_stem': 'utils',
-                'line': 15,
-                'message': 'Buffer overflow in strcpy call',
-                'function': 'copy_string',
-                'tool': 'CodeQL (Simulated)'
-            }
-        ]
-        
-        patches = [
-            {
-                'id': 'codeql_sim_patch_1',
-                'description': 'Fix SQL injection with parameterized queries',
-                'content': '''# Replace string formatting with parameterized queries
-cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))''',
-                'confidence': 'high'
-            },
-            {
-                'id': 'codeql_sim_patch_2',
-                'description': 'Replace strcpy with strncpy',
-                'content': '''# Use safe string copy function
-strncpy(dest, src, sizeof(dest) - 1);
-dest[sizeof(dest) - 1] = '\\0';''',
-                'confidence': 'medium'
-            }
-        ]
-        
-        return vulnerabilities, patches

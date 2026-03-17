@@ -9,6 +9,11 @@ Automated security workflow for C/C++ code: static analysis → fuzz plan genera
   - Windows/macOS: https://www.docker.com/products/docker-desktop/
   - Linux: `sudo apt-get install docker.io docker-compose`
 
+### AI Repair Module (Optional)
+For AI-powered vulnerability patching:
+- Get Groq API key: https://console.groq.com/keys (free)
+- See [AI_SETUP.md](AI_SETUP.md) for 5-minute setup
+
 ### One-Command Setup
 
 ```bash

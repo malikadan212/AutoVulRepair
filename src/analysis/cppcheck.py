@@ -30,6 +30,18 @@ class CppcheckAnalyzer:
             'information': 'low',
             'unknown': 'low'
         }
+        
+        # Try to use Docker if available
+        try:
+            from src.utils.docker_helper import DockerToolRunner
+            self.docker_runner = DockerToolRunner()
+            self.use_docker = self.docker_runner.is_docker_available()
+            if self.use_docker:
+                logger.info("[CPPCHECK] Docker is available, will use Docker for analysis")
+        except Exception as e:
+            logger.warning(f"[CPPCHECK] Failed to initialize Docker: {e}")
+            self.docker_runner = None
+            self.use_docker = False
     
     def is_available(self) -> bool:
         """Check if Cppcheck is available in PATH"""
@@ -149,104 +161,87 @@ class CppcheckAnalyzer:
         """
         logger.info(f"Starting Cppcheck analysis on {source_dir}")
         
-        if not self.is_available():
-            # Return simulated results for testing
-            return self._simulate_analysis(source_dir)
-        
-        # Create temporary XML output file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False) as temp_file:
-            xml_output = temp_file.name
-        
-        try:
-            # Build Cppcheck command
-            cmd = [
-                'cppcheck',
-                '--xml',
-                '--xml-version=2',
-                f'--output-file={xml_output}',
-                '--enable=all',
-                '--inconclusive',
-                '--force',
-                '--quiet',
-                '--suppress=missingIncludeSystem',
-                '--suppress=unmatchedSuppression',
-                source_dir
-            ]
-            
-            logger.info(f"Running: {' '.join(cmd)}")
-            
-            # Run Cppcheck
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
-            # Parse XML results
-            vulnerabilities, patches = self._parse_xml_results(xml_output)
-            
-            # If no XML results, try parsing stderr
-            if not vulnerabilities and result.stderr:
-                vulnerabilities, patches = self._parse_stderr_output(result.stderr)
-            
-            return vulnerabilities, patches
-            
-        except subprocess.TimeoutExpired:
-            logger.warning("Cppcheck analysis timed out")
-            return [], []
-        except Exception as e:
-            logger.error(f"Cppcheck analysis failed: {e}")
-            return [], []
-        finally:
-            # Clean up temporary file
-            if os.path.exists(xml_output):
-                os.unlink(xml_output)
-    
-    def _simulate_analysis(self, source_dir: str) -> Tuple[List[Dict], List[Dict]]:
-        """Simulate analysis results for testing when Cppcheck is not available"""
-        cpp_files = self.find_cpp_files(source_dir)
-        vulnerabilities = []
-        
-        # Generate simulated vulnerabilities based on file content
-        for i, cpp_file in enumerate(cpp_files[:3]):  # Limit to 3 files
+        # Try Docker first if available
+        if self.use_docker and self.docker_runner:
+            logger.info("[CPPCHECK] Using Docker for analysis")
             try:
-                with open(cpp_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read().lower()
+                # Create output file path
+                output_file = os.path.join(os.path.dirname(source_dir), 'artifacts', 'cppcheck-report.xml')
+                os.makedirs(os.path.dirname(output_file), exist_ok=True)
                 
-                # Simulate different vulnerability types based on content
-                if 'strcpy' in content or 'buffer' in content:
-                    vulnerabilities.append({
-                        'id': f'sim_buffer_overflow_{i}',
-                        'severity': 'high',
-                        'description': 'Potential buffer overflow detected',
-                        'file': cpp_file,
-                        'line': 10 + i,
-                        'tool': 'cppcheck',
-                        'rule_id': 'bufferAccessOutOfBounds'
-                    })
+                # Run Cppcheck via Docker
+                stdout, stderr, returncode = self.docker_runner.run_cppcheck(source_dir, output_file, timeout=300)
                 
-                if 'new' in content and 'delete' not in content:
-                    vulnerabilities.append({
-                        'id': f'sim_memory_leak_{i}',
-                        'severity': 'medium',
-                        'description': 'Potential memory leak detected',
-                        'file': cpp_file,
-                        'line': 20 + i,
-                        'tool': 'cppcheck',
-                        'rule_id': 'memleak'
-                    })
-                
-                if 'nullptr' in content or 'null' in content:
-                    vulnerabilities.append({
-                        'id': f'sim_null_pointer_{i}',
-                        'severity': 'medium',
-                        'description': 'Potential null pointer dereference',
-                        'file': cpp_file,
-                        'line': 30 + i,
-                        'tool': 'cppcheck',
-                        'rule_id': 'nullPointer'
-                    })
-            
-            except Exception:
-                continue
+                # Cppcheck returns 0 for no issues, 1 for issues found - both are success
+                # Only fail if return code is > 1 (actual error) or output file doesn't exist
+                if returncode <= 1 and os.path.exists(output_file):
+                    logger.info(f"[CPPCHECK] Docker analysis completed (return code: {returncode}), parsing results from {output_file}")
+                    vulnerabilities, patches = self._parse_xml_results(output_file)
+                    logger.info(f"[CPPCHECK] Found {len(vulnerabilities)} vulnerabilities via Docker")
+                    return vulnerabilities, patches
+                else:
+                    error_msg = f"Cppcheck Docker analysis failed with return code {returncode}"
+                    if not os.path.exists(output_file):
+                        error_msg += f" and output file not found: {output_file}"
+                    logger.error(f"[CPPCHECK] {error_msg}")
+                    raise RuntimeError(error_msg)
+            except Exception as e:
+                logger.error(f"[CPPCHECK] Docker analysis error: {e}")
+                raise RuntimeError(f"Cppcheck analysis failed: {e}")
         
-        return vulnerabilities, []
+        # Try local Cppcheck
+        if self.is_available():
+            logger.info("[CPPCHECK] Using local Cppcheck installation")
+            # Create temporary XML output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False) as temp_file:
+                xml_output = temp_file.name
+            
+            try:
+                # Build Cppcheck command
+                cmd = [
+                    'cppcheck',
+                    '--xml',
+                    '--xml-version=2',
+                    f'--output-file={xml_output}',
+                    '--enable=all',
+                    '--inconclusive',
+                    '--force',
+                    '--quiet',
+                    '--suppress=missingIncludeSystem',
+                    '--suppress=unmatchedSuppression',
+                    source_dir
+                ]
+                
+                logger.info(f"Running: {' '.join(cmd)}")
+                
+                # Run Cppcheck
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                
+                # Parse XML results
+                vulnerabilities, patches = self._parse_xml_results(xml_output)
+                
+                # If no XML results, try parsing stderr
+                if not vulnerabilities and result.stderr:
+                    vulnerabilities, patches = self._parse_stderr_output(result.stderr)
+                
+                return vulnerabilities, patches
+                
+            except subprocess.TimeoutExpired:
+                logger.error("Cppcheck analysis timed out")
+                raise RuntimeError("Cppcheck analysis timed out after 300 seconds")
+            except Exception as e:
+                logger.error(f"Cppcheck analysis failed: {e}")
+                raise RuntimeError(f"Cppcheck analysis failed: {e}")
+            finally:
+                # Clean up temporary file
+                if os.path.exists(xml_output):
+                    os.unlink(xml_output)
+        
+        # No analysis tool available - fail hard
+        error_msg = "Cppcheck is not available. Docker is not running or Cppcheck is not installed."
+        logger.error(f"[CPPCHECK] {error_msg}")
+        raise RuntimeError(error_msg)
+    
 
 
 def main():

@@ -11,3 +11,7 @@ docker>=6.0.0
 uuid
 pytest>=7.0.0
 hypothesis>=6.0.0
+google-generativeai>=0.3.0
+groq>=0.4.0
+libclang>=16.0.0
+langgraph>=0.0.1

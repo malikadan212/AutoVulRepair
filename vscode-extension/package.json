@@ -1,0 +1,224 @@
+{
+  "name": "autovulrepair",
+  "displayName": "AutoVulRepair",
+  "description": "Automated vulnerability detection and repair for C/C++ code",
+  "version": "0.1.0",
+  "publisher": "autovulrepair",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/autovulrepair/autovulrepair"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:c",
+    "onLanguage:cpp",
+    "workspaceContains:**/*.{c,cpp,cc,cxx,h,hpp}"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "autoVulRepair.scanFile",
+        "title": "Scan for Vulnerabilities",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.scanFolder",
+        "title": "Scan Project for Vulnerabilities",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.viewPatch",
+        "title": "View Patch",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.applyPatch",
+        "title": "Apply Patch",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.clearDiagnostics",
+        "title": "Clear All Diagnostics",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.rescanAll",
+        "title": "Rescan All Files",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.cancelScan",
+        "title": "Cancel Scan",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.runFuzzingCampaign",
+        "title": "Run Fuzzing Campaign",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.testConnection",
+        "title": "Test Backend Connection",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.clearCache",
+        "title": "Clear Extension Cache",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.showWelcome",
+        "title": "Show Welcome Page",
+        "category": "AutoVulRepair"
+      },
+      {
+        "command": "autoVulRepair.viewLogs",
+        "title": "View Logs",
+        "category": "AutoVulRepair"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceLangId == c || resourceLangId == cpp",
+          "command": "autoVulRepair.scanFile",
+          "group": "autoVulRepair@1"
+        },
+        {
+          "when": "resourceLangId == c || resourceLangId == cpp",
+          "command": "autoVulRepair.runFuzzingCampaign",
+          "group": "autoVulRepair@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "autoVulRepair.scanFolder",
+          "group": "autoVulRepair@1"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "autoVulRepair",
+          "title": "AutoVulRepair",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "autoVulRepair": [
+        {
+          "id": "autoVulRepairSidebar",
+          "name": "Vulnerabilities"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AutoVulRepair",
+      "properties": {
+        "autoVulRepair.backendURL": {
+          "type": "string",
+          "default": "http://localhost:5000",
+          "description": "URL of the AutoVulRepair backend service"
+        },
+        "autoVulRepair.backgroundScanEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automatic scanning on file save"
+        },
+        "autoVulRepair.backgroundScanDelay": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 100,
+          "maximum": 10000,
+          "description": "Delay in milliseconds before scanning after file save"
+        },
+        "autoVulRepair.excludePatterns": {
+          "type": "array",
+          "default": ["**/node_modules/**", "**/build/**", "**/dist/**"],
+          "description": "Glob patterns for files to exclude from background scanning"
+        },
+        "autoVulRepair.maxFileSizeKB": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 1,
+          "maximum": 10240,
+          "description": "Maximum file size in KB for background scanning"
+        },
+        "autoVulRepair.maxConcurrentScans": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum number of concurrent scan sessions"
+        },
+        "autoVulRepair.defaultSeverityFilter": {
+          "type": "string",
+          "enum": ["All", "Critical", "High", "Medium", "Low"],
+          "default": "All",
+          "description": "Default severity filter in sidebar panel"
+        },
+        "autoVulRepair.enableWebSocketProgress": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time progress updates via WebSocket"
+        },
+        "autoVulRepair.allowSelfSignedCertificates": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow self-signed SSL certificates for HTTPS connections"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "test:unit": "jest --testPathPattern=test/unit",
+    "test:property": "jest --testPathPattern=test/property",
+    "test:integration": "jest --testPathPattern=test/integration"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.75.0",
+    "@types/ws": "^8.5.4",
+    "@typescript-eslint/eslint-plugin": "^5.59.0",
+    "@typescript-eslint/parser": "^5.59.0",
+    "@vscode/test-electron": "^2.3.0",
+    "eslint": "^8.39.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "jest": "^29.5.0",
+    "prettier": "^2.8.8",
+    "ts-jest": "^29.1.0",
+    "ts-loader": "^9.4.2",
+    "typescript": "^5.0.4",
+    "webpack": "^5.81.0",
+    "webpack-cli": "^5.0.2"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "fast-check": "^3.8.0",
+    "glob": "^10.2.2",
+    "minimatch": "^9.0.0",
+    "ws": "^8.13.0"
+  }
+}

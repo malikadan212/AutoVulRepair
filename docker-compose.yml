@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Redis for Celery task queue
   redis:
@@ -26,16 +24,13 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - REDIS_URL=redis://redis:6379/0
       - SCANS_DIR=/app/scans
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - FLASK_ENV=development
       - FLASK_DEBUG=1
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./scans:/app/scans
-      - ./logs:/app/logs
-      - ./scans.db:/app/scans.db
-      - ./templates:/app/templates
-      - ./src:/app/src
-      - ./app.py:/app/app.py
+      - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
@@ -53,10 +48,10 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - SCANS_DIR=/app/scans
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
-      - ./scans:/app/scans
-      - ./logs:/app/logs
-      - ./scans.db:/app/scans.db
+      - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
