@@ -1,0 +1,40 @@
+/* ============================================
+   Patch Review Module Styles
+   ============================================ */
+
+.border-left-success {
+  border-left: 4px solid var(--success-color);
+}
+
+.border-left-warning {
+  border-left: 4px solid var(--warning-color);
+}
+
+.border-left-primary {
+  border-left: 4px solid #007bff;
+}
+
+.border-left-secondary {
+  border-left: 4px solid var(--secondary-color);
+}
+
+/* Code snippet styling */
+.code-snippet-dark {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 15px;
+  border-radius: var(--border-radius-sm);
+  overflow-x: auto;
+}
+
+.line-number {
+  color: #858585;
+  user-select: none;
+}
+
+.vulnerable-line {
+  background: #ff000030;
+  border-left: 3px solid #ff0000;
+  padding-left: 5px;
+  display: block;
+}

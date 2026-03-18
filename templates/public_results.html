@@ -1,0 +1,199 @@
+{% extends 'layout.html' %}
+
+{% block title %}Scan Results{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Vulnerability Scan Results</h2>
+        <div>
+          <span class="badge bg-success">Scan Complete</span>
+          <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-primary ms-2">New Scan</a>
+        </div>
+      </div>
+
+      <!-- Scan Info -->
+      <div class="card mb-4">
+        <div class="card-body">
+          <h5 class="card-title">Scan Information</h5>
+          <div class="row">
+            <div class="col-md-4">
+              <strong>Scan Type:</strong>
+              {% if scan.scan_type == 'github_repo' %}
+              <span class="badge bg-info">GitHub Repository</span>
+              {% elif scan.scan_type == 'zip_upload' %}
+              <span class="badge bg-warning">ZIP Upload</span>
+              {% else %}
+              <span class="badge bg-secondary">Code Snippet</span>
+              {% endif %}
+            </div>
+            <div class="col-md-4">
+              <strong>Analysis Tool:</strong>
+              {% if scan.analysis_tool == 'codeql' %}
+              <span class="badge bg-primary">CodeQL</span>
+              <small class="text-muted d-block">Deep semantic analysis</small>
+              {% else %}
+              <span class="badge bg-success">Cppcheck</span>
+              <small class="text-muted d-block">Fast static analysis</small>
+              {% endif %}
+            </div>
+            {% if scan.repo_url %}
+            <div class="col-md-4">
+              <strong>Repository:</strong>
+              <a href="{{ scan.repo_url }}" target="_blank">{{ scan.repo_url }}</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Vulnerabilities Summary -->
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <div class="card text-center">
+            <div class="card-body">
+              <h3 class="text-danger">{{ scan.vulnerabilities|selectattr('severity', 'equalto', 'high')|list|length }}
+              </h3>
+              <p class="card-text">High Severity</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card text-center">
+            <div class="card-body">
+              <h3 class="text-warning">{{ scan.vulnerabilities|selectattr('severity', 'equalto', 'medium')|list|length
+                }}</h3>
+              <p class="card-text">Medium Severity</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card text-center">
+            <div class="card-body">
+              <h3 class="text-info">{{ scan.vulnerabilities|selectattr('severity', 'equalto', 'low')|list|length }}</h3>
+              <p class="card-text">Low Severity</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vulnerabilities List -->
+      {% if scan.vulnerabilities %}
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">Detected Vulnerabilities</h5>
+        </div>
+        <div class="card-body">
+          {% for vuln in scan.vulnerabilities %}
+          <div
+            class="alert alert-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %} mb-3">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="alert-heading">
+                  <span
+                    class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
+                    {{ vuln.severity|upper }}
+                  </span>
+                  {{ vuln.description }}
+                </h6>
+                {% if vuln.file %}
+                <p class="mb-1"><strong>File:</strong> {{ vuln.file }}</p>
+                {% endif %}
+                {% if vuln.line %}
+                <p class="mb-1"><strong>Line:</strong> {{ vuln.line }}</p>
+                {% endif %}
+                {% if vuln.tool %}
+                <p class="mb-0"><small class="text-muted">Detected by: {{ vuln.tool }}</small></p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Available Patches -->
+      {% if scan.patches %}
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">Suggested Fixes</h5>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            <i class="fas fa-download"></i>
+            <strong>Download patches:</strong> Apply these fixes manually to your codebase.
+            No automatic PRs are created in no-login mode.
+          </div>
+
+          {% for patch in scan.patches %}
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 class="card-title">{{ patch.description }}</h6>
+                  <small class="text-muted">Patch ID: {{ patch.id }}</small>
+                </div>
+                <a href="{{ url_for('download_patch', scan_id=scan_id, patch_id=patch.id) }}"
+                  class="btn btn-outline-primary">
+                  <i class="fas fa-download"></i> Download Patch
+                </a>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="alert alert-success">
+        <i class="fas fa-check-circle"></i>
+        <strong>Great news!</strong> No vulnerabilities detected in your code.
+      </div>
+      {% endif %}
+
+      <!-- Manual PR Instructions -->
+      {% if scan.patches and scan.repo_url %}
+      <div class="card mt-4">
+        <div class="card-header">
+          <h6 class="mb-0">Manual PR Creation</h6>
+        </div>
+        <div class="card-body">
+          <p>To create a pull request with these fixes:</p>
+          <ol>
+            <li>Download the patch files above</li>
+            <li>Apply them to your local repository using: <code>git apply patch_file.patch</code></li>
+            <li>Commit and push the changes</li>
+            <li>Create a pull request on GitHub</li>
+          </ol>
+          <p class="mb-0">
+            <small class="text-muted">
+              For automated PR creation, <a href="{{ url_for('home') }}">sign in with GitHub</a>.
+            </small>
+          </p>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Action Buttons -->
+      <div class="d-flex gap-2 mt-4 mb-4">
+        <a class="btn btn-secondary" href="{{ url_for('no_login_scan') }}">
+          <i class="fas fa-arrow-left"></i> New Scan
+        </a>
+        {% if scan.vulnerabilities %}
+        <a class="btn btn-primary" href="{{ url_for('detailed_findings', scan_id=scan_id) }}">
+          <i class="fas fa-list"></i> View Detailed Findings
+        </a>
+        {% endif %}
+        {% if scan.patches %}
+        <a class="btn btn-success" href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}">
+          <i class="fas fa-code-branch"></i> Review AI Patches
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

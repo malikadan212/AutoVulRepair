@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Orchestration - Vulnerability Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .progress-bar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .progress-steps {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .progress-step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e9ecef;
+            color: #6c757d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-weight: bold;
+            position: relative;
+            z-index: 2;
+        }
+
+        .step-circle.completed {
+            background: #28a745;
+            color: white;
+        }
+
+        .step-circle.active {
+            background: #667eea;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+            }
+        }
+
+        .step-label {
+            font-size: 12px;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .step-label.completed {
+            color: #28a745;
+        }
+
+        .step-label.active {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .progress-line {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #e9ecef;
+            z-index: 1;
+        }
+
+        .progress-line-fill {
+            height: 100%;
+            background: #28a745;
+            transition: width 0.5s ease;
+        }
+
+        .action-bar {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-value.success {
+            color: #28a745;
+        }
+
+        .stat-value.error {
+            color: #dc3545;
+        }
+
+        .stat-value.pending {
+            color: #ffc107;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .build-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .build-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .build-header h2 {
+            color: #333;
+        }
+
+        .build-card {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .build-card.success {
+            border-color: #28a745;
+            background: #f8fff9;
+        }
+
+        .build-card.error {
+            border-color: #dc3545;
+            background: #fff8f8;
+        }
+
+        .build-card.building {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .build-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .build-status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .build-status.success {
+            background: #28a745;
+            color: white;
+        }
+
+        .build-status.error {
+            background: #dc3545;
+            color: white;
+        }
+
+        .build-status.building {
+            background: #667eea;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .build-status.pending {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .build-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .build-command {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .build-log {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .build-log.error {
+            color: #ff6b6b;
+        }
+
+        .build-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+
+        .no-build {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .no-build h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .no-build p {
+            color: #666;
+            margin-bottom: 25px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .build-progress {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 30px;
+            margin: 20px 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .build-progress-bar {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔨 Build Orchestration</h1>
+            <p>Module 2: Component 3 - Compile Harnesses into Fuzz Targets</p>
+
+            <div class="progress-bar">
+                <div class="progress-steps">
+                    <div class="progress-line">
+                        <div class="progress-line-fill" style="width: 42%;"></div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">1</div>
+                        <div class="step-label completed">Static Analysis</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">2</div>
+                        <div class="step-label completed">Fuzz Plan</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">3</div>
+                        <div class="step-label completed">Harness Gen</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle active">4</div>
+                        <div class="step-label active">Build</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">5</div>
+                        <div class="step-label">Fuzz Exec</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">6</div>
+                        <div class="step-label">Triage</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">7</div>
+                        <div class="step-label">Repro Kit</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">8</div>
+                        <div class="step-label">Repair</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <a href="{{ url_for('harness_generation_view', scan_id=scan_id) }}" class="btn btn-secondary">
+                ← Back to Harnesses
+            </a>
+
+            <div style="display: flex; gap: 10px;">
+                {% if builds %}
+                <button class="btn btn-secondary btn-small" onclick="downloadBuildLog()">
+                    📄 Download Build Log
+                </button>
+                <button class="btn btn-primary" onclick="rebuildAll()" id="rebuildBtn">
+                    🔨 Rebuild All Targets
+                </button>
+                {% if build_stats.success_count > 0 %}
+                <a href="/fuzz-execution/{{ scan_id }}" class="btn btn-success">
+                    Start Fuzzing Campaign →
+                </a>
+                {% endif %}
+                {% else %}
+                <button class="btn btn-primary" onclick="startBuild()" id="buildBtn">
+                    🔨 Build All Targets
+                </button>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if builds %}
+        {% if build_stats.error_count > 0 and build_stats.success_count == 0 %}
+        <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 10px; padding: 20px; margin-bottom: 30px;">
+            <h3 style="color: #856404; margin-bottom: 10px;">⚠️ All Builds Failed</h3>
+            <p style="color: #856404; margin-bottom: 15px;">
+                Common issue: <strong>clang++ not found</strong>. LibFuzzer requires clang++, not g++.
+            </p>
+            <div style="background: white; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                <strong>Quick Fix:</strong>
+                <ol style="margin: 10px 0 0 20px; color: #333;">
+                    <li>Install clang++:
+                        <ul style="margin: 5px 0 0 20px;">
+                            <li><strong>Windows:</strong> Download from <a href="https://releases.llvm.org/" target="_blank" style="color: #667eea;">releases.llvm.org</a></li>
+                            <li><strong>Linux:</strong> <code style="background: #f8f9fa; padding: 2px 6px; border-radius: 3px;">sudo apt-get install clang</code></li>
+                            <li><strong>macOS:</strong> <code style="background: #f8f9fa; padding: 2px 6px; border-radius: 3px;">brew install llvm</code></li>
+                        </ul>
+                    </li>
+                    <li>Restart your terminal</li>
+                    <li>Click "Rebuild All Targets" button above</li>
+                </ol>
+            </div>
+            <p style="color: #856404; font-size: 13px; margin: 0;">
+                📖 See <a href="/static/BUILD_ERRORS_TROUBLESHOOTING.md" target="_blank" style="color: #667eea;">troubleshooting guide</a> for detailed instructions.
+            </p>
+        </div>
+        {% endif %}
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value success">{{ build_stats.success_count }}</div>
+                <div class="stat-label">Successful Builds</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value error">{{ build_stats.error_count }}</div>
+                <div class="stat-label">Failed Builds</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value pending">{{ build_stats.pending_count }}</div>
+                <div class="stat-label">Pending</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ build_stats.total_time }}s</div>
+                <div class="stat-label">Total Build Time</div>
+            </div>
+        </div>
+
+        {% if build_stats.success_count + build_stats.error_count < builds|length %}
+        <div class="build-progress">
+            <div class="build-progress-bar" style="width: {{ ((build_stats.success_count + build_stats.error_count) / builds|length * 100)|int }}%;">
+                {{ ((build_stats.success_count + build_stats.error_count) / builds|length * 100)|int }}% Complete
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="build-container">
+            <div class="build-header">
+                <h2>Build Results ({{ builds|length }})</h2>
+            </div>
+
+            {% for build in builds %}
+            <div class="build-card {{ build.status }}">
+                <div class="build-title">
+                    {{ build.target_name }}
+                    <span class="build-status {{ build.status }}">{{ build.status|upper }}</span>
+                </div>
+
+                <div class="build-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Harness File</span>
+                        <span class="detail-value">{{ build.harness_file }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Source File</span>
+                        <span class="detail-value">{{ build.source_file }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Sanitizers</span>
+                        <span class="detail-value">{{ build.sanitizers }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Build Time</span>
+                        <span class="detail-value">{{ build.build_time }}s</span>
+                    </div>
+                </div>
+
+                <div class="build-command">
+                    <strong>Build Command:</strong><br>
+                    {{ build.command }}
+                </div>
+
+                {% if build.log %}
+                <div class="build-log {% if build.status == 'error' %}error{% endif %}">
+                    {{ build.log }}
+                </div>
+                {% endif %}
+
+                {% if build.status == 'success' %}
+                <div class="build-actions">
+                    <button class="btn btn-secondary btn-small" onclick="downloadBinary('{{ build.output_path }}')">
+                        📥 Download Binary
+                    </button>
+                    <button class="btn btn-secondary btn-small" onclick="testRun('{{ build.target_name }}')">
+                        🧪 Test Run
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="build-container">
+            <div class="no-build" id="noBuildMessage">
+                <h2>No Builds Started Yet</h2>
+                <p>Click the button above to compile all generated harnesses into fuzz targets.</p>
+                <p style="font-size: 13px; color: #999;">
+                    This will compile each harness with the appropriate sanitizers and create executable fuzz targets.
+                </p>
+                <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px; margin-top: 20px; text-align: left;">
+                    <strong>⚠️ Requirements:</strong>
+                    <ul style="margin: 10px 0 0 20px; font-size: 13px;">
+                        <li><strong>clang++</strong> compiler is required (g++ does not support LibFuzzer)</li>
+                        <li>Install LLVM/Clang:
+                            <ul style="margin: 5px 0 0 20px;">
+                                <li><strong>Windows:</strong> Download from <a href="https://releases.llvm.org/" target="_blank">releases.llvm.org</a></li>
+                                <li><strong>Linux:</strong> <code>sudo apt-get install clang</code></li>
+                                <li><strong>macOS:</strong> <code>brew install llvm</code></li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="loading" id="loadingMessage" style="display: none;">
+                <div class="spinner"></div>
+                <p>Building targets...</p>
+                <p style="font-size: 13px; color: #666; margin-top: 10px;">This may take several minutes.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="config-data" data-scan-id="{{ scan_id }}" style="display: none;"></div>
+
+    <script>
+        const configData = document.getElementById('config-data');
+        const SCAN_ID = configData.dataset.scanId;
+
+        function startBuild() {
+            document.getElementById('noBuildMessage').style.display = 'none';
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('buildBtn').disabled = true;
+
+            fetch('/api/build/start/' + SCAN_ID, {
+                method: 'POST'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Poll for build status
+                        pollBuildStatus();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                        document.getElementById('noBuildMessage').style.display = 'block';
+                        document.getElementById('loadingMessage').style.display = 'none';
+                        document.getElementById('buildBtn').disabled = false;
+                    }
+                })
+                .catch(error => {
+                    alert('Error starting build: ' + error);
+                    document.getElementById('noBuildMessage').style.display = 'block';
+                    document.getElementById('loadingMessage').style.display = 'none';
+                    document.getElementById('buildBtn').disabled = false;
+                });
+        }
+
+        function rebuildAll() {
+            if (!confirm('Rebuild all targets? This will overwrite existing build results.')) {
+                return;
+            }
+
+            document.getElementById('rebuildBtn').disabled = true;
+            document.getElementById('rebuildBtn').textContent = '🔨 Building...';
+
+            fetch('/api/build/start/' + SCAN_ID, {
+                method: 'POST'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown error'));
+                        document.getElementById('rebuildBtn').disabled = false;
+                        document.getElementById('rebuildBtn').textContent = '🔨 Rebuild All Targets';
+                    }
+                })
+                .catch(error => {
+                    alert('Error starting build: ' + error);
+                    document.getElementById('rebuildBtn').disabled = false;
+                    document.getElementById('rebuildBtn').textContent = '🔨 Rebuild All Targets';
+                });
+        }
+
+        function pollBuildStatus() {
+            const interval = setInterval(() => {
+                fetch('/api/build/status/' + SCAN_ID)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.complete) {
+                            clearInterval(interval);
+                            window.location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error polling build status:', error);
+                        clearInterval(interval);
+                    });
+            }, 2000);
+        }
+
+        function downloadBuildLog() {
+            window.location.href = '/api/build/log/' + SCAN_ID;
+        }
+
+        function startFuzzingCampaign() {
+            window.location.href = '/fuzz-execution/' + SCAN_ID;
+        }
+
+        function downloadBinary(outputPath) {
+            window.location.href = '/api/build/download/' + SCAN_ID + '?file=' + encodeURIComponent(outputPath);
+        }
+
+        function testRun(targetName) {
+            if (confirm('Run a quick test of ' + targetName + '?')) {
+                fetch('/api/build/test-run/' + SCAN_ID + '/' + targetName, {
+                    method: 'POST'
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Test run completed!\n\nExecutions: ' + data.executions + '\nTime: ' + data.time + 's');
+                        } else {
+                            alert('Test run failed: ' + data.error);
+                        }
+                    });
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,146 @@
+{% extends 'layout.html' %}
+
+{% block title %}Scan Progress{% endblock %}
+
+{% block extra_js %}
+<!-- Pass scan_id to JavaScript -->
+<span id="scan-context" data-scan-id="{{ scan_id }}" style="display:none;"></span>
+<script src="{{ url_for('static', filename='js/components/status-poller.js') }}"></script>
+<script src="{{ url_for('static', filename='js/modules/scan-progress.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-md-8 mx-auto">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h4 class="mb-0">
+            <i class="fas fa-search text-primary"></i>
+            Scanning in Progress
+          </h4>
+          <span class="badge bg-primary" id="scan-status">Processing</span>
+        </div>
+        
+        <div class="card-body">
+          <!-- Scan Information -->
+          <div class="row mb-4">
+            <div class="col-md-6">
+              <h6>Scan Details</h6>
+              <p class="mb-1"><strong>Scan ID:</strong> <code id="scan-id">{{ scan_id }}</code></p>
+              <p class="mb-1"><strong>Analysis Tool:</strong> 
+                <span class="badge bg-info" id="analysis-tool">{{ analysis_tool|default('cppcheck') }}</span>
+              </p>
+              <p class="mb-0"><strong>Source:</strong> <span id="source-info">{{ source_type|default('Repository') }}</span></p>
+            </div>
+            <div class="col-md-6">
+              <h6>Progress</h6>
+              <div class="progress mb-2" style="height: 25px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     id="progress-bar"
+                     style="width: 0%"
+                     aria-valuenow="0" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">0%</div>
+              </div>
+              <small class="text-muted" id="progress-text">Initializing scan...</small>
+            </div>
+          </div>
+
+          <!-- Pipeline Stages -->
+          <div class="row">
+            <div class="col-12">
+              <h6>Pipeline Stages</h6>
+              <div class="list-group">
+                <div class="list-group-item d-flex justify-content-between align-items-center" id="stage-init">
+                  <div>
+                    <i class="fas fa-cog text-muted"></i>
+                    <span class="ms-2">Initializing Environment</span>
+                  </div>
+                  <span class="badge bg-secondary">Pending</span>
+                </div>
+                
+                <div class="list-group-item d-flex justify-content-between align-items-center" id="stage-source">
+                  <div>
+                    <i class="fas fa-download text-muted"></i>
+                    <span class="ms-2">Processing Source Code</span>
+                  </div>
+                  <span class="badge bg-secondary">Pending</span>
+                </div>
+                
+                <div class="list-group-item d-flex justify-content-between align-items-center" id="stage-analysis">
+                  <div>
+                    <i class="fas fa-search text-muted"></i>
+                    <span class="ms-2">Running Static Analysis</span>
+                  </div>
+                  <span class="badge bg-secondary">Pending</span>
+                </div>
+                
+                <div class="list-group-item d-flex justify-content-between align-items-center" id="stage-patches">
+                  <div>
+                    <i class="fas fa-wrench text-muted"></i>
+                    <span class="ms-2">Generating Patches</span>
+                  </div>
+                  <span class="badge bg-secondary">Pending</span>
+                </div>
+                
+                <div class="list-group-item d-flex justify-content-between align-items-center" id="stage-complete">
+                  <div>
+                    <i class="fas fa-check text-muted"></i>
+                    <span class="ms-2">Finalizing Results</span>
+                  </div>
+                  <span class="badge bg-secondary">Pending</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-time Logs (Optional) -->
+          <div class="mt-4">
+            <h6>
+              <i class="fas fa-terminal"></i>
+              Live Output
+              <button class="btn btn-sm btn-outline-secondary ms-2" onclick="toggleLogs()">
+                <i class="fas fa-eye" id="log-toggle-icon"></i>
+              </button>
+            </h6>
+            <div class="card bg-dark text-light" id="log-container" style="display: none;">
+              <div class="card-body">
+                <pre id="live-logs" style="max-height: 200px; overflow-y: auto; font-size: 0.8rem;">Initializing scan environment...
+Setting up analysis tools...
+Preparing workspace...</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="mt-4 d-flex justify-content-between">
+            <div>
+              <button class="btn btn-outline-danger" onclick="cancelScan()" id="cancel-btn">
+                <i class="fas fa-times"></i> Cancel Scan
+              </button>
+              <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-arrow-left"></i> Back to Scan
+              </a>
+            </div>
+            <div>
+              <button class="btn btn-outline-secondary" onclick="pollScanStatus()">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+              <a href="#" class="btn btn-success d-none" id="view-results-btn">
+                <i class="fas fa-eye"></i> View Results
+              </a>
+              <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-outline-primary ms-2 d-none" id="view-findings-btn">
+                <i class="fas fa-list"></i> View Findings
+              </a>
+            </div>
+          </div>
+          
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

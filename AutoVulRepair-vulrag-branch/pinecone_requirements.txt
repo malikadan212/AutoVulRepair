@@ -1,0 +1,5 @@
+# Requirements for CVE to Pinecone conversion
+pinecone-client>=3.0.0
+sentence-transformers>=2.2.0
+tqdm>=4.65.0
+torch>=2.0.0

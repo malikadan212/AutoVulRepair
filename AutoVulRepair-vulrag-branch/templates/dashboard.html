@@ -1,0 +1,399 @@
+{% extends 'layout.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Welcome Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>Welcome back, {{ user.username }}!</h2>
+      <p class="text-muted mb-0">AutoVulRepair Cloud-Native Security Platform</p>
+    </div>
+    <div>
+      <a href="{{ url_for('scan') }}" class="btn btn-success">
+        <i class="fas fa-plus"></i> New Scan
+      </a>
+    </div>
+  </div>
+
+  <!-- Quick Stats -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-center border-primary">
+        <div class="card-body">
+          <i class="fas fa-search fa-2x text-primary mb-2"></i>
+          <h4 class="text-primary">23</h4>
+          <p class="card-text">Total Scans</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-danger">
+        <div class="card-body">
+          <i class="fas fa-bug fa-2x text-danger mb-2"></i>
+          <h4 class="text-danger">147</h4>
+          <p class="card-text">Vulnerabilities Found</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-success">
+        <div class="card-body">
+          <i class="fas fa-wrench fa-2x text-success mb-2"></i>
+          <h4 class="text-success">132</h4>
+          <p class="card-text">Patches Generated</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center border-info">
+        <div class="card-body">
+          <i class="fas fa-check-circle fa-2x text-info mb-2"></i>
+          <h4 class="text-info">89.2%</h4>
+          <p class="card-text">Success Rate</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Module Navigation -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <h4 class="mb-3">
+        <i class="fas fa-th-large"></i>
+        Platform Modules
+      </h4>
+    </div>
+    
+    <!-- Module 1: Vulnerability Detection -->
+    <div class="col-md-6 col-lg-4 mb-3">
+      <div class="card h-100 border-primary">
+        <div class="card-header bg-primary text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-shield-alt"></i>
+            Module 1: Vulnerability Detection
+          </h6>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <p class="card-text flex-grow-1">Static analysis with CodeQL and Cppcheck for comprehensive security scanning.</p>
+          <div class="d-grid gap-2">
+            <a href="{{ url_for('scan') }}" class="btn btn-primary">
+              <i class="fas fa-search"></i> Start New Scan
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module 2: Fuzzing -->
+    <div class="col-md-6 col-lg-4 mb-3">
+      <div class="card h-100 border-warning">
+        <div class="card-header bg-warning text-dark">
+          <h6 class="mb-0">
+            <i class="fas fa-random"></i>
+            Module 2: Fuzz Plan & Harness
+          </h6>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <p class="card-text flex-grow-1">Automated fuzz target generation and execution with custom mutation strategies.</p>
+          <div class="d-grid gap-2">
+            <a href="{{ url_for('fuzzing_dashboard') }}" class="btn btn-warning">
+              <i class="fas fa-tachometer-alt"></i> Fuzzing Dashboard
+            </a>
+            <button class="btn btn-outline-warning" onclick="startFuzzCampaign()">
+              <i class="fas fa-play"></i> Start Campaign
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module 3: Patch Generation -->
+    <div class="col-md-6 col-lg-4 mb-3">
+      <div class="card h-100 border-success">
+        <div class="card-header bg-success text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-code-branch"></i>
+            Module 3: Patch Generation (Vul-RAG)
+          </h6>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <p class="card-text flex-grow-1">AI-powered patch generation using retrieval-augmented LLM with validation.</p>
+          <div class="d-grid gap-2">
+            <button class="btn btn-outline-success" onclick="generatePatch()">
+              <i class="fas fa-robot"></i> Generate Patch
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module 4: Cloud Deployment -->
+    <div class="col-md-6 col-lg-4 mb-3">
+      <div class="card h-100 border-info">
+        <div class="card-header bg-info text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-cloud"></i>
+            Module 4: Cloud-Native Deployment
+          </h6>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <p class="card-text flex-grow-1">Kubernetes orchestration with containerized analysis and CI/CD integration.</p>
+          <div class="d-grid gap-2">
+            <button class="btn btn-info" onclick="viewCloudStatus()">
+              <i class="fas fa-server"></i> Cloud Status
+            </button>
+            <button class="btn btn-outline-info" onclick="deployPipeline()">
+              <i class="fas fa-rocket"></i> Deploy Pipeline
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module 5: Sandbox Testing -->
+    <div class="col-md-6 col-lg-4 mb-3">
+      <div class="card h-100 border-secondary">
+        <div class="card-header bg-secondary text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-vial"></i>
+            Module 5: Performance & Sandbox Testing
+          </h6>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <p class="card-text flex-grow-1">Isolated testing environment with performance validation and security checks.</p>
+          <div class="d-grid gap-2">
+            <button class="btn btn-secondary" onclick="runSandboxTest()">
+              <i class="fas fa-play"></i> Run Sandbox Test
+            </button>
+            <button class="btn btn-outline-secondary" onclick="viewTestResults()">
+              <i class="fas fa-chart-bar"></i> Test Results
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module 6: Monitoring -->
+    <div class="col-md-6 col-lg-4 mb-3">
+      <div class="card h-100 border-dark">
+        <div class="card-header bg-dark text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-chart-line"></i>
+            Module 6: Monitoring & Metrics
+          </h6>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <p class="card-text flex-grow-1">Real-time monitoring with Prometheus and Grafana for pipeline observability.</p>
+          <div class="d-grid gap-2">
+            <a href="{{ url_for('monitoring_dashboard') }}" class="btn btn-dark">
+              <i class="fas fa-tachometer-alt"></i> Monitoring Dashboard
+            </a>
+            <button class="btn btn-outline-dark" onclick="viewAlerts()">
+              <i class="fas fa-bell"></i> View Alerts
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Activity -->
+  <div class="row">
+    <div class="col-md-8">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-history"></i>
+            Recent Scans
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Scan ID</th>
+                  <th>Repository</th>
+                  <th>Tool</th>
+                  <th>Status</th>
+                  <th>Vulnerabilities</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>scan_001</code></td>
+                  <td>github.com/user/project1</td>
+                  <td><span class="badge bg-primary">CodeQL</span></td>
+                  <td><span class="badge bg-success">Completed</span></td>
+                  <td><span class="badge bg-warning">5</span></td>
+                  <td>
+                    <a href="{{ url_for('detailed_findings', scan_id='scan_001') }}" class="btn btn-sm btn-outline-primary">
+                      <i class="fas fa-eye"></i> View
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>scan_002</code></td>
+                  <td>uploaded_project.zip</td>
+                  <td><span class="badge bg-success">Cppcheck</span></td>
+                  <td><span class="badge bg-primary">Running</span></td>
+                  <td>-</td>
+                  <td>
+                    <a href="{{ url_for('scan_progress', scan_id='scan_002') }}" class="btn btn-sm btn-outline-info">
+                      <i class="fas fa-clock"></i> Progress
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>scan_003</code></td>
+                  <td>github.com/user/project2</td>
+                  <td><span class="badge bg-primary">CodeQL</span></td>
+                  <td><span class="badge bg-success">Completed</span></td>
+                  <td><span class="badge bg-danger">12</span></td>
+                  <td>
+                    <a href="{{ url_for('detailed_findings', scan_id='scan_003') }}" class="btn btn-sm btn-outline-primary">
+                      <i class="fas fa-eye"></i> View
+                    </a>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-exclamation-triangle"></i>
+            System Alerts
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-warning">
+            <small>
+              <i class="fas fa-memory"></i>
+              <strong>High Memory Usage</strong><br>
+              Cluster memory at 87%
+            </small>
+          </div>
+          <div class="alert alert-info">
+            <small>
+              <i class="fas fa-clock"></i>
+              <strong>Queue Backlog</strong><br>
+              45 jobs pending analysis
+            </small>
+          </div>
+          <div class="text-center">
+            <a href="{{ url_for('monitoring_dashboard') }}" class="btn btn-sm btn-outline-primary">
+              <i class="fas fa-chart-bar"></i> View All Metrics
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="card mt-3">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fas fa-bolt"></i>
+            Quick Actions
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="d-grid gap-2">
+            <button class="btn btn-outline-primary" onclick="bulkScan()">
+              <i class="fas fa-layer-group"></i> Bulk Repository Scan
+            </button>
+            <button class="btn btn-outline-success" onclick="scheduleScans()">
+              <i class="fas fa-calendar"></i> Schedule Scans
+            </button>
+            <button class="btn btn-outline-info" onclick="exportReport()">
+              <i class="fas fa-download"></i> Export Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function startFuzzCampaign() {
+  alert('Starting new fuzzing campaign...\nThis would redirect to the fuzzing dashboard with campaign creation wizard.');
+}
+
+function generatePatch() {
+  alert('Generating AI patch...\nThis would trigger the Vul-RAG module to create patches for detected vulnerabilities.');
+}
+
+function viewCloudStatus() {
+  alert('Cloud Infrastructure Status:\n\n✅ Kubernetes Cluster: Healthy\n✅ Container Registry: Online\n✅ CI/CD Pipeline: Active\n⚠️ Memory Usage: 87%');
+}
+
+function deployPipeline() {
+  alert('Deploying analysis pipeline...\nThis would trigger Kubernetes deployment of analysis containers.');
+}
+
+function runSandboxTest() {
+  alert('Running sandbox test...\nThis would execute patches in isolated environment with performance validation.');
+}
+
+function viewTestResults() {
+  alert('Test Results Summary:\n\n✅ Compilation: Passed\n✅ Unit Tests: 15/15 passed\n✅ Security Tests: Clean\n⚠️ Performance: -2.1% slower');
+}
+
+function viewAlerts() {
+  alert('System Alerts:\n\n⚠️ High Memory Usage (87%)\nℹ️ Queue Backlog (45 jobs)\n⚠️ Slow CodeQL Response');
+}
+
+function bulkScan() {
+  alert('Bulk Repository Scan:\nThis would allow scanning multiple repositories simultaneously.');
+}
+
+function scheduleScans() {
+  alert('Schedule Scans:\nThis would set up automated scanning schedules for repositories.');
+}
+
+function exportReport() {
+  alert('Exporting comprehensive security report...\nThis would generate PDF/CSV reports of all findings.');
+}
+</script>
+
+<style>
+.card {
+  transition: transform 0.2s ease-in-out;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.card-header {
+  font-weight: 600;
+}
+
+.badge {
+  font-size: 0.8rem;
+}
+
+.alert {
+  border-left: 4px solid;
+  margin-bottom: 0.5rem;
+}
+
+.alert-warning {
+  border-left-color: #ffc107;
+}
+
+.alert-info {
+  border-left-color: #0dcaf0;
+}
+</style>
+{% endblock %}

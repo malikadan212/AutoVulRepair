@@ -1,0 +1,44 @@
+{% extends 'layout.html' %}
+
+{% block title %}Patch Generation{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-robot text-success"></i>
+        AI-Powered Patch Generation
+      </h2>
+      <p class="text-muted mb-0">Module 3: Automated vulnerability repair using AI</p>
+    </div>
+    <div>
+      <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Findings
+      </a>
+    </div>
+  </div>
+
+  <!-- Coming Soon Message -->
+  <div class="card">
+    <div class="card-body text-center py-5">
+      <div class="mb-4">
+        <i class="fas fa-tools fa-5x text-muted"></i>
+      </div>
+      <h3 class="mb-3">Patch Generation Coming Soon</h3>
+      <p class="text-muted mb-4">
+        This module will automatically generate patches for detected vulnerabilities using:<br>
+        • Static analysis findings<br>
+        • Fuzzing crash data<br>
+        • CVE knowledge base<br>
+        • AI-powered code repair
+      </p>
+      <div class="alert alert-info d-inline-block">
+        <i class="fas fa-info-circle"></i>
+        Currently, you can use the fuzzing results to manually fix vulnerabilities based on the crash reports and code context provided.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

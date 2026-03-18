@@ -1,0 +1,291 @@
+{% extends 'layout.html' %}
+
+{% block title %}AI Repair Dashboard - {{ scan_id }}{% endblock %}
+
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/modules/repair-dashboard.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block extra_js %}
+<!-- Load components -->
+<script src="{{ url_for('static', filename='js/components/activity-feed.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/agent-pipeline.js') }}"></script>
+<script src="{{ url_for('static', filename='js/modules/repair-dashboard.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<!-- Pass scan_id to JavaScript -->
+<span id="scan-context" data-scan-id="{{ scan_id }}" style="display:none;"></span>
+<div id="page-data" 
+     data-scan-id="{{ scan_id }}"
+     data-has-repair-results="{{ 'true' if repair_results else 'false' }}"
+     style="display: none;">
+</div>
+
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="dashboard-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1><i class="fas fa-robot"></i> AI Repair Dashboard</h1>
+                <p class="mb-0">Scan ID: <code>{{ scan_id }}</code></p>
+            </div>
+            <div class="d-flex gap-2">
+                <!-- View Toggle -->
+                <div class="view-toggle">
+                    <button class="view-toggle-btn active" data-view="detailed">
+                        <i class="fas fa-list-ul"></i> Detailed
+                    </button>
+                    <button class="view-toggle-btn" data-view="simple">
+                        <i class="fas fa-th-large"></i> Simple
+                    </button>
+                </div>
+                
+                <button class="export-report-btn" onclick="exportDetailedReport()">
+                    <i class="fas fa-download"></i> Export Report
+                </button>
+                
+                <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Back to Scan
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Pipeline Visualization -->
+    <div class="detailed-view-only">
+        <div class="agent-pipeline" id="agent-pipeline-container">
+            <!-- Pipeline will be rendered by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-label">Total Vulnerabilities</div>
+                <div class="stat-value text-primary" id="total-vulns">
+                    {% if triage_results and triage_results.crashes %}
+                        {{ triage_results.crashes|length }}
+                    {% else %}
+                        0
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-label">Repaired</div>
+                <div class="stat-value text-success" id="repaired-count">
+                    {% if repair_results and repair_results.summary %}
+                        {{ repair_results.summary.successful }}
+                    {% else %}
+                        0
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-label">Failed</div>
+                <div class="stat-value text-danger" id="failed-count">
+                    {% if repair_results and repair_results.summary %}
+                        {{ repair_results.summary.failed }}
+                    {% else %}
+                        0
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-label">Success Rate</div>
+                <div class="stat-value text-info" id="success-rate">
+                    {% if repair_results and repair_results.summary and repair_results.summary.total > 0 %}
+                        {{ ((repair_results.summary.successful / repair_results.summary.total) * 100)|round|int }}%
+                    {% else %}
+                        0%
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="stat-card">
+                <h5><i class="fas fa-cogs"></i> Actions</h5>
+                <button id="start-repair-btn" class="btn btn-ai btn-lg" onclick="startRepair()">
+                    <i class="fas fa-magic"></i> Start AI Repair
+                </button>
+                <button id="refresh-btn" class="btn btn-outline-primary btn-lg ms-2" onclick="refreshStatus()">
+                    <i class="fas fa-sync"></i> Refresh Status
+                </button>
+                <button class="btn btn-outline-secondary btn-lg ms-2" onclick="checkHealth()">
+                    <i class="fas fa-heartbeat"></i> Check LLM Health
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Progress Section with Activity Feed -->
+    <div class="row mb-4 detailed-view-only" id="progress-section" style="display: none;">
+        <div class="col-lg-8">
+            <div class="stat-card">
+                <h5><i class="fas fa-terminal"></i> AI Activity Log</h5>
+                <div class="activity-feed" id="activity-feed-container">
+                    <!-- Activity logs will appear here -->
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="stat-card">
+                <h5><i class="fas fa-chart-line"></i> Progress</h5>
+                <div class="mt-3">
+                    <div class="progress" style="height: 25px;">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">
+                            <span id="progress-text">0%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h6>Quick Stats</h6>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Processed:</span>
+                        <strong id="processed-count">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Remaining:</span>
+                        <strong id="remaining-count">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Est. Time:</span>
+                        <strong id="est-time">--</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Metrics -->
+    {% if metrics and metrics.summary %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="stat-card">
+                <h5><i class="fas fa-chart-line"></i> Performance Metrics</h5>
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <p><strong>Average Time per Repair:</strong> {{ metrics.summary.average_time_per_repair|round(2) }}s</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>Total Time:</strong> {{ metrics.total_time_seconds|round(2) }}s</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>Success Rate:</strong> {{ metrics.summary.success_rate|round(1) }}%</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Agent Detail Cards (Detailed View) -->
+    <div class="row mb-4 detailed-view-only">
+        <div class="col-12">
+            <div class="stat-card">
+                <h5><i class="fas fa-robot"></i> AI Agent Details</h5>
+                <p class="text-muted">Expand each card to see detailed reasoning and decision-making process</p>
+                <div id="agent-details-container">
+                    <!-- Agent detail cards will be added here dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Repairs List -->
+    <div class="row">
+        <div class="col-12">
+            <div class="stat-card">
+                <h5><i class="fas fa-list"></i> Repair Results</h5>
+                <div id="repairs-list">
+                    {% if repair_results and repair_results.repairs %}
+                        {% for repair in repair_results.repairs %}
+                        <div class="repair-card repair-result-card" data-crash-id="{{ repair.crash_id }}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6>
+                                        <i class="fas fa-bug"></i> {{ repair.crash_id }}
+                                        <span class="status-badge status-{{ repair.status }}">
+                                            {{ repair.status|upper }}
+                                        </span>
+                                    </h6>
+                                    
+                                    {% if repair.status == 'completed' and repair.best_patch %}
+                                    <p class="mb-2">
+                                        <strong>File:</strong> {{ repair.best_patch.file }}<br>
+                                        <strong>Patch Type:</strong> {{ repair.best_patch.type|title }}<br>
+                                        <strong>Changes:</strong> +{{ repair.best_patch.lines_added }} -{{ repair.best_patch.lines_removed }}
+                                    </p>
+                                    
+                                    <!-- Score Bar -->
+                                    {% set score_percent = (repair.best_patch.score * 100)|round|int %}
+                                    {% set validation_failed = repair.validation_results and repair.validation_results.results and repair.validation_results.results[0].error %}
+                                    <div class="mb-2">
+                                        {% if validation_failed %}
+                                        <small class="text-warning">⚠️ Validation: {{ repair.validation_results.results[0].error }}</small>
+                                        <small class="text-muted d-block mt-1">
+                                            <i class="fas fa-info-circle"></i> This patch was not automatically applied. Review and apply manually if appropriate.
+                                        </small>
+                                        {% else %}
+                                        <small class="text-muted">AI Confidence: {{ score_percent }}%</small>
+                                        <div class="score-bar">
+                                            <div class="score-fill" style="width: {{ score_percent }}%"></div>
+                                        </div>
+                                        <small class="text-muted d-block mt-1">
+                                            <i class="fas fa-info-circle"></i> This is a suggested fix. Review and apply if appropriate.
+                                        </small>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <!-- Patch Preview -->
+                                    <div class="patch-preview">
+                                        <pre class="mb-0">{{ repair.best_patch.diff[:500] }}{% if repair.best_patch.diff|length > 500 %}...{% endif %}</pre>
+                                    </div>
+                                    
+                                    <!-- Actions -->
+                                    <div class="mt-3">
+                                        <button class="btn btn-sm btn-success" onclick="applyPatch('{{ scan_id }}', '{{ repair.crash_id }}')">
+                                            <i class="fas fa-check"></i> Apply Patch to Source
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary" onclick="copyPatch('{{ scan_id }}', '{{ repair.crash_id }}')">
+                                            <i class="fas fa-copy"></i> Copy Patch
+                                        </button>
+                                        <button class="btn btn-sm btn-primary" onclick="downloadPatch('{{ scan_id }}', '{{ repair.crash_id }}')">
+                                            <i class="fas fa-download"></i> Download
+                                        </button>
+                                        <button class="btn btn-sm btn-info" onclick="viewPatchDetails('{{ scan_id }}', '{{ repair.crash_id }}')">
+                                            <i class="fas fa-eye"></i> View Details
+                                        </button>
+                                    </div>
+                                    {% elif repair.status == 'failed' %}
+                                    <p class="text-danger mb-0">
+                                        <i class="fas fa-exclamation-circle"></i> {{ repair.error if repair.error else 'Repair failed' }}
+                                    </p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-robot fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">No repair results yet. Click "Start AI Repair" to begin.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

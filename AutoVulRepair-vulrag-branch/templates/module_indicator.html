@@ -1,0 +1,43 @@
+<!-- Module Indicator Component -->
+<div class="position-fixed bottom-0 end-0 m-3" style="z-index: 1050;">
+  <div class="card border-primary" style="max-width: 250px;">
+    <div class="card-body p-2">
+      <div class="d-flex align-items-center">
+        <div class="me-2">
+          {% if 'scan' in request.endpoint or 'findings' in request.endpoint %}
+            <i class="fas fa-shield-alt text-primary"></i>
+          {% elif 'fuzzing' in request.endpoint %}
+            <i class="fas fa-random text-warning"></i>
+          {% elif 'patch' in request.endpoint %}
+            <i class="fas fa-code-branch text-success"></i>
+          {% elif 'monitoring' in request.endpoint %}
+            <i class="fas fa-chart-bar text-info"></i>
+          {% elif 'progress' in request.endpoint %}
+            <i class="fas fa-clock text-secondary"></i>
+          {% else %}
+            <i class="fas fa-home text-muted"></i>
+          {% endif %}
+        </div>
+        <div>
+          <small class="fw-bold">
+            {% if 'scan' in request.endpoint or 'findings' in request.endpoint %}
+              Module 1: Detection
+            {% elif 'fuzzing' in request.endpoint %}
+              Module 2: Fuzzing
+            {% elif 'patch' in request.endpoint %}
+              Module 3: AI Patches
+            {% elif 'monitoring' in request.endpoint %}
+              Module 6: Monitoring
+            {% elif 'progress' in request.endpoint %}
+              Modules 4-5: Pipeline
+            {% else %}
+              AutoVulRepair
+            {% endif %}
+          </small>
+          <br>
+          <small class="text-muted">AutoVulRepair</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

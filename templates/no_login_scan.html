@@ -1,0 +1,161 @@
+{% extends 'layout.html' %}
+
+{% block title %}Quick Scan - No Login Required{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/modules/scan-form.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <h2 class="text-center mb-4">Quick Vulnerability Scan</h2>
+      
+      <div class="alert alert-success">
+        <i class="fas fa-rocket"></i>
+        <strong>Login without GitHub</strong>
+      </div>
+      
+      <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        <strong>Privacy First:</strong> We don't store your code. All processing happens in ephemeral containers and is deleted immediately after scanning.
+      </div>
+
+      <form method="POST" action="{{ url_for('scan_public') }}" enctype="multipart/form-data">
+        <div class="card">
+          <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="scanTabs" role="tablist">
+              <li class="nav-item">
+                <button class="nav-link active" id="github-tab" data-bs-toggle="tab" data-bs-target="#github" type="button" role="tab">Public GitHub Repo</button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab">Upload ZIP</button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link" id="snippet-tab" data-bs-toggle="tab" data-bs-target="#snippet" type="button" role="tab">Code Snippet</button>
+              </li>
+            </ul>
+          </div>
+          
+          <div class="card-body">
+            <div class="tab-content">
+              <!-- GitHub Repo Tab -->
+              <div class="tab-pane fade show active" id="github" role="tabpanel">
+                <div class="mb-3">
+                  <label for="repo_url" class="form-label">GitHub Repository URL</label>
+                  <input type="url" class="form-control" id="repo_url" name="repo_url" 
+                         placeholder="https://github.com/username/repository"
+                         pattern="https://github\.com/[\w\-\.]+/[\w\-\.]+(\.git)?/?">
+                  <div class="form-text">
+                    Only public repositories are supported. Private repos require ZIP upload.
+                  </div>
+                </div>
+              </div>
+              
+              <!-- ZIP Upload Tab -->
+              <div class="tab-pane fade" id="upload" role="tabpanel">
+                <div class="mb-3">
+                  <label for="zip_file" class="form-label">Upload Repository ZIP</label>
+                  <input type="file" class="form-control" id="zip_file" name="zip_file" accept=".zip">
+                  <div class="form-text">
+                    Upload a ZIP file of your repository. Perfect for private repos or local projects.
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Code Snippet Tab -->
+              <div class="tab-pane fade" id="snippet" role="tabpanel">
+                <div class="mb-3">
+                  <label for="code_snippet" class="form-label">Paste Your Code</label>
+                  <textarea class="form-control" id="code_snippet" name="code_snippet" rows="12" 
+                            placeholder="Paste your code here for quick analysis..."></textarea>
+                  <div class="form-text">
+                    Paste code snippets, functions, or small files for quick vulnerability analysis.
+                    <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="loadSampleCode()">
+                      <i class="fas fa-code"></i> Load Sample Vulnerable Code
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Static Analysis Tool Selection -->
+            <div class="card mt-4">
+              <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                  <h6 class="mb-0">Choose Analysis Engine</h6>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="checkToolStatus()">
+                    <i class="fas fa-sync-alt"></i> Check Status
+                  </button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="analysis_tool" id="cppcheck" value="cppcheck" checked>
+                      <label class="form-check-label" for="cppcheck">
+                        <strong>Cppcheck</strong> - Fast Analysis
+                        <span id="cppcheck-status" class="badge bg-success ms-2">Available</span>
+                        <br><small class="text-muted">Lightweight C/C++ analyzer for quick vulnerability detection with minimal resource usage</small>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="analysis_tool" id="codeql" value="codeql">
+                      <label class="form-check-label" for="codeql">
+                        <strong>CodeQL</strong> - Deep Analysis
+                        <span id="codeql-status" class="badge bg-success ms-2">Available</span>
+                        <br><small class="text-muted">Advanced semantic analysis engine for comprehensive security vulnerability discovery</small>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <hr>
+                <div class="row mt-2">
+                  <div class="col-md-6">
+                  </div>
+                </div>
+                <div id="tool-installation-help" class="mt-3" style="display: none;">
+                </div>
+              </div>
+            </div>
+            
+            <div class="text-center mt-4">
+              <button type="submit" class="btn btn-primary btn-lg">
+                <i class="fas fa-search"></i> Start Scan
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+      
+      <div class="text-center mt-4">
+        <a href="{{ url_for('home') }}" class="btn btn-link">← Back to Home</a>
+      </div>
+      
+      
+      <!-- Security Features -->
+      <div class="row mt-5">
+        <div class="col-md-4 text-center">
+          <i class="fas fa-trash fa-2x text-muted mb-2"></i>
+          <h6>No Storage</h6>
+          <small class="text-muted">Code processed in memory only</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-lock fa-2x text-muted mb-2"></i>
+          <h6>Encrypted Transit</h6>
+          <small class="text-muted">All data encrypted in transit</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-clock fa-2x text-muted mb-2"></i>
+          <h6>Ephemeral Processing</h6>
+          <small class="text-muted">Containers deleted after scan</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

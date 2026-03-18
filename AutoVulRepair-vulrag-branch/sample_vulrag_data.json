@@ -1,0 +1,32 @@
+[
+  {
+    "cve_id": "CVE-2023-12345",
+    "cwe_id": "CWE-79",
+    "vulnerability_type": "Cross-Site Scripting",
+    "root_cause": "Insufficient input validation on user-supplied data",
+    "attack_condition": "Attacker can inject malicious scripts through form inputs",
+    "fix_strategy": "Implement input sanitization and output encoding using a trusted library",
+    "code_pattern": "Unescaped user input directly rendered in HTML context",
+    "description": "XSS vulnerability in web application form handler"
+  },
+  {
+    "cve_id": "CVE-2023-67890",
+    "cwe_id": "CWE-89",
+    "vulnerability_type": "SQL Injection",
+    "root_cause": "Direct concatenation of user input into SQL queries",
+    "attack_condition": "Attacker can manipulate SQL queries through input fields",
+    "fix_strategy": "Use parameterized queries or prepared statements",
+    "code_pattern": "String concatenation in SQL query construction",
+    "description": "SQL injection vulnerability in database query handler"
+  },
+  {
+    "cve_id": "CVE-2023-11111",
+    "cwe_id": "CWE-120",
+    "vulnerability_type": "Buffer Overflow",
+    "root_cause": "Unsafe use of strcpy without bounds checking",
+    "attack_condition": "Attacker can overflow buffer by providing oversized input",
+    "fix_strategy": "Replace strcpy with strncpy or use safe string handling functions",
+    "code_pattern": "strcpy(dest, user_input) without size validation",
+    "description": "Buffer overflow in string handling function"
+  }
+]

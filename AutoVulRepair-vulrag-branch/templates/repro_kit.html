@@ -1,0 +1,274 @@
+{% extends "layout.html" %}
+
+{% block title %}Repro-Kit Generator - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-tools"></i> Reproduction Kit Generator</h2>
+            <p class="text-muted">Scan ID: {{ scan_id }}</p>
+        </div>
+    </div>
+
+    {% if results %}
+    <!-- Summary -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Repro Kits Generated</h5>
+                    <h2>{{ results.total_repros }}</h2>
+                    <small>Ready for testing and patching</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Standalone Reproducers</h5>
+                    <h2>{{ results.total_repros }}</h2>
+                    <small>Self-contained test cases</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <h5 class="card-title">Exploit Templates</h5>
+                    <h2>{{ results.repro_kits | selectattr('components.exploit_template') | list | length }}</h2>
+                    <small>For exploitable vulnerabilities</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Repro Kits List -->
+    <div class="row mb-4">
+        <div class="col-12">
+            {% for kit in results.repro_kits %}
+            <div class="card mb-3">
+                <div class="card-header bg-dark text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-bug"></i> {{ kit.crash_type }}
+                            <span class="badge 
+                                {% if kit.severity == 'Critical' %}bg-danger
+                                {% elif kit.severity == 'High' %}bg-warning
+                                {% else %}bg-info{% endif %}">
+                                {{ kit.severity }}
+                            </span>
+                        </h5>
+                        <code>{{ kit.crash_id[:8] }}</code>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Minimal Input -->
+                        <div class="col-md-6 mb-3">
+                            <h6><i class="fas fa-compress-alt"></i> Minimized Input</h6>
+                            <div class="bg-light p-3 rounded">
+                                <p class="mb-1">
+                                    <strong>Original Size:</strong> {{ kit.components.minimal_input.original_size }} bytes<br>
+                                    <strong>Minimized Size:</strong> {{ kit.components.minimal_input.minimized_size }} bytes<br>
+                                    <strong>Reduction:</strong> {{ kit.components.minimal_input.reduction_ratio }}
+                                </p>
+                                <pre class="bg-dark text-light p-2 mt-2" style="max-height: 150px; overflow-y: auto;">{{ kit.components.minimal_input.minimized_input }}</pre>
+                            </div>
+                        </div>
+
+                        <!-- Standalone Reproducer -->
+                        <div class="col-md-6 mb-3">
+                            <h6><i class="fas fa-file-code"></i> Standalone Reproducer</h6>
+                            <div class="bg-light p-3 rounded">
+                                <p class="mb-1">
+                                    <strong>File:</strong> <code>{{ kit.components.standalone_reproducer.file_path }}</code>
+                                </p>
+                                <div class="btn-group btn-group-sm mt-2" role="group">
+                                    <button class="btn btn-outline-primary" onclick="viewCode('{{ kit.crash_id }}', 'reproducer')">
+                                        <i class="fas fa-eye"></i> View Code
+                                    </button>
+                                    <button class="btn btn-outline-success" onclick="downloadFile('{{ kit.crash_id }}', 'reproducer')">
+                                        <i class="fas fa-download"></i> Download
+                                    </button>
+                                </div>
+                                <div class="mt-2">
+                                    <small><strong>Compile:</strong></small>
+                                    <pre class="bg-dark text-light p-2 mb-1"><code>{{ kit.components.standalone_reproducer.compile_command }}</code></pre>
+                                    <small><strong>Run:</strong></small>
+                                    <pre class="bg-dark text-light p-2"><code>{{ kit.components.standalone_reproducer.run_command }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- GDB Script -->
+                        <div class="col-md-6 mb-3">
+                            <h6><i class="fas fa-terminal"></i> GDB Debug Script</h6>
+                            <div class="bg-light p-3 rounded">
+                                <p class="mb-1">
+                                    <strong>File:</strong> <code>{{ kit.components.gdb_script.file_path }}</code>
+                                </p>
+                                <div class="btn-group btn-group-sm mt-2" role="group">
+                                    <button class="btn btn-outline-primary" onclick="viewCode('{{ kit.crash_id }}', 'gdb')">
+                                        <i class="fas fa-eye"></i> View Script
+                                    </button>
+                                    <button class="btn btn-outline-success" onclick="downloadFile('{{ kit.crash_id }}', 'gdb')">
+                                        <i class="fas fa-download"></i> Download
+                                    </button>
+                                </div>
+                                <div class="mt-2">
+                                    <small><strong>Usage:</strong></small>
+                                    <pre class="bg-dark text-light p-2"><code>{{ kit.components.gdb_script.usage }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Exploit Template (if available) -->
+                        {% if kit.components.exploit_template %}
+                        <div class="col-md-6 mb-3">
+                            <h6><i class="fas fa-skull-crossbones"></i> Exploit Template</h6>
+                            <div class="bg-light p-3 rounded border border-danger">
+                                <p class="mb-1">
+                                    <strong>Exploitability:</strong> 
+                                    <span class="badge bg-danger">{{ kit.components.exploit_template.exploitability }}</span>
+                                </p>
+                                <p class="mb-1"><small>{{ kit.components.exploit_template.attack_vector }}</small></p>
+                                <div class="btn-group btn-group-sm mt-2" role="group">
+                                    <button class="btn btn-outline-danger" onclick="viewCode('{{ kit.crash_id }}', 'exploit')">
+                                        <i class="fas fa-eye"></i> View Template
+                                    </button>
+                                    <button class="btn btn-outline-success" onclick="downloadFile('{{ kit.crash_id }}', 'exploit')">
+                                        <i class="fas fa-download"></i> Download
+                                    </button>
+                                </div>
+                                <div class="alert alert-warning mt-2 mb-0" role="alert">
+                                    <small><i class="fas fa-exclamation-triangle"></i> For educational/testing purposes only</small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Patch Suggestion -->
+                        <div class="col-12 mb-3">
+                            <h6><i class="fas fa-band-aid"></i> Patch Suggestion</h6>
+                            <div class="bg-light p-3 rounded border border-success">
+                                <p class="mb-2">
+                                    <strong>Location:</strong> <code>{{ kit.components.patch_suggestion.location }}</code><br>
+                                    <strong>Function:</strong> <code>{{ kit.components.patch_suggestion.function }}</code>
+                                </p>
+                                <p class="mb-2"><strong>Description:</strong> {{ kit.components.patch_suggestion.description }}</p>
+                                
+                                <ul class="nav nav-tabs" role="tablist">
+                                    <li class="nav-item">
+                                        <a class="nav-link active" data-bs-toggle="tab" href="#fix-{{ loop.index }}">Suggested Fix</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link" data-bs-toggle="tab" href="#diff-{{ loop.index }}">Patch Diff</a>
+                                    </li>
+                                </ul>
+                                <div class="tab-content mt-2">
+                                    <div id="fix-{{ loop.index }}" class="tab-pane fade show active">
+                                        <pre class="bg-dark text-light p-3"><code>{{ kit.components.patch_suggestion.suggested_fix }}</code></pre>
+                                    </div>
+                                    <div id="diff-{{ loop.index }}" class="tab-pane fade">
+                                        <pre class="bg-dark text-light p-3"><code>{{ kit.components.patch_suggestion.diff }}</code></pre>
+                                    </div>
+                                </div>
+                                
+                                <button class="btn btn-success btn-sm mt-2" onclick="applyPatch('{{ kit.crash_id }}')">
+                                    <i class="fas fa-check"></i> Apply Patch
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Navigation Buttons -->
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between">
+            <a href="{{ url_for('triage_dashboard', scan_id=scan_id) }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Triage
+            </a>
+            <a href="{{ url_for('results', scan_id=scan_id) }}" class="btn btn-primary btn-lg">
+                <i class="fas fa-flag-checkered"></i> View Final Results
+            </a>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Results Yet -->
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <h4><i class="fas fa-info-circle"></i> Repro Kits Not Generated</h4>
+                <p>Click the button below to generate reproduction kits for all triaged crashes.</p>
+                <button class="btn btn-success btn-lg" onclick="generateRepros()">
+                    <i class="fas fa-play"></i> Generate Repro Kits
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Code Viewer Modal -->
+<div class="modal fade" id="codeModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="codeModalTitle">Code Viewer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre class="bg-dark text-light p-3" style="max-height: 600px; overflow-y: auto;"><code id="codeContent"></code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function generateRepros() {
+    fetch('/api/repro/{{ scan_id }}/generate', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    });
+}
+
+function viewCode(crashId, type) {
+    fetch(`/api/repro/{{ scan_id }}/code/${crashId}/${type}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('codeModalTitle').textContent = data.title;
+            document.getElementById('codeContent').textContent = data.code;
+            new bootstrap.Modal(document.getElementById('codeModal')).show();
+        });
+}
+
+function downloadFile(crashId, type) {
+    window.location.href = `/api/repro/{{ scan_id }}/download/${crashId}/${type}`;
+}
+
+function applyPatch(crashId) {
+    if (confirm('Apply this patch to the source code?')) {
+        fetch(`/api/repro/{{ scan_id }}/apply-patch/${crashId}`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+        });
+    }
+}
+</script>
+{% endblock %}

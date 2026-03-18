@@ -1,0 +1,161 @@
+{% extends 'layout.html' %}
+
+{% block title %}Results - {{ scan_id }}{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Scan Results</h2>
+    <div>
+      <span class="badge bg-success">Scan Complete</span>
+      <a href="{{ url_for('scan') }}" class="btn btn-outline-primary ms-2">New Scan</a>
+    </div>
+  </div>
+  
+  <!-- Scan Info -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="card-title">Scan Information</h5>
+      <div class="row">
+        <div class="col-md-4">
+          <strong>Scan ID:</strong> {{ scan_id }}
+        </div>
+        <div class="col-md-4">
+          <strong>Analysis Tool:</strong>
+          {% if scan.analysis_tool == 'codeql' %}
+            <span class="badge bg-primary">CodeQL</span>
+            <small class="text-muted d-block">Deep semantic analysis</small>
+          {% else %}
+            <span class="badge bg-success">Cppcheck</span>
+            <small class="text-muted d-block">Fast static analysis</small>
+          {% endif %}
+        </div>
+        {% if scan.repo_url %}
+        <div class="col-md-4">
+          <strong>Repository:</strong> 
+          <a href="{{ scan.repo_url }}" target="_blank">{{ scan.repo_url }}</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-4">
+    <label class="form-label">Progress</label>
+    <div class="progress">
+      <div class="progress-bar" role="progressbar" data-progress="{{ progress|default(0) }}" aria-valuenow="{{ progress|default(0) }}" aria-valuemin="0" aria-valuemax="100">{{ progress|default(0) }}%</div>
+    </div>
+  </div>
+
+  <!-- Vulnerabilities Summary -->
+  {% if scan.vulnerabilities %}
+  <div class="row mb-4">
+    <div class="col-md-4">
+      <div class="card text-center">
+        <div class="card-body">
+          <h3 class="text-danger">{{ scan.vulnerabilities|selectattr('severity', 'equalto', 'high')|list|length }}</h3>
+          <p class="card-text">High Severity</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card text-center">
+        <div class="card-body">
+          <h3 class="text-warning">{{ scan.vulnerabilities|selectattr('severity', 'equalto', 'medium')|list|length }}</h3>
+          <p class="card-text">Medium Severity</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card text-center">
+        <div class="card-body">
+          <h3 class="text-info">{{ scan.vulnerabilities|selectattr('severity', 'equalto', 'low')|list|length }}</h3>
+          <p class="card-text">Low Severity</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Vulnerabilities List -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Detected Vulnerabilities</h5>
+    </div>
+    <div class="card-body">
+      {% for vuln in scan.vulnerabilities %}
+      <div class="alert alert-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %} mb-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h6 class="alert-heading">
+              <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
+                {{ vuln.severity|upper }}
+              </span>
+              {{ vuln.description }}
+            </h6>
+            {% if vuln.file %}
+            <p class="mb-1"><strong>File:</strong> {{ vuln.file }}</p>
+            {% endif %}
+            {% if vuln.line %}
+            <p class="mb-1"><strong>Line:</strong> {{ vuln.line }}</p>
+            {% endif %}
+            {% if vuln.tool %}
+            <p class="mb-0"><small class="text-muted">Detected by: {{ vuln.tool }}</small></p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Available Patches -->
+  {% if scan.patches %}
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Suggested Fixes</h5>
+    </div>
+    <div class="card-body">
+      {% for patch in scan.patches %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6 class="card-title">{{ patch.description }}</h6>
+          <small class="text-muted">Patch ID: {{ patch.id }}</small>
+          <pre class="mt-2"><code>{{ patch.content }}</code></pre>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-success">
+    <i class="fas fa-check-circle"></i>
+    <strong>Great news!</strong> No vulnerabilities detected in your code.
+  </div>
+  {% endif %}
+
+  <!-- Action Buttons -->
+  <div class="d-flex gap-2 mb-4">
+    <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    {% if scan.vulnerabilities %}
+    <a class="btn btn-primary" href="{{ url_for('detailed_findings', scan_id=scan_id) }}">
+      <i class="fas fa-list"></i> View Detailed Findings
+    </a>
+    {% endif %}
+    {% if scan.patches %}
+    <a class="btn btn-success" href="{{ url_for('patch_review', scan_id=scan_id, patch_id='001') }}">
+      <i class="fas fa-code-branch"></i> Review Patches
+    </a>
+    {% endif %}
+  </div>
+  <script>
+    (function () {
+      var bars = document.querySelectorAll('.progress-bar[data-progress]');
+      bars.forEach(function(bar) {
+        var p = parseInt(bar.getAttribute('data-progress')) || 0;
+        bar.style.width = p + '%';
+        bar.setAttribute('aria-valuenow', p);
+        bar.textContent = p + '%';
+      });
+    })();
+  </script>
+{% endblock %}

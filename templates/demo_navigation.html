@@ -1,0 +1,190 @@
+<!-- Automated Security Workflow Navigation -->
+<div class="card border-success mt-4" id="workflow-nav">
+  <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0">
+      <i class="fas fa-cogs"></i>
+      AutoVulRepair Automated Security Workflow
+    </h6>
+    <button class="btn btn-sm btn-outline-light" onclick="toggleWorkflowNav()">
+      <i class="fas fa-chevron-up" id="workflow-nav-icon"></i>
+    </button>
+  </div>
+  <div class="card-body" id="workflow-nav-body">
+    <!-- Workflow Steps -->
+    <div class="row">
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="text-success mb-0">
+            <i class="fas fa-robot"></i>
+            Automated Pipeline: From Code to Secure Deployment
+          </h6>
+          <small class="text-muted">Click any step to jump to that stage</small>
+        </div>
+
+        <!-- Workflow Timeline -->
+        <div class="workflow-timeline d-flex align-items-center justify-content-between flex-wrap">
+          <!-- Step 1: Static Analysis -->
+          <div class="workflow-step text-center">
+            <div class="step-circle bg-primary mb-2 mx-auto">
+              <i class="fas fa-shield-alt text-white"></i>
+            </div>
+            <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-primary btn-sm">
+              <strong>1. Static Analysis</strong>
+              <br><small>CodeQL/Cppcheck</small>
+            </a>
+          </div>
+
+          <!-- Arrow -->
+          <div class="workflow-arrow">
+            <i class="fas fa-arrow-right text-success fa-lg"></i>
+          </div>
+
+          <!-- Step 2: Security Findings -->
+          <div class="workflow-step text-center">
+            <div class="step-circle bg-info mb-2 mx-auto">
+              <i class="fas fa-bug text-white"></i>
+            </div>
+            <a href="{{ url_for('detailed_findings', scan_id='demo') }}" class="btn btn-outline-info btn-sm">
+              <strong>2. Findings</strong>
+              <br><small>Vulnerability Analysis</small>
+            </a>
+          </div>
+
+          <!-- Arrow -->
+          <div class="workflow-arrow">
+            <i class="fas fa-arrow-right text-success fa-lg"></i>
+          </div>
+
+          <!-- Step 3: Automated Fuzzing -->
+          <div class="workflow-step text-center">
+            <div class="step-circle bg-warning mb-2 mx-auto">
+              <i class="fas fa-random text-white"></i>
+            </div>
+            <a href="{{ url_for('fuzzing_dashboard') }}" class="btn btn-outline-warning btn-sm">
+              <strong>3. Auto Fuzzing</strong>
+              <br><small>Target Generation</small>
+            </a>
+          </div>
+
+          <!-- Arrow -->
+          <div class="workflow-arrow">
+            <i class="fas fa-arrow-right text-success fa-lg"></i>
+          </div>
+
+          <!-- Step 4: AI Patch Generation -->
+          <div class="workflow-step text-center">
+            <div class="step-circle bg-success mb-2 mx-auto">
+              <i class="fas fa-robot text-white"></i>
+            </div>
+            <a href="{{ url_for('patch_review', scan_id='demo', patch_id='001') }}"
+              class="btn btn-outline-success btn-sm">
+              <strong>4. AI Patching</strong>
+              <br><small>Vul-RAG</small>
+            </a>
+          </div>
+
+          <!-- Arrow -->
+          <div class="workflow-arrow">
+            <i class="fas fa-arrow-right text-success fa-lg"></i>
+          </div>
+
+          <!-- Step 5: Monitoring -->
+          <div class="workflow-step text-center">
+            <div class="step-circle bg-dark mb-2 mx-auto">
+              <i class="fas fa-chart-line text-white"></i>
+            </div>
+            <a href="{{ url_for('monitoring_dashboard') }}" class="btn btn-outline-dark btn-sm">
+              <strong>5. Monitoring</strong>
+              <br><small>Pipeline Health</small>
+            </a>
+          </div>
+        </div>
+
+        <!-- Automation Indicators -->
+        <div class="mt-4 p-3 bg-light rounded">
+          <div class="row text-center">
+            <div class="col-md-3">
+              <i class="fas fa-magic text-primary fa-2x mb-2"></i>
+              <br><small><strong>Automated Detection</strong><br>AI-powered analysis</small>
+            </div>
+            <div class="col-md-3">
+              <i class="fas fa-cogs text-warning fa-2x mb-2"></i>
+              <br><small><strong>Auto Fuzzing</strong><br>Target generation</small>
+            </div>
+            <div class="col-md-3">
+              <i class="fas fa-robot text-success fa-2x mb-2"></i>
+              <br><small><strong>AI Patching</strong><br>Vul-RAG powered</small>
+            </div>
+            <div class="col-md-3">
+              <i class="fas fa-eye text-info fa-2x mb-2"></i>
+              <br><small><strong>Real-time Monitoring</strong><br>Continuous oversight</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .workflow-timeline {
+    padding: 20px 0;
+  }
+
+  .workflow-step {
+    flex: 0 0 auto;
+  }
+
+  .step-circle {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+
+  .workflow-arrow {
+    flex: 0 0 auto;
+    margin: 0 15px;
+  }
+
+  @media (max-width: 768px) {
+    .workflow-timeline {
+      flex-direction: column;
+    }
+
+    .workflow-arrow {
+      transform: rotate(90deg);
+      margin: 10px 0;
+    }
+  }
+</style>
+
+<script>
+  function toggleWorkflowNav() {
+    const body = document.getElementById('workflow-nav-body');
+    const icon = document.getElementById('workflow-nav-icon');
+
+    if (body.style.display === 'none') {
+      body.style.display = 'block';
+      icon.classList.remove('fa-chevron-down');
+      icon.classList.add('fa-chevron-up');
+    } else {
+      body.style.display = 'none';
+      icon.classList.remove('fa-chevron-up');
+      icon.classList.add('fa-chevron-down');
+    }
+  }
+
+  // Auto-collapse after 15 seconds on first visit
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!sessionStorage.getItem('workflow-nav-seen')) {
+      setTimeout(() => {
+        toggleWorkflowNav();
+        sessionStorage.setItem('workflow-nav-seen', 'true');
+      }, 15000);
+    }
+  });
+</script>

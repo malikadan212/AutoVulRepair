@@ -1,0 +1,72 @@
+// Auto-generated fuzzing harness
+// Generated: {{generated_at}}
+// Type: parser_wrapper
+// Target: {{function_name}}
+// Bug Class: {{bug_class}}
+// Priority: {{priority}}
+// Sanitizers: {{sanitizers}}
+{% if signature_comment %}
+{{signature_comment}}
+{% endif %}
+
+#include <stdint.h>
+#include <stddef.h>
+#include <cstring>
+#include <cstdlib>
+{% if additional_includes %}
+{{additional_includes}}
+{% endif %}
+
+// Fuzzing harness for: {{function_name}}
+// Location: {{source_file}}:{{line_number}}
+// Message: {{message}}
+
+{% if include_line %}
+{{include_line}}
+{% endif %}
+
+{% if has_signature %}
+// Function signature detected - using signature-aware parameter passing
+{% else %}
+// No signature information available - using fallback declarations
+// Declare target function with common parser signatures
+extern "C" {
+    void {{function_name}}(const char* input, size_t size);
+    void {{function_name}}(char* input, size_t size);
+    void {{function_name}}(const char* input);
+    void {{function_name}}(char* input);
+    void {{function_name}}(const uint8_t* data, size_t size);
+}
+{% endif %}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    // Input validation for parser
+    if (size < 4) return 0;  // Minimum size for meaningful parsing
+    if (size > 10 * 1024 * 1024) return 0;  // 10MB limit for parsers
+    
+{% if has_signature %}
+{{param_preparation}}
+    
+    // Call target function with prepared parameters
+    {{function_call}};
+{% else %}
+    // Create null-terminated copy for string parsers
+    char* input = (char*)malloc(size + 1);
+    if (!input) return 0;
+    
+    memcpy(input, data, size);
+    input[size] = '\0';
+    
+    // Call parser function with fuzzer-generated input
+    // Try most common signature: (const char* input, size_t size)
+    {{function_name}}(input, size);
+    
+    free(input);
+{% endif %}
+    
+    return 0;
+}
+
+// Compilation command:
+// clang++ -fsanitize=fuzzer,{{sanitizers}} -g -O1 -std=c++17 \
+//   -o {{target_id}} {{harness_file}} {{source_file}}

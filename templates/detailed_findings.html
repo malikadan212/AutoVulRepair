@@ -1,0 +1,589 @@
+{% extends 'layout.html' %}
+
+{% block title %}Detailed Findings - {{ scan_id }}{% endblock %}
+
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/modules/findings.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-bug text-danger"></i>
+        Vulnerability Analysis
+      </h2>
+      <p class="text-muted mb-0">Detailed findings for scan {{ scan_id }}</p>
+    </div>
+    <div>
+      <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Scan
+      </a>
+      <button class="btn btn-primary" onclick="exportFindings()">
+        <i class="fas fa-download"></i> Export Report
+      </button>
+    </div>
+  </div>
+
+  <!-- Status Messages -->
+  {% if status == 'queued' or status == 'running' %}
+  <div class="alert alert-info">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span id="status-text">
+            {% if status == 'queued' %}
+              Analysis Queued
+            {% else %}
+              Analysis In Progress
+            {% endif %}
+          </span>
+        </h6>
+        <small id="status-detail">Initializing analysis... This page will auto-refresh when complete.</small>
+      </div>
+      <div>
+        <a href="{{ url_for('scan_progress', scan_id=scan_id) }}" class="btn btn-primary">
+          <i class="fas fa-eye"></i> View Progress
+        </a>
+      </div>
+    </div>
+  </div>
+  {% elif status == 'failed' %}
+  <div class="alert alert-danger">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-exclamation-triangle"></i>
+          Scan Failed
+        </h6>
+        <small>{{ error or 'An error occurred during analysis. Please try again.' }}</small>
+      </div>
+      <div>
+        <a href="{{ url_for('no_login_scan') }}" class="btn btn-primary">
+          <i class="fas fa-redo"></i> Try Again
+        </a>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <!-- Workflow Status -->
+  {% include 'workflow_status.html' %}
+
+  <!-- Automated Workflow Progress -->
+  <div class="alert alert-success">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-check-circle"></i>
+          Static Analysis Complete - {{ vulnerabilities|length }} vulnerabilities found
+        </h6>
+        {% if analysis_tool %}
+        <small>
+          Analysis Tool: <strong>{{ analysis_tool|upper }}</strong>
+          {% if repo_url %}
+          <span class="mx-2">|</span>
+          Repository: <a href="{{ repo_url }}" target="_blank">{{ repo_url }}</a>
+          {% endif %}
+        </small>
+        {% endif %}
+      </div>
+      <div class="btn-group">
+        <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
+          <i class="fas fa-sitemap"></i> Generate Fuzz Plan
+        </a>
+        <a href="{{ url_for('patch_review', scan_id=scan_id) }}" class="btn btn-success">
+          <i class="fas fa-magic"></i> Generate Patches
+        </a>
+        {% if analysis_tool %}
+        <div class="btn-group ms-2">
+          {% if analysis_tool == 'codeql' %}
+          <a class="btn btn-outline-secondary" href="{{ url_for('download_artifact', scan_id=scan_id, filename='codeql-results.sarif') }}">
+            <i class="fas fa-file-download"></i> Download SARIF
+          </a>
+          {% elif analysis_tool == 'cppcheck' %}
+          <a class="btn btn-outline-secondary" href="{{ url_for('download_artifact', scan_id=scan_id, filename='cppcheck-report.xml') }}">
+            <i class="fas fa-file-download"></i> Download XML
+          </a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Filters and Search -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="row align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Filter by Severity</label>
+          <select class="form-select" id="severity-filter" onchange="filterFindings()">
+            <option value="">All Severities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Filter by Tool</label>
+          <select class="form-select" id="tool-filter" onchange="filterFindings()">
+            <option value="">All Tools</option>
+            <option value="CodeQL">CodeQL</option>
+            <option value="Cppcheck">Cppcheck</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Search</label>
+          <input type="text" class="form-control" id="search-input" placeholder="Search descriptions, files..." onkeyup="filterFindings()">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+            <i class="fas fa-times"></i> Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card border-danger">
+        <div class="card-body text-center">
+          <h3 class="text-danger" id="high-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'high')|list|length }}</h3>
+          <p class="card-text">Critical Issues</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-warning">
+        <div class="card-body text-center">
+          <h3 class="text-warning" id="medium-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'medium')|list|length }}</h3>
+          <p class="card-text">Medium Issues</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-info">
+        <div class="card-body text-center">
+          <h3 class="text-info" id="low-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'low')|list|length }}</h3>
+          <p class="card-text">Low Issues</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-success">
+        <div class="card-body text-center">
+          <h3 class="text-success" id="total-count">{{ vulnerabilities|length }}</h3>
+          <p class="card-text">Total Found</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Findings List -->
+  {% if vulnerabilities|length == 0 and status != 'queued' and status != 'running' %}
+  <div class="text-center py-5">
+    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+    <h5>No vulnerabilities found</h5>
+    <p class="text-muted">Great! Your code appears to be secure.</p>
+    <a href="{{ url_for('no_login_scan') }}" class="btn btn-primary">
+      <i class="fas fa-redo"></i> Scan Another Project
+    </a>
+  </div>
+  {% else %}
+  <div id="findings-container">
+    {% for vuln in vulnerabilities %}
+    <div class="card mb-3 finding-card" 
+         data-severity="{{ vuln.severity }}" 
+         data-tool="{{ vuln.tool }}"
+         data-description="{{ (vuln.description or '')|lower }}"
+         data-file="{{ (vuln.file or '')|lower }}">
+      
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center">
+          <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %} me-2">
+            {{ vuln.severity|upper }}
+          </span>
+          <h6 class="mb-0">{{ vuln.description }}</h6>
+        </div>
+        <div class="d-flex align-items-center">
+          <span class="badge bg-secondary me-2">{{ vuln.tool }}</span>
+          <button class="btn btn-sm btn-outline-primary" type="button" aria-expanded="false" onclick="toggleDetails('{{ vuln.id }}')">
+            <i class="fas fa-chevron-down" id="toggle-{{ vuln.id }}"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="card-body">
+        <!-- Basic Info -->
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <p class="mb-1">
+              <i class="fas fa-file-code text-muted"></i>
+              <strong>File:</strong> {{ vuln.file }}
+            </p>
+            {% if vuln.line %}
+            <p class="mb-1">
+              <i class="fas fa-map-marker-alt text-muted"></i>
+              <strong>Line:</strong> {{ vuln.line }}
+            </p>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <p class="mb-1">
+              <i class="fas fa-shield-alt text-muted"></i>
+              <strong>CWE:</strong> 
+              {% if vuln.severity == 'high' %}
+                CWE-787 (Buffer Overflow)
+              {% elif vuln.severity == 'medium' %}
+                CWE-476 (NULL Pointer Dereference)
+              {% else %}
+                CWE-563 (Unused Variable)
+              {% endif %}
+            </p>
+            <p class="mb-1">
+              <i class="fas fa-exclamation-triangle text-muted"></i>
+              <strong>Risk Score:</strong> 
+              <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
+                {% if vuln.severity == 'high' %}8.5{% elif vuln.severity == 'medium' %}5.2{% else %}2.1{% endif %}
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Detailed Information (Collapsible) -->
+        <div class="collapse" id="details-{{ vuln.id }}">
+          <hr>
+          
+          <!-- Code Context -->
+          <div class="mb-4">
+            <h6><i class="fas fa-code"></i> Code Context</h6>
+            <div class="card bg-light">
+              <div class="card-body">
+                {% if vuln.code_context %}
+                <pre class="mb-0" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto;"><code class="language-cpp">{% for line in vuln.code_context %}<span style="{% if line.is_vulnerable %}background: #ff000030; border-left: 3px solid #ff0000; padding-left: 5px;{% endif %}"><span style="color: #858585; user-select: none;">{{ '%4d' % line.line_num }}</span> {{ line.code }}</span>
+{% endfor %}</code></pre>
+                <small class="text-muted mt-2 d-block">
+                  <i class="fas fa-file"></i> {{ vuln.file }}:{{ vuln.line }}
+                  {% if vuln.code_context %}
+                  <span class="badge bg-danger ms-2">← Vulnerable line highlighted</span>
+                  {% endif %}
+                </small>
+                {% else %}
+                <pre class="mb-0"><code class="language-cpp">// Code context not available
+// View the source file at {{ vuln.file }}:{{ vuln.line }} for the actual code
+// File: {{ vuln.file }}
+// Line: {{ vuln.line }}</code></pre>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Vulnerability Details -->
+          <div class="mb-4">
+            <h6><i class="fas fa-info-circle"></i> Vulnerability Details</h6>
+            <div class="alert alert-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
+              <p class="mb-2"><strong>Description:</strong> {{ vuln.description }}</p>
+              <p class="mb-2"><strong>Impact:</strong> 
+                {% if vuln.severity == 'high' %}
+                  This vulnerability could allow an attacker to execute arbitrary code or cause a denial of service.
+                {% elif vuln.severity == 'medium' %}
+                  This issue may lead to application crashes or unexpected behavior under certain conditions.
+                {% else %}
+                  This is a code quality issue that should be addressed to improve maintainability.
+                {% endif %}
+              </p>
+              <p class="mb-0"><strong>Recommendation:</strong> 
+                {% if vuln.severity == 'high' %}
+                  Immediate action required. Use safe string functions or implement proper bounds checking.
+                {% elif vuln.severity == 'medium' %}
+                  Should be fixed in the next release cycle. Add null pointer checks and validation.
+                {% else %}
+                  Consider removing unused code or adding appropriate comments.
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+
+
+
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- No Results Message -->
+  <div id="no-results" class="text-center py-5" style="display: none;">
+    <i class="fas fa-search fa-3x text-muted mb-3"></i>
+    <h5>No findings match your current filters</h5>
+    <p class="text-muted">Try adjusting your search criteria or clearing the filters.</p>
+  </div>
+</div>
+
+<span id="scan-context" data-scan-id="{{ scan_id }}" data-status="{{ status }}" style="display:none;"></span>
+<script>
+/* ---------- Server -> Client context (single place using Jinja) ---------- */
+var __scanCtxEl = document.getElementById('scan-context');
+var SCAN_CONTEXT = {
+  scanId: __scanCtxEl ? (__scanCtxEl.getAttribute('data-scan-id') || '') : '',
+  status: __scanCtxEl ? (__scanCtxEl.getAttribute('data-status') || '') : ''
+};
+
+/* Local copies used by JS */
+const scanId = (SCAN_CONTEXT && SCAN_CONTEXT.scanId) ? String(SCAN_CONTEXT.scanId) : '';
+let shouldPoll = (SCAN_CONTEXT && (SCAN_CONTEXT.status === 'queued' || SCAN_CONTEXT.status === 'running'));
+let refreshInterval = null;
+let startTime = Date.now();
+
+/* ---------- UI helpers ---------- */
+function safeGet(el, id) {
+  try { return el.querySelector(id); } catch (e) { return null; }
+}
+
+/* Toggle details for a vulnerability card */
+function toggleDetails(vulnId) {
+  if (!vulnId) return;
+  var details = document.getElementById('details-' + vulnId);
+  var icon = document.getElementById('toggle-' + vulnId);
+
+  if (!details) return;
+
+  var isShown = details.classList.contains('show');
+  if (isShown) {
+    details.classList.remove('show');
+    if (icon) {
+      icon.classList.remove('fa-chevron-up');
+      icon.classList.add('fa-chevron-down');
+    }
+  } else {
+    details.classList.add('show');
+    if (icon) {
+      icon.classList.remove('fa-chevron-down');
+      icon.classList.add('fa-chevron-up');
+    }
+    // If Prism is available, highlight newly visible code blocks
+    if (typeof Prism !== 'undefined' && typeof Prism.highlightElement === 'function') {
+      details.querySelectorAll('pre code').forEach(function(block){ Prism.highlightElement(block); });
+    }
+  }
+}
+
+/* Filter findings by severity, tool, and search term */
+function filterFindings() {
+  var severityFilter = (document.getElementById('severity-filter') || { value: '' }).value.toLowerCase();
+  var toolFilter = (document.getElementById('tool-filter') || { value: '' }).value.toLowerCase();
+  var searchTerm = (document.getElementById('search-input') || { value: '' }).value.toLowerCase();
+
+  var cards = document.querySelectorAll('.finding-card');
+  var visibleCount = 0;
+
+  cards.forEach(function(card) {
+    var severity = (card.dataset.severity || '').toLowerCase();
+    var tool = (card.dataset.tool || '').toLowerCase();
+    var description = (card.dataset.description || '').toLowerCase();
+    var file = (card.dataset.file || '').toLowerCase();
+
+    var matchesSeverity = !severityFilter || severity === severityFilter;
+    var matchesTool = !toolFilter || tool === toolFilter;
+    var matchesSearch = !searchTerm || description.indexOf(searchTerm) !== -1 || file.indexOf(searchTerm) !== -1;
+
+    if (matchesSeverity && matchesTool && matchesSearch) {
+      card.style.display = '';
+      visibleCount++;
+    } else {
+      card.style.display = 'none';
+    }
+  });
+
+  var noResults = document.getElementById('no-results');
+  if (noResults) noResults.style.display = (visibleCount === 0 ? 'block' : 'none');
+}
+
+/* Clear all filters */
+function clearFilters() {
+  var severity = document.getElementById('severity-filter');
+  var tool = document.getElementById('tool-filter');
+  var search = document.getElementById('search-input');
+  if (severity) severity.value = '';
+  if (tool) tool.value = '';
+  if (search) search.value = '';
+  filterFindings();
+}
+
+/* Apply a patch (stub) */
+function applyPatch(patchId) {
+  if (!patchId) return;
+  if (confirm('Apply this patch to your codebase?')) {
+    // TODO: implement server call to apply patch
+    alert('Patch ' + patchId + ' application will be implemented soon.');
+  }
+}
+
+/* Generate an AI patch (stub) */
+function generatePatch(vulnId) {
+  if (!vulnId) return;
+  alert('Generating AI patch for vulnerability ' + vulnId + '. This would trigger the Vul-RAG module.');
+}
+
+/* Export visible findings to a plain-text report */
+function exportFindings() {
+  var blobLines = [];
+  blobLines.push('Vulnerability Report - Scan ' + (scanId || 'unknown'));
+  blobLines.push('Generated: ' + new Date().toISOString());
+
+  var cards = document.querySelectorAll('.finding-card');
+  var visibleCount = 0;
+  var findings = [];
+
+  cards.forEach(function(card) {
+    // Only include visible cards in export
+    var style = window.getComputedStyle(card);
+    if (style && style.display === 'none') return;
+
+    var severity = card.dataset.severity || '(unknown)';
+    var tool = card.dataset.tool || '(unknown)';
+    var description = card.dataset.description || '(no description)';
+    var file = card.dataset.file || '(unknown)';
+
+    visibleCount++;
+    findings.push({
+      severity: severity,
+      tool: tool,
+      description: description,
+      file: file
+    });
+  });
+
+  blobLines.push('Total Vulnerabilities (visible): ' + visibleCount);
+  blobLines.push('');
+
+  findings.forEach(function(f) {
+    blobLines.push('[' + String(f.severity).toUpperCase() + '] ' + f.description);
+    blobLines.push('  Tool: ' + f.tool);
+    blobLines.push('  File: ' + f.file);
+    blobLines.push('');
+  });
+
+  var blob = new Blob([blobLines.join('\n')], { type: 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'vulnerability-report-' + (scanId || 'unknown') + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- Polling for scan status ---------- */
+function updateStatusDisplay(data) {
+  var statusText = document.getElementById('status-text');
+  var statusDetail = document.getElementById('status-detail');
+  if (!statusText || !statusDetail || !data) return;
+
+  if (data.status === 'queued') {
+    statusText.innerHTML = '<i class="fas fa-clock"></i> Analysis Queued';
+    statusDetail.textContent = 'Scan queued, starting analysis...';
+  } else if (data.status === 'running') {
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    statusText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analysis In Progress';
+    if (elapsed < 10) {
+      statusDetail.textContent = 'Setting up analysis environment... (' + elapsed + 's)';
+    } else if (elapsed < 30) {
+      statusDetail.textContent = 'Running static analysis tool... (' + elapsed + 's)';
+    } else {
+      statusDetail.textContent = 'Processing analysis results... (' + elapsed + 's)';
+    }
+  } else if (data.status === 'completed') {
+    statusText.innerHTML = '<i class="fas fa-check-circle"></i> Analysis Complete';
+    var count = (data && typeof data.vulnerabilities_count === 'number') ? data.vulnerabilities_count : (document.querySelectorAll('.finding-card').length || 0);
+    statusDetail.textContent = 'Found ' + count + ' vulnerabilities. Reloading page...';
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+    setTimeout(function() { window.location.reload(); }, 1500);
+  } else if (data.status === 'failed') {
+    statusText.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Analysis Failed';
+    var err = (data && data.error) ? data.error : 'Unknown error';
+    statusDetail.textContent = 'Error: ' + err + '. Reloading page...';
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+    setTimeout(function() { window.location.reload(); }, 3000);
+  } else {
+    statusText.innerHTML = '<i class="fas fa-info-circle"></i> Status: ' + (data.status || '(unknown)');
+    statusDetail.textContent = data.detail || '';
+  }
+}
+
+/* Fail-safe retry/backoff variables */
+let retryDelay = 2000; // initial 2s
+const maxRetryDelay = 30000; // 30s
+
+function checkScanStatus() {
+  if (!scanId) return;
+  fetch('/api/scan-status/' + encodeURIComponent(scanId))
+    .then(function(response) {
+      if (!response.ok) throw new Error('Network response was not ok: ' + response.status);
+      return response.json();
+    })
+    .then(function(data) {
+      // reset retry delay on success
+      retryDelay = 2000;
+      updateStatusDisplay(data);
+      if (data.status === 'completed' || data.status === 'failed') {
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+          refreshInterval = null;
+        }
+        // updateStatusDisplay already triggers reload
+      }
+    })
+    .catch(function(error) {
+      console.error('Failed to check scan status:', error);
+      var statusDetail = document.getElementById('status-detail');
+      if (statusDetail) {
+        statusDetail.textContent = 'Error checking status. Retrying in ' + (retryDelay / 1000) + 's...';
+      }
+      // exponential backoff for retries
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+      setTimeout(function() {
+        // increase delay for next failure, but cap it
+        retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+        refreshInterval = setInterval(checkScanStatus, retryDelay);
+        checkScanStatus();
+      }, retryDelay);
+    });
+}
+
+/* ---------- DOM ready ---------- */
+document.addEventListener('DOMContentLoaded', function() {
+  // run initial filter to sync any default state
+  filterFindings();
+
+  // Poll while queued/running
+  if (shouldPoll && scanId) {
+    refreshInterval = setInterval(checkScanStatus, 2000);
+    checkScanStatus();
+  } else {
+    // Highlight code blocks if Prism is available
+    if (typeof Prism !== 'undefined') {
+      Prism.highlightAll();
+    }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crash Triage - AutoVulRepair</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .progress-bar-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .progress-steps {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .progress-step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e9ecef;
+            color: #6c757d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-weight: bold;
+            position: relative;
+            z-index: 2;
+        }
+
+        .step-circle.completed {
+            background: #28a745;
+            color: white;
+        }
+
+        .step-circle.active {
+            background: #007bff;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .step-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .step-label.active {
+            color: #007bff;
+            font-weight: bold;
+        }
+
+        .content-card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card.critical {
+            background: #dc3545;
+            color: white;
+        }
+
+        .stat-card.high {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .stat-card.medium {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .stat-card.low {
+            background: #6c757d;
+            color: white;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+        }
+
+        .crash-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .crash-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .crash-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .crash-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .badge-warning {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .badge-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .badge-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .badge-dark {
+            background: #343a40;
+            color: white;
+        }
+
+        .back-link {
+            color: #007bff;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .analysis-section {
+            margin-top: 30px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .chart-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .progress-bar-custom {
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #007bff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="/fuzz-execution/{{ scan_id }}" class="back-link">← Back to Fuzzing</a>
+            <h1>
+                <span style="font-size: 32px;">🔍</span>
+                Crash Triage Analysis
+            </h1>
+            <p>Module 2: Component 6 - Analyze and Classify Crashes</p>
+
+            <div class="progress-bar-container">
+                <div class="progress-steps">
+                    <div class="progress-step">
+                        <div class="step-circle completed">1</div>
+                        <div class="step-label">Static Analysis</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">2</div>
+                        <div class="step-label">Fuzz Plan</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">3</div>
+                        <div class="step-label">Harness Gen</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">4</div>
+                        <div class="step-label">Build</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle completed">5</div>
+                        <div class="step-label">Fuzz Exec</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle active">6</div>
+                        <div class="step-label active">Triage</div>
+                    </div>
+                    <div class="progress-step">
+                        <div class="step-circle">7</div>
+                        <div class="step-label">Results</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-card">
+            {% if results %}
+            <div class="action-buttons">
+                <button class="btn btn-secondary" onclick="location.reload()">
+                    <span>🔄</span> Refresh Results
+                </button>
+                <a href="/results/{{ scan_id }}" class="btn btn-success">
+                    <span>🏁</span> View Final Results
+                </a>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="stats-grid">
+                <div class="stat-card critical">
+                    <div class="stat-value">{{ results.summary.by_severity.Critical }}</div>
+                    <div class="stat-label">Critical</div>
+                    <small>Immediate attention required</small>
+                </div>
+                <div class="stat-card high">
+                    <div class="stat-value">{{ results.summary.by_severity.High }}</div>
+                    <div class="stat-label">High</div>
+                    <small>High priority fixes</small>
+                </div>
+                <div class="stat-card medium">
+                    <div class="stat-value">{{ results.summary.by_severity.Medium }}</div>
+                    <div class="stat-label">Medium</div>
+                    <small>Should be addressed</small>
+                </div>
+                <div class="stat-card low">
+                    <div class="stat-value">{{ results.summary.by_severity.Low }}</div>
+                    <div class="stat-label">Low</div>
+                    <small>Minor issues</small>
+                </div>
+            </div>
+
+            <!-- Analysis Sections -->
+            <div class="analysis-section">
+                <h3 class="section-title">📊 Crash Type Distribution</h3>
+                <div class="chart-container">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                                <th style="width: 50%;">Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for crash_type, count in results.summary.by_type.items() %}
+                            <tr>
+                                <td>{{ crash_type }}</td>
+                                <td><span class="badge badge-dark">{{ count }}</span></td>
+                                <td>
+                                    <div class="progress-bar-custom">
+                                        <div class="progress-fill" style="width: {{ (count / results.summary.total_crashes * 100)|round }}%">
+                                            {{ (count / results.summary.total_crashes * 100)|round }}%
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="analysis-section">
+                <h3 class="section-title">🛡️ Exploitability Assessment</h3>
+                <div class="chart-container">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th>Count</th>
+                                <th>Risk</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for level, count in results.summary.by_exploitability.items() %}
+                            <tr>
+                                <td>{{ level }}</td>
+                                <td><span class="badge badge-danger">{{ count }}</span></td>
+                                <td>
+                                    {% if level == 'High' %}
+                                    <span style="color: #dc3545;">⚠️ Critical Risk</span>
+                                    {% elif level == 'Medium' %}
+                                    <span style="color: #ffc107;">⚡ Moderate Risk</span>
+                                    {% else %}
+                                    <span style="color: #17a2b8;">ℹ️ Low Risk</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Detailed Crash List -->
+            <div class="analysis-section">
+                <h3 class="section-title">📋 Triaged Crashes</h3>
+                <div style="margin-bottom: 15px;">
+                    <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px;" onclick="filterBySeverity('all')">All</button>
+                    <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px; background: #dc3545;" onclick="filterBySeverity('Critical')">Critical</button>
+                    <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px; background: #ffc107; color: #000;" onclick="filterBySeverity('High')">High</button>
+                </div>
+                <table class="crash-table" id="crashTable">
+                    <thead>
+                        <tr>
+                            <th>Crash ID</th>
+                            <th>Type</th>
+                            <th>Severity</th>
+                            <th>Exploitability</th>
+                            <th>CVSS</th>
+                            <th>Function</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for crash in results.crashes %}
+                        <tr data-severity="{{ crash['severity'] }}">
+                            <td><code>{{ crash['id'][:8] }}</code></td>
+                            <td><span class="badge badge-dark">{{ crash['crash_type'] }}</span></td>
+                            <td>
+                                {% if crash['severity'] == 'Critical' %}
+                                <span class="badge badge-danger">{{ crash['severity'] }}</span>
+                                {% elif crash['severity'] == 'High' %}
+                                <span class="badge badge-warning">{{ crash['severity'] }}</span>
+                                {% elif crash['severity'] == 'Medium' %}
+                                <span class="badge badge-info">{{ crash['severity'] }}</span>
+                                {% else %}
+                                <span class="badge badge-secondary">{{ crash['severity'] }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge 
+                                    {% if crash['exploitability'] == 'Exploitable' %}badge-danger
+                                    {% elif crash['exploitability'] == 'Likely Exploitable' %}badge-warning
+                                    {% else %}badge-secondary{% endif %}">
+                                    {{ crash['exploitability'] }}
+                                </span>
+                            </td>
+                            <td><strong>{{ crash['cvss_score'] }}</strong></td>
+                            <td><code style="font-size: 11px;">{{ crash['target'] }}</code></td>
+                            <td>
+                                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="viewCrashDetails('{{ crash['id'] }}')">
+                                    👁️ Details
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% else %}
+            <!-- No Results Yet -->
+            <div style="text-align: center; padding: 60px 20px;">
+                <h3 style="margin-bottom: 15px;">ℹ️ Triage Not Started</h3>
+                <p style="color: #666; margin-bottom: 20px;">Click the button below to start crash triage analysis.</p>
+                <button class="btn btn-primary" style="font-size: 16px; padding: 15px 30px;" onclick="startTriage()">
+                    <span>▶</span> Start Triage Analysis
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Crash Details Modal -->
+    <div class="modal" id="crashDetailsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Crash Details</h3>
+                <button class="btn-close" onclick="closeModal()">×</button>
+            </div>
+            <div id="crashDetailsContent">
+                <!-- Details loaded via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const scanId = '{{ scan_id }}';
+
+        function startTriage() {
+            fetch(`/api/triage/${scanId}/start`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(err => alert('Error: ' + err));
+        }
+
+        function filterBySeverity(severity) {
+            const rows = document.querySelectorAll('#crashTable tbody tr');
+            rows.forEach(row => {
+                if (severity === 'all' || row.dataset.severity === severity) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function viewCrashDetails(crashId) {
+            fetch(`/api/triage/${scanId}/crash/${crashId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const stackTrace = Array.isArray(data.stack_trace) ? data.stack_trace.join('\n') : data.stack_trace || 'No stack trace available';
+                    const content = `
+                        <h4>Crash Type: ${data.crash_type}</h4>
+                        <p><strong>Severity:</strong> ${data.severity} | <strong>CVSS:</strong> ${data.cvss_score}</p>
+                        <p><strong>Exploitability:</strong> ${data.exploitability}</p>
+                        <p><strong>Target:</strong> ${data.target}</p>
+                        <p><strong>Crash File:</strong> ${data.crash_file}</p>
+                        <h5>Stack Trace:</h5>
+                        <pre>${stackTrace}</pre>
+                        <h5>Root Cause:</h5>
+                        <p>${data.root_cause}</p>
+                        <h5>Sanitizer Output:</h5>
+                        <pre style="background: #f8f9fa; color: #333;">${data.sanitizer_output || 'N/A'}</pre>
+                    `;
+                    document.getElementById('crashDetailsContent').innerHTML = content;
+                    document.getElementById('crashDetailsModal').classList.add('show');
+                })
+                .catch(err => alert('Error loading details: ' + err));
+        }
+
+        function closeModal() {
+            document.getElementById('crashDetailsModal').classList.remove('show');
+        }
+
+        // Close modal on outside click
+        window.onclick = function(event) {
+            const modal = document.getElementById('crashDetailsModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+
+</html>

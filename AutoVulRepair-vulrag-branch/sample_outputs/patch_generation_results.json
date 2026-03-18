@@ -1,0 +1,136 @@
+{
+  "generation_timestamp": "2024-01-27T16:05:00Z",
+  "scan_id": "sample-scan-2024-001",
+  "total_patches_generated": 4,
+  "successful_generations": 4,
+  "failed_generations": 0,
+  "patches": [
+    {
+      "patch_id": "patch_001",
+      "vulnerability_id": "VULN-2024-001",
+      "title": "Fix Buffer Overflow in parse_input()",
+      "file": "src/parser.c",
+      "patch_type": "bounds_checking",
+      "confidence": "high",
+      "risk_level": "low",
+      "patch_content": {
+        "unified_diff": "--- a/src/parser.c\n+++ b/src/parser.c\n@@ -140,9 +140,15 @@\n int parse_input(char* input, char* buffer, size_t max_size) {\n-    if (!input || !buffer) return -1;\n+    if (!input || !buffer || max_size == 0) return -1;\n     \n-    // Vulnerable line - no bounds checking\n-    strcpy(buffer, input);  // VULNERABLE\n+    // Check input length before copying\n+    size_t input_len = strlen(input);\n+    if (input_len >= max_size) {\n+        return -1;  // Input too long\n+    }\n+    \n+    // Safe string copy\n+    strncpy(buffer, input, max_size - 1);\n+    buffer[max_size - 1] = '\\0';\n     \n-    return strlen(buffer);\n+    return (int)strlen(buffer);\n }",
+        "lines_added": 8,
+        "lines_removed": 3,
+        "lines_modified": 5
+      },
+      "validation": {
+        "syntax_check": "passed",
+        "compilation_check": "passed",
+        "static_analysis_check": "passed",
+        "test_coverage": "95%"
+      },
+      "impact_analysis": {
+        "performance_impact": "minimal",
+        "api_compatibility": "maintained",
+        "behavioral_changes": "error handling improved",
+        "side_effects": "none identified"
+      }
+    },
+    {
+      "patch_id": "patch_002",
+      "vulnerability_id": "VULN-2024-002",
+      "title": "Fix Use-After-Free in cleanup_session()",
+      "file": "src/session.c",
+      "patch_type": "memory_safety",
+      "confidence": "high",
+      "risk_level": "low",
+      "patch_content": {
+        "unified_diff": "--- a/src/session.c\n+++ b/src/session.c\n@@ -87,8 +87,12 @@\n void cleanup_session(session_t* session) {\n     if (!session) return;\n     \n-    free(session->data);\n-    if (session->data->active) { // Use after free\n+    if (session->data && session->data->active) {\n+        // Process active session data before freeing\n+        handle_active_session(session->data);\n+    }\n+    if (session->data) {\n+        free(session->data);\n+        session->data = NULL;\n+    }\n-        // Handle active session cleanup\n-        handle_active_session(session->data);\n-    }\n     \n     free(session);",
+        "lines_added": 7,
+        "lines_removed": 5,
+        "lines_modified": 2
+      },
+      "validation": {
+        "syntax_check": "passed",
+        "compilation_check": "passed",
+        "static_analysis_check": "passed",
+        "test_coverage": "92%"
+      },
+      "impact_analysis": {
+        "performance_impact": "negligible",
+        "api_compatibility": "maintained",
+        "behavioral_changes": "safer memory handling",
+        "side_effects": "none identified"
+      }
+    },
+    {
+      "patch_id": "patch_003",
+      "vulnerability_id": "VULN-2024-003",
+      "title": "Fix Format String Vulnerability in log_error()",
+      "file": "src/logging.c",
+      "patch_type": "format_string_safety",
+      "confidence": "high",
+      "risk_level": "minimal",
+      "patch_content": {
+        "unified_diff": "--- a/src/logging.c\n+++ b/src/logging.c\n@@ -76,7 +76,7 @@\n void log_error(const char* error_msg) {\n     if (!error_msg) return;\n     \n-    printf(error_msg); // User-controlled format string\n+    printf(\"%s\", error_msg); // Safe format string\n     fflush(stdout);\n }",
+        "lines_added": 1,
+        "lines_removed": 1,
+        "lines_modified": 1
+      },
+      "validation": {
+        "syntax_check": "passed",
+        "compilation_check": "passed",
+        "static_analysis_check": "passed",
+        "test_coverage": "100%"
+      },
+      "impact_analysis": {
+        "performance_impact": "none",
+        "api_compatibility": "maintained",
+        "behavioral_changes": "none",
+        "side_effects": "none identified"
+      }
+    },
+    {
+      "patch_id": "patch_004",
+      "vulnerability_id": "VULN-2024-004",
+      "title": "Fix Integer Overflow in allocate_buffer()",
+      "file": "src/memory.c",
+      "patch_type": "overflow_protection",
+      "confidence": "medium",
+      "risk_level": "low",
+      "patch_content": {
+        "unified_diff": "--- a/src/memory.c\n+++ b/src/memory.c\n@@ -64,7 +64,12 @@\n void* allocate_buffer(size_t count, size_t item_size) {\n     if (count == 0 || item_size == 0) return NULL;\n     \n-    size_t total = count * item_size; // Potential overflow\n+    // Check for overflow before multiplication\n+    if (count != 0 && item_size > SIZE_MAX / count) {\n+        errno = ENOMEM;\n+        return NULL;  // Overflow would occur\n+    }\n+    size_t total = count * item_size;\n     \n     void* buffer = malloc(total);\n     if (!buffer) {",
+        "lines_added": 5,
+        "lines_removed": 1,
+        "lines_modified": 4
+      },
+      "validation": {
+        "syntax_check": "passed",
+        "compilation_check": "passed",
+        "static_analysis_check": "passed",
+        "test_coverage": "88%"
+      },
+      "impact_analysis": {
+        "performance_impact": "minimal",
+        "api_compatibility": "maintained",
+        "behavioral_changes": "better error handling",
+        "side_effects": "sets errno on overflow"
+      }
+    }
+  ],
+  "patch_statistics": {
+    "total_lines_added": 21,
+    "total_lines_removed": 10,
+    "total_lines_modified": 12,
+    "files_modified": 4,
+    "average_patch_size": "small",
+    "complexity_distribution": {
+      "simple": 2,
+      "moderate": 2,
+      "complex": 0
+    }
+  },
+  "quality_metrics": {
+    "syntax_validation": "100%",
+    "compilation_success": "100%",
+    "static_analysis_clean": "100%",
+    "test_coverage_average": "93.75%",
+    "code_review_score": "A"
+  }
+}

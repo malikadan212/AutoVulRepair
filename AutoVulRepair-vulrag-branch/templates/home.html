@@ -1,0 +1,46 @@
+{% extends 'layout.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+  <div class="text-center mt-5">
+    <h1>Cloud-Native Automated Vulnerability Detection and Repair</h1>
+    <p class="lead">Scan your code for vulnerabilities and get automated fixes.</p>
+    
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-10">
+        <div class="row g-4">
+          <!-- GitHub Login Option -->
+          <div class="col-md-6">
+            <div class="card h-100">
+              <div class="card-body text-center d-flex flex-column">
+                <h5 class="card-title">Full Access</h5>
+                <p class="card-text flex-grow-1">Sign in with GitHub for private repos, automated PRs, and scan history.</p>
+                <a class="btn btn-primary btn-lg" href="{{ url_for('login') }}">Login with GitHub</a>
+              </div>
+            </div>
+          </div>
+          
+          <!-- No Login Option -->
+          <div class="col-md-6">
+            <div class="card h-100">
+              <div class="card-body text-center d-flex flex-column">
+                <h5 class="card-title">Login without GitHub</h5>
+                <p class="card-text flex-grow-1">Run a quick, privacy‑first scan of public repositories, ZIP uploads, or pasted code — no account required and nothing stored.</p>
+                <div class="d-grid gap-2">
+                  <a class="btn btn-outline-primary btn-lg" href="{{ url_for('no_login_scan') }}">Continue without GitHub</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="mt-4">
+      <small class="text-muted">
+        <i class="fas fa-shield-alt"></i> We don't store your code. All processing is ephemeral and deleted immediately.
+      </small>
+    </div>
+  </div>
+{% endblock %}

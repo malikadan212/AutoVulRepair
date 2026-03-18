@@ -1,0 +1,9 @@
+# Requirements for CVE RAG System
+google-generativeai>=0.3.0
+flask>=2.3.0
+flask-cors>=4.0.0
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.0
+tqdm>=4.65.0
+torch>=2.0.0
+numpy>=1.21.0

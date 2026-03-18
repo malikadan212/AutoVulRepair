@@ -1,0 +1,652 @@
+{% extends 'layout.html' %}
+
+{% block title %}Patch Generation{% endblock %}
+
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/modules/patch-review.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-robot text-success"></i>
+        Automated Patch Generation
+      </h2>
+      <p class="text-muted mb-0">Module 3: Two-stage vulnerability repair system</p>
+    </div>
+    <div>
+      <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Findings
+      </a>
+    </div>
+  </div>
+
+  <!-- Stage 1: Rule-Based Repairs -->
+  <div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+      <h4 class="mb-0">
+        <i class="fas fa-cogs"></i> Stage 1: Rule-Based Automated Repair
+      </h4>
+      <small>Deterministic, template-driven fixes for well-known vulnerability classes (CMU/SEI-2025-TR-007)</small>
+    </div>
+    <div class="card-body">
+      <div class="row mb-3">
+        <div class="col-md-12">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Stage 1 repairs are safe and deterministic.</strong> They never break good execution traces and have 93-100% success rates.
+          </div>
+        </div>
+      </div>
+
+      <!-- Vulnerability Classification Summary -->
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <div class="card border-success">
+            <div class="card-body text-center">
+              <h3 class="text-success mb-0">{{ total_stage1 }}</h3>
+              <small class="text-muted">Stage 1 Repairable</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-warning">
+            <div class="card-body text-center">
+              <h3 class="text-warning mb-0">{{ total_stage2 }}</h3>
+              <small class="text-muted">Requires AI (Stage 2)</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-info">
+            <div class="card-body text-center">
+              <h3 class="text-info mb-0">{{ patches | length }}</h3>
+              <small class="text-muted">Patches Generated</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate Stage 1 Patches Button -->
+      <!-- Stage 1 Vulnerabilities - Individual Cards -->
+      <h5 class="mb-3">Stage 1 Repairable Vulnerabilities:</h5>
+      
+      {% set stage1_vulns = vulnerabilities | selectattr('classification.stage', 'equalto', 1) | selectattr('classification.enabled', 'equalto', true) | list %}
+      
+      {% if stage1_vulns %}
+        {% for vuln in stage1_vulns %}
+        <div class="card mb-3 border-left-success" id="vuln-{{ vuln.finding_id }}">
+          <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ vuln.file_name }}</strong> - Line {{ vuln.line }}
+                <span class="badge badge-success ml-2">{{ vuln.classification.category | replace('_', ' ') | title }}</span>
+                <span class="badge badge-info ml-1">CWE-{{ vuln.cwe }}</span>
+              </div>
+              <div>
+                <button class="btn btn-sm btn-primary generate-single-patch" 
+                        data-vuln-id="{{ vuln.finding_id }}"
+                        data-scan-id="{{ scan_id }}">
+                  <i class="fas fa-magic"></i> Generate Patch
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="mb-2"><strong>Issue:</strong> {{ vuln.message }}</p>
+            <p class="mb-2"><strong>Function:</strong> <code>{{ vuln.function }}</code></p>
+            
+            <!-- Code Snippet with Context -->
+            <div class="mb-3">
+              <h6>Code Context:</h6>
+              {% if vuln.code_context %}
+              <pre class="mb-0 code-snippet-dark"><code class="language-cpp">{% for line in vuln.code_context %}<span class="{% if line.is_vulnerable %}vulnerable-line{% endif %}"><span class="line-number">{{ '%4d' % line.line_num }}</span> | {{ line.code }}</span>
+{% endfor %}</code></pre>
+              <small class="text-muted mt-2 d-block">
+                <i class="fas fa-file"></i> {{ vuln.file }}:{{ vuln.line }}
+                <span class="badge bg-danger ms-2">← Vulnerable line highlighted</span>
+              </small>
+              {% else %}
+              <pre class="bg-dark text-white p-3 rounded"><code>Line {{ vuln.line }}: <span class="text-warning">{{ vuln.message }}</span>
+// Code context not available
+// View the source file at {{ vuln.file }}:{{ vuln.line }}</code></pre>
+              {% endif %}
+            </div>
+            
+            <!-- Patch Preview (will be populated after generation) -->
+            <div class="patch-preview-{{ vuln.finding_id }}" style="display: none;">
+              <h6 class="text-success"><i class="fas fa-check-circle"></i> Generated Patch:</h6>
+              
+              <!-- ACR Header Notice -->
+              <div class="acr-header-notice-{{ vuln.finding_id }}" style="display: none;">
+                <div class="alert alert-info mb-3">
+                  <h6 class="alert-heading">
+                    <i class="fas fa-file-code"></i> Required Header File
+                  </h6>
+                  <p class="mb-2">
+                    This patch requires the <code>acr.h</code> header file. It will be automatically created when you apply the patch.
+                  </p>
+                  <details>
+                    <summary class="btn btn-sm btn-outline-info">View acr.h Content</summary>
+                    <pre class="mt-2 bg-dark text-white p-3 rounded acr-header-content-{{ vuln.finding_id }}" style="max-height: 400px; overflow-y: auto;"><code></code></pre>
+                  </details>
+                </div>
+              </div>
+              
+              <div class="bg-light p-3 rounded mb-2">
+                <div class="text-danger patch-original"></div>
+                <div class="text-success patch-repaired"></div>
+              </div>
+              <details>
+                <summary class="btn btn-sm btn-outline-secondary">View Full Diff</summary>
+                <pre class="mt-2 bg-dark text-white p-3 rounded patch-diff"></pre>
+              </details>
+            </div>
+            
+            <!-- Generation Status -->
+            <div class="patch-status-{{ vuln.finding_id }}" style="display: none;">
+              <div class="alert alert-info">
+                <i class="fas fa-spinner fa-spin"></i> Generating patch...
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="alert alert-info">
+          <i class="fas fa-info-circle"></i> No Stage 1 repairable vulnerabilities found.
+        </div>
+      {% endif %}
+      
+      <!-- Bulk Actions -->
+      <div class="text-center mb-4">
+        <button id="generateAllStage1Btn" class="btn btn-primary btn-lg">
+          <i class="fas fa-magic"></i> Generate All Stage 1 Patches
+        </button>
+        <div id="generationProgress" class="mt-3" style="display: none;">
+          <div class="spinner-border text-primary" role="status">
+            <span class="sr-only">Generating patches...</span>
+          </div>
+          <p class="mt-2">Generating patches...</p>
+        </div>
+      </div>
+
+      <!-- Stage 1 Categories Summary -->
+      <h5 class="mb-3">Stage 1 Categories:</h5>
+      <div class="row">
+        <div class="col-md-3">
+          <div class="card border-left-success mb-3">
+            <div class="card-body">
+              <h6 class="text-success">
+                <i class="fas fa-check-circle"></i> Null Pointer Dereference
+              </h6>
+              <small class="text-muted">EXP34-C / CWE-476</small><br>
+              <small><strong>Priority:</strong> 18 (Highest)</small><br>
+              <small><strong>Success Rate:</strong> 93.5-100%</small><br>
+              <small><strong>Count:</strong> {{ stage1_counts.null_pointer }}</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-left-success mb-3">
+            <div class="card-body">
+              <h6 class="text-success">
+                <i class="fas fa-check-circle"></i> Memory Deallocation
+              </h6>
+              <small class="text-muted">MemFix / CWE-401/415/416</small><br>
+              <small><strong>Priority:</strong> 16</small><br>
+              <small><strong>Success Rate:</strong> 85%</small><br>
+              <small><strong>Count:</strong> {{ stage1_counts.memory_dealloc }}</small>
+              <div class="mt-2">
+                <span class="badge badge-light" title="Memory Leak">ML</span>
+                <span class="badge badge-light" title="Double-Free">DF</span>
+                <span class="badge badge-light" title="Use-After-Free">UAF</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-left-success mb-3">
+            <div class="card-body">
+              <h6 class="text-success">
+                <i class="fas fa-check-circle"></i> Integer Overflow
+              </h6>
+              <small class="text-muted">IntRepair / CWE-190/191</small><br>
+              <small><strong>Priority:</strong> 15</small><br>
+              <small><strong>Success Rate:</strong> 90%</small><br>
+              <small><strong>Count:</strong> {{ stage1_counts.integer_overflow }}</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-left-success mb-3">
+            <div class="card-body">
+              <h6 class="text-success">
+                <i class="fas fa-check-circle"></i> Uninitialized Variables
+              </h6>
+              <small class="text-muted">EXP33-C / CWE-457</small><br>
+              <small><strong>Priority:</strong> 12</small><br>
+              <small><strong>Success Rate:</strong> 94.5-100%</small><br>
+              <small><strong>Count:</strong> {{ stage1_counts.uninitialized_var }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-3">
+          <div class="card border-left-secondary mb-3">
+            <div class="card-body">
+              <h6 class="text-secondary">
+                <i class="fas fa-ban"></i> Dead Code (Disabled)
+              </h6>
+              <small class="text-muted">MSC12-C / CWE-561</small><br>
+              <small><strong>Priority:</strong> 2</small><br>
+              <small><strong>Success Rate:</strong> 20-40%</small><br>
+              <small><strong>Count:</strong> {{ stage1_counts.dead_code }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- MemFix Information Panel -->
+      <div class="alert alert-info mt-4">
+        <h6 class="alert-heading">
+          <i class="fas fa-memory"></i> About MemFix Memory Deallocation Repair
+        </h6>
+        <p class="mb-2">
+          MemFix uses a sophisticated 3-phase pipeline based on static analysis and SAT solving 
+          (Lee, Hong & Oh - ESEC/FSE 2018) to automatically repair memory deallocation errors:
+        </p>
+        <ul class="mb-2">
+          <li><strong>Memory Leak (CWE-401):</strong> Inserts <code>free()</code> calls at optimal program points</li>
+          <li><strong>Double-Free (CWE-415):</strong> Removes duplicate <code>free()</code> statements and ensures single deallocation</li>
+          <li><strong>Use-After-Free (CWE-416):</strong> Moves <code>free()</code> calls to safe locations after last use</li>
+        </ul>
+        <details>
+          <summary class="btn btn-sm btn-outline-info">How MemFix Works</summary>
+          <div class="mt-3">
+            <h6>Phase 1: CFG Construction & Pre-Analysis</h6>
+            <p>Builds Control Flow Graph and runs points-to/alias analyses</p>
+            
+            <h6>Phase 2: Typestate Analysis</h6>
+            <p>Tracks object states through program execution using transfer functions τ (patch update) and φ (points-to update)</p>
+            
+            <h6>Phase 3: SAT-Based Exact Cover</h6>
+            <p>Formulates the repair as a Boolean SAT problem with constraints:</p>
+            <ul>
+              <li>φ1: No memory leaks (every object covered)</li>
+              <li>φ2: No double-frees (each object covered at most once)</li>
+              <li>φ3: No use-after-free from patch ordering</li>
+            </ul>
+            <p class="mb-0">
+              <strong>Key Feature:</strong> MemFix removes ALL existing <code>free()</code> statements 
+              and reinserts them at optimal locations, ensuring correctness.
+            </p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generated Patches Summary -->
+  {% if patches %}
+  <div class="card mb-4">
+    <div class="card-header bg-success text-white">
+      <h4 class="mb-0">
+        <i class="fas fa-file-code"></i> All Generated Patches ({{ patches | length }})
+      </h4>
+    </div>
+    <div class="card-body">
+      {% for patch in patches %}
+      <div class="card mb-3 border-left-primary">
+        <div class="card-header">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ patch.file or patch.get('file', 'Unknown') }}</strong> - Line {{ patch.line or patch.get('line', '?') }}
+              {% if patch.stage or patch.get('stage') %}
+              <span class="badge badge-primary ml-2">Stage {{ patch.stage or patch.get('stage') }}</span>
+              {% endif %}
+              {% if patch.category or patch.get('category') %}
+              <span class="badge badge-info ml-1">{{ patch.category or patch.get('category') }}</span>
+              {% endif %}
+              {% if patch.requires_acr_header or patch.get('requires_acr_header') %}
+              <span class="badge badge-warning ml-1" title="Requires acr.h header file">
+                <i class="fas fa-file-code"></i> +acr.h
+              </span>
+              {% endif %}
+            </div>
+            <div>
+              {% if patch.confidence or patch.get('confidence') %}
+              <span class="badge badge-success">Confidence: {{ ((patch.confidence or patch.get('confidence', 0)) * 100) | int }}%</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p class="mb-2"><strong>Description:</strong> {{ patch.description or patch.get('description', 'No description') }}</p>
+          
+          <!-- ACR Header Notice (for null pointer patches) -->
+          {% if patch.requires_acr_header or patch.get('requires_acr_header') %}
+          <div class="alert alert-info mb-3">
+            <h6 class="alert-heading">
+              <i class="fas fa-file-code"></i> Required Header File
+            </h6>
+            <p class="mb-2">
+              This patch requires the <code>acr.h</code> header file to be included in your project.
+              The header will be automatically created when you apply this patch.
+            </p>
+            <details>
+              <summary class="btn btn-sm btn-outline-info">View acr.h Content</summary>
+              <pre class="mt-2 bg-dark text-white p-3 rounded" style="max-height: 400px; overflow-y: auto;"><code>{{ patch.acr_header_content or patch.get('acr_header_content', '') }}</code></pre>
+            </details>
+            <small class="text-muted d-block mt-2">
+              <i class="fas fa-info-circle"></i> 
+              The patch applier will automatically:
+              <ul class="mb-0 mt-1">
+                <li>Create <code>acr.h</code> in your source directory</li>
+                <li>Add <code>#include "acr.h"</code> to the repaired file</li>
+                <li>Apply the null check macro</li>
+              </ul>
+            </small>
+          </div>
+          {% endif %}
+
+          <!-- Diff View -->
+          <div class="mb-3">
+            <h6>Changes:</h6>
+            <div class="bg-light p-3 rounded">
+              {% if patch.category == 'memory_dealloc' or patch.get('category') == 'memory_dealloc' %}
+                <!-- MemFix-specific display -->
+                <div class="mb-2">
+                  <span class="badge badge-info">MemFix Repair</span>
+                  {% if patch.num_patches or patch.get('num_patches') %}
+                  <span class="badge badge-secondary">{{ patch.num_patches or patch.get('num_patches') }} patch(es)</span>
+                  {% endif %}
+                  {% if patch.get('error') %}
+                  <span class="badge badge-danger">Analysis Failed</span>
+                  {% elif patch.get('unsat') %}
+                  <span class="badge badge-warning">UNSAT - No Solution</span>
+                  {% endif %}
+                </div>
+                {% if patch.get('error') %}
+                <div class="alert alert-warning">
+                  <strong>MemFix could not analyze this code:</strong><br>
+                  {{ patch.description or patch.get('description', 'Unknown error') }}
+                </div>
+                {% elif patch.get('unsat') %}
+                <div class="alert alert-info">
+                  <strong>No valid patch configuration found (UNSAT):</strong><br>
+                  {{ patch.description or patch.get('description', 'The SAT solver could not find a valid solution') }}
+                  <br><br>
+                  <small class="text-muted">
+                    <i class="fas fa-info-circle"></i> This vulnerability may require Stage 2 (AI-assisted) repair.
+                  </small>
+                </div>
+                {% elif patch.changes or patch.get('changes') %}
+                <div class="mb-2">
+                  <strong>Changes Applied:</strong>
+                  <ul class="mb-0">
+                    {% for change in (patch.changes or patch.get('changes', [])) %}
+                    <li class="{% if 'Removed' in change %}text-danger{% else %}text-success{% endif %}">
+                      {{ change }}
+                    </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+                {% else %}
+                <div class="text-muted">
+                  <em>{{ patch.original or 'No changes needed' }}</em>
+                </div>
+                {% endif %}
+                {% if patch.reachable_states or patch.get('reachable_states') %}
+                <small class="text-muted">
+                  <i class="fas fa-info-circle"></i> 
+                  Analyzed {{ patch.reachable_states or patch.get('reachable_states') }} object state(s) at program exit
+                </small>
+                {% endif %}
+              {% else %}
+                <!-- Standard display for other repairs -->
+                {% if patch.original or patch.get('original') %}
+                <div class="text-danger">- {{ patch.original or patch.get('original', '') }}</div>
+                {% endif %}
+                {% if patch.repaired or patch.get('repaired') %}
+                <div class="text-success">+ {{ patch.repaired or patch.get('repaired', '') }}</div>
+                {% elif patch.patched or patch.get('patched') %}
+                <div class="text-success">+ {{ patch.patched or patch.get('patched', '') }}</div>
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Full Diff -->
+          <details>
+            <summary class="btn btn-sm btn-outline-secondary">View Full Diff</summary>
+            <pre class="mt-2 bg-dark text-white p-3 rounded"><code>{{ patch.diff or patch.get('diff', '') }}</code></pre>
+          </details>
+
+          <!-- Actions -->
+          <div class="mt-3">
+            <button class="btn btn-sm btn-success" onclick="applyPatch('{{ patch.patch_id }}')">
+              <i class="fas fa-check"></i> Apply Patch
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="downloadPatch('{{ patch.patch_id }}')">
+              <i class="fas fa-download"></i> Download
+            </button>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Stage 2: AI-Assisted Repair -->
+  <div class="card">
+    <div class="card-header bg-warning text-dark">
+      <h4 class="mb-0">
+        <i class="fas fa-brain"></i> Stage 2: AI-Assisted Repair
+      </h4>
+      <small>For complex vulnerabilities that don't meet automatic repairability criteria</small>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle"></i>
+        <strong>Stage 2 requires AI analysis.</strong> These vulnerabilities need contextual understanding and cannot be safely repaired with deterministic rules.
+      </div>
+
+      <h5 class="mb-3">Stage 2 Categories (Require AI Analysis):</h5>
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <div class="card border-warning">
+            <div class="card-body">
+              <h6 class="text-warning">
+                <i class="fas fa-exclamation-triangle"></i> Buffer Overflow
+              </h6>
+              <small class="text-muted">CWE-121, CWE-122, CWE-788</small><br>
+              <small>Non-local repair required</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-warning">
+            <div class="card-body">
+              <h6 class="text-warning">
+                <i class="fas fa-exclamation-triangle"></i> Format String
+              </h6>
+              <small class="text-muted">CWE-134</small><br>
+              <small>Requires calling convention understanding</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-warning">
+            <div class="card-body">
+              <h6 class="text-warning">
+                <i class="fas fa-exclamation-triangle"></i> Race Condition
+              </h6>
+              <small class="text-muted">CWE-362</small><br>
+              <small>Multi-threading complexity</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h5 class="mb-3">Stage 2 Vulnerabilities Found:</h5>
+      <div class="row">
+        {% if stage2_vulns %}
+          {% for vuln in stage2_vulns[:5] %}
+          <div class="col-md-6 mb-3">
+            <div class="card border-left-warning">
+              <div class="card-body">
+                <h6>{{ vuln.finding_id or vuln.get('id', 'Unknown') }}</h6>
+                <small class="text-muted">CWE-{{ vuln.cwe }}</small><br>
+                <small><strong>File:</strong> {{ vuln.file_name or vuln.file }}</small><br>
+                <small><strong>Line:</strong> {{ vuln.line }}</small><br>
+                <small><strong>Reason:</strong> {{ vuln.classification.reason }}</small>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+          {% if stage2_vulns | length > 5 %}
+          <div class="col-12">
+            <p class="text-muted">... and {{ stage2_vulns | length - 5 }} more</p>
+          </div>
+          {% endif %}
+        {% else %}
+          <div class="col-12">
+            <p class="text-muted">No Stage 2 vulnerabilities found.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="text-center mt-4">
+        {% if stage2_vulns %}
+        <a href="{{ url_for('repair_dashboard', scan_id=scan_id) }}" class="btn btn-warning btn-lg">
+          <i class="fas fa-robot"></i> Start AI Repair ({{ stage2_vulns | length }} vulnerabilities)
+        </a>
+        {% else %}
+        <button class="btn btn-secondary btn-lg" disabled>
+          <i class="fas fa-robot"></i> No Stage 2 Vulnerabilities
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Generate all Stage 1 patches
+document.getElementById('generateAllStage1Btn').addEventListener('click', function() {
+  const btn = this;
+  const progress = document.getElementById('generationProgress');
+  
+  btn.disabled = true;
+  progress.style.display = 'block';
+  
+  fetch('/api/generate-stage1-patches/{{ scan_id }}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      enable_dead_code: false
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      // Update the counter immediately before reload
+      const counterElement = document.querySelector('.card-body.text-center h3.text-info');
+      if (counterElement) {
+        const currentCount = parseInt(counterElement.textContent) || 0;
+        counterElement.textContent = currentCount + data.patches_generated;
+      }
+      
+      alert(`Successfully generated ${data.patches_generated} patches!`);
+      // Reload to show full patch details
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(error => {
+    alert('Error generating patches: ' + error);
+  })
+  .finally(() => {
+    btn.disabled = false;
+    progress.style.display = 'none';
+  });
+});
+
+// Generate single patch for a vulnerability
+document.querySelectorAll('.generate-single-patch').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const vulnId = this.dataset.vulnId;
+    const scanId = this.dataset.scanId;
+    const statusDiv = document.querySelector(`.patch-status-${vulnId}`);
+    const previewDiv = document.querySelector(`.patch-preview-${vulnId}`);
+    
+    // Show loading
+    this.disabled = true;
+    statusDiv.style.display = 'block';
+    previewDiv.style.display = 'none';
+    
+    // Generate patch for single vulnerability
+    fetch(`/api/generate-single-patch/${scanId}/${vulnId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success && data.patch) {
+        // Hide loading, show patch
+        statusDiv.style.display = 'none';
+        previewDiv.style.display = 'block';
+        
+        // Populate patch preview
+        previewDiv.querySelector('.patch-original').textContent = `- ${data.patch.original}`;
+        previewDiv.querySelector('.patch-repaired').textContent = `+ ${data.patch.repaired}`;
+        previewDiv.querySelector('.patch-diff').textContent = data.patch.diff;
+        
+        // Show ACR header if required
+        if (data.patch.requires_acr_header) {
+          const acrNotice = document.querySelector(`.acr-header-notice-${vulnId}`);
+          const acrContent = document.querySelector(`.acr-header-content-${vulnId} code`);
+          if (acrNotice && acrContent) {
+            acrNotice.style.display = 'block';
+            acrContent.textContent = data.patch.acr_header_content || '/* ACR header content */';
+          }
+        }
+        
+        // Change button to "Patch Generated"
+        this.innerHTML = '<i class="fas fa-check"></i> Patch Generated';
+        this.classList.remove('btn-primary');
+        this.classList.add('btn-success');
+      } else {
+        alert('Error: ' + (data.error || 'Failed to generate patch'));
+        statusDiv.style.display = 'none';
+        this.disabled = false;
+      }
+    })
+    .catch(error => {
+      alert('Error generating patch: ' + error);
+      statusDiv.style.display = 'none';
+      this.disabled = false;
+    });
+  });
+});
+
+function applyPatch(patchId) {
+  alert('Patch application coming soon! Patch ID: ' + patchId);
+}
+
+function downloadPatch(patchId) {
+  alert('Patch download coming soon! Patch ID: ' + patchId);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+Flask>=2.0,<3.0
+Flask-Login>=0.6
+Authlib>=1.2.0
+requests>=2.25.0
+python-dotenv>=1.0
+celery>=5.2.0
+redis>=4.0.0
+sqlalchemy>=1.4.0
+werkzeug>=2.0.0
+docker>=6.0.0
+uuid
+pytest>=7.0.0
+hypothesis>=6.0.0
+google-generativeai>=0.3.0
+groq>=0.4.0
+libclang>=16.0.0
+langgraph>=0.0.1

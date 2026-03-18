@@ -1,0 +1,61 @@
+# AutoVulRepair GitHub Action — Docker Runtime Environment
+# Base: python:3.11-slim uses Debian Bookworm → ships with LLVM 14
+FROM python:3.11-slim
+
+LABEL maintainer="malikadan212"
+LABEL description="AutoVulRepair GitHub Action Runtime"
+
+# ─── SYSTEM DEPENDENCIES ─────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core utilities
+    build-essential \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    jq \
+    diffutils \
+    # Static analysis tool (Module 1)
+    cppcheck \
+    # Fuzzing + compilation (Modules 3, 4, 5)
+    # NOTE: Debian Bookworm ships LLVM 14. We use the version-agnostic names.
+    clang \
+    llvm \
+    libc++-dev \
+    libc++abi-dev \
+    # GDB crash triage (Module 6)
+    gdb \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─── FuzzedDataProvider.h (required by Module 3 harnesses) ───────────────────
+# Detect the installed LLVM version and put the header in the right place
+RUN LLVM_VER=$(llvm-config --version | cut -d. -f1) && \
+    echo "Detected LLVM version: ${LLVM_VER}" && \
+    FUZZ_HEADER_DIR="/usr/lib/llvm-${LLVM_VER}/lib/clang/${LLVM_VER}/include/fuzzer" && \
+    mkdir -p "${FUZZ_HEADER_DIR}" && \
+    wget -q \
+      https://raw.githubusercontent.com/llvm/llvm-project/main/compiler-rt/include/fuzzer/FuzzedDataProvider.h \
+      -O "${FUZZ_HEADER_DIR}/FuzzedDataProvider.h" && \
+    echo "FuzzedDataProvider.h installed at ${FUZZ_HEADER_DIR}"
+
+# ─── PYTHON DEPENDENCIES ──────────────────────────────────────────────────────
+WORKDIR /app
+COPY requirements.txt .
+
+# Install core project deps + extras needed for headless CI mode
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir \
+        pycparser \
+        z3-solver \
+        PyGithub \
+        SQLAlchemy \
+        unidiff
+
+# ─── APPLICATION CODE ─────────────────────────────────────────────────────────
+COPY . .
+
+# Make entrypoint executable (important for Linux line endings)
+RUN chmod +x /app/entrypoint.sh
+
+# ─── ENTRYPOINT ───────────────────────────────────────────────────────────────
+ENTRYPOINT ["/app/entrypoint.sh"]
