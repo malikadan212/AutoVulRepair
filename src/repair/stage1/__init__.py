@@ -9,7 +9,13 @@ from .repair_engine import Stage1RepairEngine
 from .null_pointer import NullPointerRepair
 from .uninitialized_var import UninitializedVarRepair
 from .dead_code import DeadCodeRepair
-from .integer_overflow import IntegerOverflowRepair
+from .integer_overflow import IntegerOverflowFixer
+from .buffer_overflow import BufferOverflowFixer
+from .temporal_safety_cets import CETSFixer
+from .memory_leak import MemoryLeakFixer
+from .format_string_vulnerability import PHPTaintFixer
+from .race_condition import RaceConditionFixer
+from .file_handling import FileHandlingFixer
 
 __all__ = [
     'classify_vulnerability',
@@ -18,5 +24,11 @@ __all__ = [
     'NullPointerRepair',
     'UninitializedVarRepair',
     'DeadCodeRepair',
-    'IntegerOverflowRepair'
+    'IntegerOverflowFixer',
+    'BufferOverflowFixer',
+    'CETSFixer',
+    'MemoryLeakFixer',
+    'PHPTaintFixer',
+    'RaceConditionFixer',
+    'FileHandlingFixer'
 ]
