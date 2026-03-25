@@ -158,22 +158,35 @@ export class VulnerabilitySidebarProvider
    * Filter vulnerabilities by severity and search query
    */
   private filterVulnerabilities(vulnerabilities: VulnerabilityReport[]): VulnerabilityReport[] {
-    return vulnerabilities.filter((vuln) => {
+    console.log('[Sidebar] Filtering vulnerabilities:', vulnerabilities.length, 'total');
+    console.log('[Sidebar] Filter severities:', Array.from(this.filterSeverities));
+    console.log('[Sidebar] Search query:', this.searchQuery);
+    
+    const filtered = vulnerabilities.filter((vuln) => {
+      console.log('[Sidebar] Checking vulnerability:', vuln.severity, vuln.type);
+      
       // Filter by severity
       if (!this.filterSeverities.has(vuln.severity)) {
+        console.log('[Sidebar] Filtered out by severity:', vuln.severity);
         return false;
       }
 
       // Filter by search query
       if (this.searchQuery) {
         const query = this.searchQuery.toLowerCase();
-        return (
-          vuln.type.toLowerCase().includes(query) || vuln.description.toLowerCase().includes(query)
-        );
+        const matches = vuln.type.toLowerCase().includes(query) || vuln.description.toLowerCase().includes(query);
+        if (!matches) {
+          console.log('[Sidebar] Filtered out by search query');
+          return false;
+        }
       }
 
+      console.log('[Sidebar] Vulnerability passed filters');
       return true;
     });
+    
+    console.log('[Sidebar] Filtered result:', filtered.length, 'vulnerabilities');
+    return filtered;
   }
 
   /**

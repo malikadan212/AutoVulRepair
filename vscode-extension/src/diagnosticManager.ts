@@ -22,17 +22,25 @@ export class DiagnosticManager {
    * @param vulnerabilities Array of vulnerability reports
    */
   createDiagnostics(fileUri: vscode.Uri, vulnerabilities: VulnerabilityReport[]): void {
+    console.log('[DiagnosticManager] Creating diagnostics for:', fileUri.fsPath);
+    console.log('[DiagnosticManager] Received vulnerabilities:', vulnerabilities.length);
+    console.log('[DiagnosticManager] Vulnerability details:', vulnerabilities);
+    
     // Normalize severity to capitalize first letter (backend returns lowercase)
     const normalizedVulns = vulnerabilities.map(vuln => ({
       ...vuln,
       severity: this.normalizeSeverity(vuln.severity)
     }));
     
+    console.log('[DiagnosticManager] Normalized vulnerabilities:', normalizedVulns);
     this.vulnerabilityMap.set(fileUri.fsPath, normalizedVulns);
 
     const diagnostics = normalizedVulns.map((vuln) => this.createDiagnostic(vuln));
 
     this.diagnosticCollection.set(fileUri, diagnostics);
+    
+    console.log('[DiagnosticManager] Stored vulnerabilities for file:', fileUri.fsPath, normalizedVulns.length);
+    console.log('[DiagnosticManager] Total files with vulnerabilities:', this.vulnerabilityMap.size);
     
     // Notify listeners that diagnostics have changed
     this._onDidChangeDiagnostics.fire();

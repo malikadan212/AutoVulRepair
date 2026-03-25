@@ -156,8 +156,22 @@ async function scanFileCommand(
     // Display results
     if (results.vulnerabilities && results.vulnerabilities.length > 0) {
       console.log('[scanFileCommand] Creating diagnostics for vulnerabilities...');
-      diagnosticManager.createDiagnostics(document.uri, results.vulnerabilities);
-      vscode.window.showInformationMessage(`Found ${results.vulnerabilities.length} vulnerabilities`);
+      
+      // Transform backend response to match extension types
+      const transformedVulns = results.vulnerabilities.map(vuln => ({
+        file: vuln.file || document.fileName,
+        line: vuln.line || 1,
+        column: vuln.column || 0,
+        severity: vuln.severity,
+        type: vuln.type,
+        description: vuln.description,
+        exploitabilityScore: (vuln as any).exploitability || vuln.exploitabilityScore,
+        patch: vuln.patch
+      }));
+      
+      console.log('[scanFileCommand] Transformed vulnerabilities:', transformedVulns);
+      diagnosticManager.createDiagnostics(document.uri, transformedVulns);
+      vscode.window.showInformationMessage(`Found ${transformedVulns.length} vulnerabilities`);
     } else {
       console.log('[scanFileCommand] No vulnerabilities found');
       vscode.window.showInformationMessage('No vulnerabilities found');
