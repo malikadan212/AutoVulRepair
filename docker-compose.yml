@@ -18,10 +18,13 @@ services:
     build: .
     ports:
       - "5000:5000"
+    env_file:
+      - .env
     environment:
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - REDIS_URL=redis://redis:6379/0
       - SCANS_DIR=/app/scans
       - GROQ_API_KEY=${GROQ_API_KEY}
@@ -45,6 +48,8 @@ services:
   celery:
     build: .
     command: python celery_worker.py
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
       - SCANS_DIR=/app/scans

@@ -1,0 +1,103 @@
+{
+  "crash_id": "crash_004",
+  "vulnerability_id": "VULN-2024-002",
+  "timestamp": "2024-01-27T14:52:08Z",
+  "crash_type": "heap-use-after-free",
+  "sanitizer": "AddressSanitizer",
+  "severity": "critical",
+  "exploitability": "high",
+  "crash_details": {
+    "signal": "SIGSEGV",
+    "exit_code": 1,
+    "crash_address": "0x7f8b4c000400",
+    "access_type": "READ",
+    "access_size": 4,
+    "thread_id": "T0"
+  },
+  "stack_trace": {
+    "full_trace": [
+      "#0 0x4a3c2d in cleanup_session src/session.c:91:8",
+      "#1 0x4a3b1f in LLVMFuzzerTestOneInput session_cleanup_session_harness.cc:28:3",
+      "#2 0x4a1234 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long)",
+      "#3 0x4a1567 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool*)",
+      "#4 0x4a1890 in fuzzer::Fuzzer::MutateAndTestOne()",
+      "#5 0x4a1abc in fuzzer::Fuzzer::Loop(std::vector<fuzzer::SizedFile, std::allocator<fuzzer::SizedFile> >&)",
+      "#6 0x4a1def in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long))",
+      "#7 0x4a2123 in main",
+      "#8 0x7f8b4c123456 in __libc_start_main"
+    ],
+    "crash_frame": {
+      "function": "cleanup_session",
+      "file": "src/session.c",
+      "line": 91,
+      "column": 8,
+      "instruction": "movl (%rax), %ecx"
+    }
+  },
+  "memory_layout": {
+    "heap_info": {
+      "allocated_size": 64,
+      "freed_size": 64,
+      "use_after_free_offset": 8,
+      "allocation_site": "malloc in create_session_data",
+      "deallocation_site": "free in cleanup_session:89"
+    },
+    "shadow_memory": {
+      "crash_address": "0x7f8b4c000400",
+      "shadow_byte": "fd",
+      "meaning": "heap-use-after-free (freed memory)"
+    }
+  },
+  "input_analysis": {
+    "input_size": 32,
+    "input_hash": "sha256:d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2g3h4i5",
+    "input_characteristics": {
+      "printable_chars": 0,
+      "null_bytes": 4,
+      "high_entropy_regions": 1,
+      "repeated_patterns": []
+    },
+    "triggering_bytes": {
+      "offset": 8,
+      "value": "0x00000001",
+      "context": "Active flag in freed session data structure"
+    }
+  },
+  "source_code_context": {
+    "vulnerable_function": "cleanup_session",
+    "code_lines": [
+      {"line": 87, "code": "void cleanup_session(session_t* session) {"},
+      {"line": 88, "code": "    if (!session) return;"},
+      {"line": 89, "code": "    "},
+      {"line": 90, "code": "    free(session->data);"},
+      {"line": 91, "code": "    if (session->data->active) { // Use after free"},
+      {"line": 92, "code": "        // Handle active session cleanup"},
+      {"line": 93, "code": "        handle_active_session(session->data);"},
+      {"line": 94, "code": "    }"},
+      {"line": 95, "code": "    "},
+      {"line": 96, "code": "    free(session);"},
+      {"line": 97, "code": "}"}
+    ],
+    "vulnerable_line": 91,
+    "vulnerability_pattern": "Access to freed memory through dangling pointer"
+  },
+  "temporal_analysis": {
+    "allocation_timestamp": "T-15ms",
+    "free_timestamp": "T-2ms",
+    "use_timestamp": "T+0ms",
+    "time_between_free_and_use": "2ms",
+    "memory_reuse_detected": false
+  },
+  "fix_recommendations": {
+    "immediate_fix": {
+      "description": "Check active flag before freeing memory",
+      "code_change": "if (session->data && session->data->active) {\n    handle_active_session(session->data);\n}\nfree(session->data);",
+      "risk_level": "low"
+    },
+    "robust_fix": {
+      "description": "Nullify pointer after free to prevent future use",
+      "code_change": "if (session->data) {\n    if (session->data->active) {\n        handle_active_session(session->data);\n    }\n    free(session->data);\n    session->data = NULL;\n}",
+      "risk_level": "very_low"
+    }
+  }
+}

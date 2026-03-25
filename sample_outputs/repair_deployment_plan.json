@@ -1,0 +1,260 @@
+{
+  "deployment_timestamp": "2024-01-27T16:30:00Z",
+  "scan_id": "sample-scan-2024-001",
+  "deployment_strategy": "staged_rollout",
+  "total_patches": 4,
+  "deployment_phases": [
+    {
+      "phase": "pre_deployment",
+      "status": "completed",
+      "duration": "15m",
+      "activities": [
+        {
+          "activity": "backup_creation",
+          "status": "completed",
+          "details": "Full source code backup created",
+          "backup_location": "/backups/pre-repair-2024-01-27-16-15"
+        },
+        {
+          "activity": "dependency_check",
+          "status": "completed",
+          "details": "All build dependencies verified"
+        },
+        {
+          "activity": "test_environment_setup",
+          "status": "completed",
+          "details": "Staging environment prepared with identical configuration"
+        }
+      ]
+    },
+    {
+      "phase": "staging_deployment",
+      "status": "completed",
+      "duration": "25m",
+      "activities": [
+        {
+          "activity": "patch_application",
+          "status": "completed",
+          "patches_applied": 4,
+          "details": "All patches applied successfully to staging environment"
+        },
+        {
+          "activity": "build_verification",
+          "status": "completed",
+          "build_time": "3m 45s",
+          "details": "Clean build completed without errors or warnings"
+        },
+        {
+          "activity": "automated_testing",
+          "status": "completed",
+          "test_duration": "18m 30s",
+          "tests_run": 1247,
+          "tests_passed": 1247,
+          "tests_failed": 0,
+          "coverage": "94.2%"
+        },
+        {
+          "activity": "performance_testing",
+          "status": "completed",
+          "performance_impact": "+1.8%",
+          "details": "Minimal performance impact within acceptable thresholds"
+        }
+      ]
+    },
+    {
+      "phase": "canary_deployment",
+      "status": "completed",
+      "duration": "2h",
+      "activities": [
+        {
+          "activity": "canary_rollout",
+          "status": "completed",
+          "traffic_percentage": "5%",
+          "details": "Deployed to 5% of production traffic"
+        },
+        {
+          "activity": "monitoring",
+          "status": "completed",
+          "metrics_collected": [
+            "error_rate",
+            "response_time",
+            "memory_usage",
+            "cpu_utilization"
+          ],
+          "anomalies_detected": 0,
+          "details": "All metrics within normal ranges"
+        },
+        {
+          "activity": "security_validation",
+          "status": "completed",
+          "vulnerability_scans": 3,
+          "vulnerabilities_found": 0,
+          "details": "No security regressions detected"
+        }
+      ]
+    },
+    {
+      "phase": "production_deployment",
+      "status": "in_progress",
+      "estimated_duration": "45m",
+      "activities": [
+        {
+          "activity": "full_rollout",
+          "status": "in_progress",
+          "traffic_percentage": "100%",
+          "progress": "75%",
+          "details": "Rolling out to all production instances"
+        },
+        {
+          "activity": "health_checks",
+          "status": "ongoing",
+          "checks_passed": 12,
+          "checks_failed": 0,
+          "details": "All health checks passing"
+        }
+      ]
+    }
+  ],
+  "patch_deployment_details": [
+    {
+      "patch_id": "patch_001",
+      "vulnerability_id": "VULN-2024-001",
+      "file": "src/parser.c",
+      "deployment_status": "deployed",
+      "deployment_time": "2024-01-27T16:35:12Z",
+      "validation_results": {
+        "functionality_test": "passed",
+        "security_test": "passed",
+        "performance_test": "passed"
+      }
+    },
+    {
+      "patch_id": "patch_002",
+      "vulnerability_id": "VULN-2024-002",
+      "file": "src/session.c",
+      "deployment_status": "deployed",
+      "deployment_time": "2024-01-27T16:35:18Z",
+      "validation_results": {
+        "functionality_test": "passed",
+        "security_test": "passed",
+        "performance_test": "passed"
+      }
+    },
+    {
+      "patch_id": "patch_003",
+      "vulnerability_id": "VULN-2024-003",
+      "file": "src/logging.c",
+      "deployment_status": "deployed",
+      "deployment_time": "2024-01-27T16:35:22Z",
+      "validation_results": {
+        "functionality_test": "passed",
+        "security_test": "passed",
+        "performance_test": "passed"
+      }
+    },
+    {
+      "patch_id": "patch_004",
+      "vulnerability_id": "VULN-2024-004",
+      "file": "src/memory.c",
+      "deployment_status": "deployed",
+      "deployment_time": "2024-01-27T16:35:28Z",
+      "validation_results": {
+        "functionality_test": "passed",
+        "security_test": "passed",
+        "performance_test": "passed_with_monitoring"
+      },
+      "monitoring_requirements": {
+        "performance_monitoring": true,
+        "memory_allocation_tracking": true,
+        "alert_thresholds": {
+          "response_time_increase": ">5%",
+          "memory_usage_increase": ">10%"
+        }
+      }
+    }
+  ],
+  "rollback_plan": {
+    "rollback_triggers": [
+      "Error rate increase >2%",
+      "Response time increase >10%",
+      "New security vulnerabilities detected",
+      "Critical functionality failure"
+    ],
+    "rollback_procedure": {
+      "estimated_time": "10m",
+      "steps": [
+        "Stop traffic to affected instances",
+        "Restore from backup",
+        "Rebuild and redeploy previous version",
+        "Verify rollback success",
+        "Resume normal traffic"
+      ]
+    },
+    "rollback_testing": {
+      "last_tested": "2024-01-27T15:45:00Z",
+      "test_result": "successful",
+      "rollback_time": "8m 32s"
+    }
+  },
+  "monitoring_and_alerting": {
+    "monitoring_duration": "72h",
+    "key_metrics": [
+      {
+        "metric": "vulnerability_scan_results",
+        "frequency": "every_6h",
+        "alert_threshold": "any_new_vulnerabilities"
+      },
+      {
+        "metric": "application_error_rate",
+        "frequency": "real_time",
+        "alert_threshold": ">1%"
+      },
+      {
+        "metric": "response_time_p95",
+        "frequency": "real_time",
+        "alert_threshold": ">500ms"
+      },
+      {
+        "metric": "memory_usage",
+        "frequency": "every_5m",
+        "alert_threshold": ">85%"
+      }
+    ],
+    "alert_channels": ["email", "slack", "pagerduty"],
+    "on_call_team": "security_team"
+  },
+  "success_criteria": {
+    "security_criteria": [
+      "All targeted vulnerabilities resolved",
+      "No new vulnerabilities introduced",
+      "Security scan results clean"
+    ],
+    "functionality_criteria": [
+      "All regression tests passing",
+      "No functionality degradation",
+      "User acceptance criteria met"
+    ],
+    "performance_criteria": [
+      "Response time impact <5%",
+      "Memory usage impact <10%",
+      "No significant throughput degradation"
+    ]
+  },
+  "post_deployment_activities": [
+    {
+      "activity": "security_validation",
+      "scheduled_time": "2024-01-28T09:00:00Z",
+      "description": "Full security scan to validate all fixes"
+    },
+    {
+      "activity": "performance_review",
+      "scheduled_time": "2024-01-29T14:00:00Z",
+      "description": "Review performance metrics and optimization opportunities"
+    },
+    {
+      "activity": "documentation_update",
+      "scheduled_time": "2024-01-30T10:00:00Z",
+      "description": "Update security documentation and incident response procedures"
+    }
+  ]
+}

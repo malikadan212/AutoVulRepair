@@ -1,0 +1,21 @@
+[
+  {
+    "cve_id": "CVE-2023-99999",
+    "description": "Valid entry"
+  },
+  {
+    "cve_id": "",
+    "description": "Missing CVE ID"
+  },
+  {
+    "cve_id": "CVE-2023-88888",
+    "description": ""
+  },
+  {
+    "description": "No CVE ID field at all"
+  },
+  {
+    "cve_id": "INVALID-FORMAT",
+    "description": "Invalid CVE ID format"
+  }
+]

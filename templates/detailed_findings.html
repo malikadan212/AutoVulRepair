@@ -91,6 +91,9 @@
         {% endif %}
       </div>
       <div class="btn-group">
+        <a href="{{ url_for('patch_dashboard', scan_id=scan_id) }}" class="btn btn-success">
+          <i class="fas fa-wrench"></i> AI Patching
+        </a>
         <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
           <i class="fas fa-sitemap"></i> Generate Fuzz Plan
         </a>

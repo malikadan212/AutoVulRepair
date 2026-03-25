@@ -27,22 +27,51 @@ class Scan(Base):
 def get_database_url():
     # Ensure both app and celery use the same database path
     db_path = os.getenv('DATABASE_PATH', '/app/scans.db')
+    
+    # Ensure the directory exists
+    db_dir = os.path.dirname(db_path)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+    
+    # If the database file doesn't exist, create it
+    if not os.path.exists(db_path):
+        try:
+            # Create empty file
+            with open(db_path, 'w') as f:
+                pass
+            # Set permissions
+            os.chmod(db_path, 0o666)
+        except Exception as e:
+            print(f"Warning: Could not create database file {db_path}: {e}")
+    
     return f"sqlite:///{db_path}"
 
 def create_database():
     """Create database tables if they don't exist"""
-    # Add connection args to improve performance and handle disk issues better
-    engine = create_engine(
-        get_database_url(),
-        connect_args={
-            'timeout': 30,  # Increase timeout for busy database
-            'check_same_thread': False  # Allow multi-threading
-        },
-        pool_pre_ping=True,  # Verify connections before using
-        pool_recycle=3600  # Recycle connections every hour
-    )
-    Base.metadata.create_all(engine)
-    return engine
+    try:
+        # Add connection args to improve performance and handle disk issues better
+        engine = create_engine(
+            get_database_url(),
+            connect_args={
+                'timeout': 30,  # Increase timeout for busy database
+                'check_same_thread': False  # Allow multi-threading
+            },
+            pool_pre_ping=True,  # Verify connections before using
+            pool_recycle=3600  # Recycle connections every hour
+        )
+        Base.metadata.create_all(engine)
+        return engine
+    except Exception as e:
+        print(f"Database creation error: {e}")
+        # Fallback to in-memory database
+        print("Falling back to in-memory database")
+        engine = create_engine(
+            'sqlite:///:memory:',
+            connect_args={'check_same_thread': False},
+            pool_pre_ping=True
+        )
+        Base.metadata.create_all(engine)
+        return engine
 
 def get_session():
     """Get database session"""

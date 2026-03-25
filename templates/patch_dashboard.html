@@ -1,0 +1,163 @@
+{% extends "layout.html" %}
+
+{% block title %}AI Patching Dashboard - Scan {{ scan_id[:8] }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h2>🔧 AI-Powered Patching Dashboard</h2>
+            <p class="text-muted">Scan ID: {{ scan_id }}</p>
+            
+            <!-- Stats Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Total Vulnerabilities</h5>
+                            <h2>{{ total_vulns }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Patched</h5>
+                            <h2>{{ patched_count }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Pending</h5>
+                            <h2>{{ pending_count }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Progress</h5>
+                            <h2>{{ (patched_count / total_vulns * 100) | round | int }}%</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Actions -->
+            <div class="mb-3">
+                <button class="btn btn-primary" onclick="batchGeneratePatches()">
+                    <i class="fas fa-magic"></i> Generate All Patches
+                </button>
+                <button class="btn btn-secondary" onclick="exportPatches()">
+                    <i class="fas fa-download"></i> Export Patches
+                </button>
+                <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Findings
+                </a>
+            </div>
+            
+            <!-- Vulnerabilities Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h5>Vulnerabilities Requiring Patches</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Severity</th>
+                                <th>Description</th>
+                                <th>File</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for vuln in vulnerabilities %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>
+                                    <span class="badge badge-{{ 'danger' if vuln.severity == 'high' else 'warning' if vuln.severity == 'medium' else 'info' }}">
+                                        {{ vuln.severity | upper }}
+                                    </span>
+                                </td>
+                                <td>{{ vuln.description[:80] }}...</td>
+                                <td><code>{{ vuln.file }}</code>:{{ vuln.line }}</td>
+                                <td>
+                                    {% if vuln.patch_status == 'applied' %}
+                                        <span class="badge badge-success">✓ Patched</span>
+                                    {% elif vuln.patch_status == 'generated' %}
+                                        <span class="badge badge-info">Generated</span>
+                                    {% else %}
+                                        <span class="badge badge-secondary">Not Started</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('patch_vulnerability', scan_id=scan_id, vuln_index=vuln.index) }}" 
+                                       class="btn btn-sm btn-primary">
+                                        <i class="fas fa-wrench"></i> Patch
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function batchGeneratePatches() {
+    if (!confirm('Generate patches for all vulnerabilities? This may take a few minutes.')) {
+        return;
+    }
+    
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+    
+    try {
+        const response = await fetch('/api/patch/{{ scan_id }}/batch-generate', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`Successfully generated ${data.generated} patches!`);
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-magic"></i> Generate All Patches';
+    }
+}
+
+function exportPatches() {
+    window.location.href = '/api/patch/{{ scan_id }}/export';
+}
+</script>
+
+<style>
+.card {
+    margin-bottom: 20px;
+}
+
+.badge {
+    font-size: 0.9em;
+}
+
+.table td {
+    vertical-align: middle;
+}
+</style>
+{% endblock %}

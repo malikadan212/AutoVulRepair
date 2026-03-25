@@ -8,10 +8,18 @@ redis>=4.0.0
 sqlalchemy>=1.4.0
 werkzeug>=2.0.0
 docker>=6.0.0
-uuid
 pytest>=7.0.0
 hypothesis>=6.0.0
+
+# AI and LLM Dependencies
 google-generativeai>=0.3.0
 groq>=0.4.0
 libclang>=16.0.0
 langgraph>=0.0.1
+
+# AI Patching System Dependencies (RAG)
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.0
+torch>=2.0.0
+numpy>=1.21.0
+tqdm>=4.65.0

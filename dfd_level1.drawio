@@ -1,0 +1,454 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="DFD Level 1 - AutoVulRepair" id="dfd1">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- Title -->
+        <mxCell id="title" value="Data Flow Diagram - Level 1 (Gane &amp; Sarson Notation)&#xa;AutoVulRepair System" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="20" width="600" height="50" as="geometry"/>
+        </mxCell>
+        
+        <!-- EXTERNAL ENTITIES (Same as Level 0) -->
+        
+        <!-- Developer/User -->
+        <mxCell id="user" value="Developer/&#xa;Security Analyst" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="200" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- GitHub Repository -->
+        <mxCell id="github" value="GitHub&#xa;Repository" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="500" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- Docker Registry -->
+        <mxCell id="docker_reg" value="Docker&#xa;Registry" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="800" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- Monitoring System -->
+        <mxCell id="monitoring" value="Monitoring&#xa;System" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="200" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- Kubernetes -->
+        <mxCell id="k8s" value="Kubernetes&#xa;Cluster" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="800" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- PROCESSES (Circular - Gane & Sarson) -->
+        
+        <!-- Process 1: Receive and Validate Input -->
+        <mxCell id="p1" value="1&#xa;&#xa;Receive and&#xa;Validate Input" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="185" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 2: Perform Static Analysis -->
+        <mxCell id="p2" value="2&#xa;&#xa;Perform Static&#xa;Analysis" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="580" y="185" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 3: Generate Fuzz Plan -->
+        <mxCell id="p3" value="3&#xa;&#xa;Generate&#xa;Fuzz Plan" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="185" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 4: Generate Harnesses -->
+        <mxCell id="p4" value="4&#xa;&#xa;Generate&#xa;Harnesses" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="185" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5: Execute Fuzzing -->
+        <mxCell id="p5" value="5&#xa;&#xa;Execute&#xa;Fuzzing" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="185" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 6: Triage Results -->
+        <mxCell id="p6" value="6&#xa;&#xa;Triage&#xa;Results" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="485" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 7: Generate Reports -->
+        <mxCell id="p7" value="7&#xa;&#xa;Generate&#xa;Reports" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="485" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 8: Manage Resources -->
+        <mxCell id="p8" value="8&#xa;&#xa;Manage&#xa;Resources" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="785" width="120" height="120" as="geometry"/>
+        </mxCell>
+        
+        <!-- DATA STORES (Open-sided rectangles - Gane & Sarson) -->
+        
+        <!-- D1: Source Code Store -->
+        <mxCell id="d1" value="D1    Source Code" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="320" y="400" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D2: Scan Records -->
+        <mxCell id="d2" value="D2    Scan Records" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="580" y="400" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D3: Analysis Findings -->
+        <mxCell id="d3" value="D3    Analysis Findings" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="580" y="700" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D4: Fuzz Plans -->
+        <mxCell id="d4" value="D4    Fuzz Plans" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="840" y="400" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D5: Harness Code -->
+        <mxCell id="d5" value="D5    Harness Code" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="400" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D6: Crash Artifacts -->
+        <mxCell id="d6" value="D6    Crash Artifacts" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="400" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D7: Vulnerability Reports -->
+        <mxCell id="d7" value="D7    Vulnerability Reports" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="840" y="700" width="220" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D8: System Metrics -->
+        <mxCell id="d8" value="D8    System Metrics" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="1000" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- DATA FLOWS: External Entities to Processes -->
+        
+        <!-- User to P1 -->
+        <mxCell id="f1" value="code submission" style="endArrow=classic;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="user" target="p1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="f2" value="authentication credentials" style="endArrow=classic;html=1;exitX=1;exitY=0.75;entryX=0;entryY=0.75;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="user" target="p1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- GitHub to P1 -->
+        <mxCell id="f3" value="repository URL" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="github" target="p1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Docker Registry to P2 -->
+        <mxCell id="f4" value="analysis tool images" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="docker_reg" target="p2">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- DATA FLOWS: Processes to External Entities -->
+        
+        <!-- P7 to User -->
+        <mxCell id="f5" value="vulnerability reports" style="endArrow=classic;html=1;exitX=0;exitY=0.25;entryX=1;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p7" target="user">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="f6" value="scan status" style="endArrow=classic;html=1;exitX=0;exitY=0.75;entryX=1;entryY=0.75;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p7" target="user">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5 to Monitoring -->
+        <mxCell id="f7" value="performance metrics" style="endArrow=classic;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p5" target="monitoring">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P8 to K8s -->
+        <mxCell id="f8" value="orchestration requests" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p8" target="k8s">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="f9" value="resource status" style="endArrow=classic;html=1;exitX=0;exitY=0.25;entryX=1;entryY=0.75;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="k8s" target="p8">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- DATA FLOWS: Process to Process -->
+        
+        <!-- P1 to P2 -->
+        <mxCell id="f10" value="validated source code" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p1" target="p2">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P2 to P3 -->
+        <mxCell id="f11" value="static findings" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p2" target="p3">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P3 to P4 -->
+        <mxCell id="f12" value="fuzz targets" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p3" target="p4">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P4 to P5 -->
+        <mxCell id="f13" value="compiled harnesses" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p4" target="p5">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5 to P6 -->
+        <mxCell id="f14" value="crash data" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p5" target="p6">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P6 to P7 -->
+        <mxCell id="f15" value="triaged vulnerabilities" style="endArrow=classic;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p6" target="p7">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- DATA FLOWS: Process to Data Store -->
+        
+        <!-- P1 to D1 -->
+        <mxCell id="f16" value="source files" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p1" target="d1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P1 to D2 -->
+        <mxCell id="f17" value="scan metadata" style="endArrow=classic;html=1;exitX=1;exitY=1;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p1" target="d2">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P2 to D3 -->
+        <mxCell id="f18" value="vulnerability data" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p2" target="d3">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P3 to D4 -->
+        <mxCell id="f19" value="fuzz plan" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p3" target="d4">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P4 to D5 -->
+        <mxCell id="f20" value="harness source" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p4" target="d5">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5 to D6 -->
+        <mxCell id="f21" value="crash artifacts" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p5" target="d6">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P7 to D7 -->
+        <mxCell id="f22" value="formatted reports" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p7" target="d7">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P8 to D8 -->
+        <mxCell id="f23" value="metrics data" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p8" target="d8">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- DATA FLOWS: Data Store to Process -->
+        
+        <!-- D1 to P2 -->
+        <mxCell id="f24" value="source code" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d1" target="p2">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D2 to P7 -->
+        <mxCell id="f25" value="scan records" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d2" target="p7">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D3 to P3 -->
+        <mxCell id="f26" value="findings data" style="endArrow=classic;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d3" target="p3">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D4 to P4 -->
+        <mxCell id="f27" value="target specifications" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d4" target="p4">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D5 to P5 -->
+        <mxCell id="f28" value="harness binaries" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d5" target="p5">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D6 to P6 -->
+        <mxCell id="f29" value="crash files" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d6" target="p6">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D7 to P7 (read for updates) -->
+        <mxCell id="f30" value="existing reports" style="endArrow=classic;html=1;exitX=0;exitY=0.5;entryX=0;entryY=0.75;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d7" target="p7">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- D8 to Monitoring -->
+        <mxCell id="f31" value="aggregated metrics" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0.5;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d8" target="monitoring">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5 to P8 (resource coordination) -->
+        <mxCell id="f32" value="resource requests" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p5" target="p8">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="f33" value="resource allocation" style="endArrow=classic;html=1;exitX=0.25;exitY=0;entryX=0.75;entryY=1;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p8" target="p5">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- LEGEND -->
+        <mxCell id="legend_box" value="LEGEND - Gane &amp; Sarson Notation" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1100" width="1640" height="120" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_entity" value="External Entity" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=11;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1140" width="120" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_process" value="1&#xa;Process" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=11;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="260" y="1140" width="60" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_datastore" value="D1    Data Store" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=11;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="360" y="1150" width="150" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_flow" value="" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#000000;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="550" y="1170" as="sourcePoint"/>
+            <mxPoint x="650" y="1170" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_flow_text" value="data flow (noun phrase)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="660" y="1160" width="160" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="note1" value="Note: All processes are numbered (1-8)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="1140" width="250" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="note2" value="Note: All data stores are labeled (D1-D8)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="1165" width="270" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="note3" value="Note: Data flows use noun phrases only" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="1190" width="270" height="20" as="geometry"/>
+        </mxCell>
+        
+        <!-- PROCESS DESCRIPTIONS BOX -->
+        <mxCell id="desc_box" value="PROCESS DESCRIPTIONS" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1250" width="800" height="120" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="desc_text" value="1. Receive and Validate Input - Accept code submissions, authenticate users, validate inputs&#xa;2. Perform Static Analysis - Execute Cppcheck/CodeQL on source code to detect vulnerabilities&#xa;3. Generate Fuzz Plan - Create fuzzing targets from static analysis findings&#xa;4. Generate Harnesses - Produce LibFuzzer-compatible test harnesses for each target&#xa;5. Execute Fuzzing - Run fuzzing campaigns to discover crashes and vulnerabilities&#xa;6. Triage Results - Analyze crashes, deduplicate, and assess severity&#xa;7. Generate Reports - Create vulnerability reports, patches, and reproduction kits&#xa;8. Manage Resources - Coordinate container orchestration and system resources" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1280" width="780" height="80" as="geometry"/>
+        </mxCell>
+        
+        <!-- DATA STORE DESCRIPTIONS BOX -->
+        <mxCell id="store_box" value="DATA STORE DESCRIPTIONS" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="920" y="1250" width="800" height="120" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="store_text" value="D1. Source Code - Uploaded or cloned source files&#xa;D2. Scan Records - Metadata about scan sessions and configurations&#xa;D3. Analysis Findings - Raw vulnerability data from static analysis tools&#xa;D4. Fuzz Plans - Structured fuzzing targets with priorities and metadata&#xa;D5. Harness Code - Generated fuzzing harness source and compiled binaries&#xa;D6. Crash Artifacts - Crash dumps, inputs, and stack traces from fuzzing&#xa;D7. Vulnerability Reports - Formatted reports with patches and reproduction steps&#xa;D8. System Metrics - Performance data, resource usage, and health statistics" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="930" y="1280" width="780" height="80" as="geometry"/>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

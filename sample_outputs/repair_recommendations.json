@@ -1,0 +1,276 @@
+{
+  "scan_id": "sample-scan-2024-001",
+  "timestamp": "2024-01-27T16:00:00Z",
+  "total_vulnerabilities": 5,
+  "repairable_vulnerabilities": 4,
+  "repair_success_rate": "80%",
+  "repair_recommendations": [
+    {
+      "vulnerability_id": "VULN-2024-001",
+      "title": "Critical Buffer Overflow in parse_input()",
+      "severity": "critical",
+      "file": "src/parser.c",
+      "line": 145,
+      "function": "parse_input",
+      "repair_strategy": "bounds_checking",
+      "confidence": "high",
+      "estimated_effort": "low",
+      "risk_assessment": "low",
+      "automated_repair_available": true,
+      "repair_options": [
+        {
+          "option_id": "repair_001_safe",
+          "type": "safe_string_functions",
+          "description": "Replace strcpy with strncpy and add null termination",
+          "risk_level": "minimal",
+          "code_changes": [
+            {
+              "operation": "replace",
+              "original_code": "strcpy(buffer, input);",
+              "fixed_code": "strncpy(buffer, input, max_size - 1);\nbuffer[max_size - 1] = '\\0';",
+              "line_number": 144,
+              "explanation": "Use bounded string copy with explicit null termination"
+            }
+          ],
+          "validation_tests": [
+            "Test with input longer than buffer size",
+            "Test with exact buffer size input",
+            "Test with empty input"
+          ]
+        },
+        {
+          "option_id": "repair_001_robust",
+          "type": "input_validation",
+          "description": "Add comprehensive input validation and safe string handling",
+          "risk_level": "very_low",
+          "code_changes": [
+            {
+              "operation": "replace",
+              "original_code": "int parse_input(char* input, char* buffer, size_t max_size) {\n    if (!input || !buffer) return -1;\n    \n    // Vulnerable line - no bounds checking\n    strcpy(buffer, input);  // VULNERABLE\n    \n    return strlen(buffer);\n}",
+              "fixed_code": "int parse_input(char* input, char* buffer, size_t max_size) {\n    if (!input || !buffer || max_size == 0) return -1;\n    \n    // Check input length before copying\n    size_t input_len = strlen(input);\n    if (input_len >= max_size) {\n        return -1;  // Input too long\n    }\n    \n    // Safe string copy\n    strncpy(buffer, input, max_size - 1);\n    buffer[max_size - 1] = '\\0';\n    \n    return (int)strlen(buffer);\n}",
+              "line_number": 140,
+              "explanation": "Add input length validation and use safe string functions"
+            }
+          ],
+          "validation_tests": [
+            "Test with oversized input (should return -1)",
+            "Test with null parameters (should return -1)",
+            "Test with valid input (should succeed)"
+          ]
+        }
+      ],
+      "recommended_option": "repair_001_robust",
+      "testing_requirements": {
+        "unit_tests": true,
+        "integration_tests": true,
+        "regression_tests": true,
+        "fuzzing_validation": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-002",
+      "title": "Critical Use-After-Free in cleanup_session()",
+      "severity": "critical",
+      "file": "src/session.c",
+      "line": 89,
+      "function": "cleanup_session",
+      "repair_strategy": "memory_safety",
+      "confidence": "high",
+      "estimated_effort": "medium",
+      "risk_assessment": "low",
+      "automated_repair_available": true,
+      "repair_options": [
+        {
+          "option_id": "repair_002_nullify",
+          "type": "pointer_nullification",
+          "description": "Set pointer to NULL after free to prevent use-after-free",
+          "risk_level": "low",
+          "code_changes": [
+            {
+              "operation": "replace",
+              "original_code": "free(session->data);\nif (session->data->active) { // Use after free",
+              "fixed_code": "if (session->data) {\n    free(session->data);\n    session->data = NULL;\n}\nif (session->data && session->data->active) {",
+              "line_number": 89,
+              "explanation": "Add null check and nullify pointer after free"
+            }
+          ],
+          "validation_tests": [
+            "Test cleanup with valid session data",
+            "Test cleanup with already freed data",
+            "Test cleanup with NULL session"
+          ]
+        },
+        {
+          "option_id": "repair_002_reorder",
+          "type": "operation_reordering",
+          "description": "Reorder operations to check before freeing",
+          "risk_level": "minimal",
+          "code_changes": [
+            {
+              "operation": "replace",
+              "original_code": "free(session->data);\nif (session->data->active) { // Use after free",
+              "fixed_code": "if (session->data && session->data->active) {\n    // Process active session data before freeing\n    handle_active_session(session->data);\n}\nif (session->data) {\n    free(session->data);\n    session->data = NULL;\n}",
+              "line_number": 89,
+              "explanation": "Check and use data before freeing, then nullify pointer"
+            }
+          ],
+          "validation_tests": [
+            "Test with active session data",
+            "Test with inactive session data",
+            "Test with NULL session data"
+          ]
+        }
+      ],
+      "recommended_option": "repair_002_reorder",
+      "testing_requirements": {
+        "unit_tests": true,
+        "integration_tests": true,
+        "regression_tests": true,
+        "fuzzing_validation": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-003",
+      "title": "High Severity Format String in log_error()",
+      "severity": "high",
+      "file": "src/logging.c",
+      "line": 78,
+      "function": "log_error",
+      "repair_strategy": "format_string_safety",
+      "confidence": "high",
+      "estimated_effort": "low",
+      "risk_assessment": "minimal",
+      "automated_repair_available": true,
+      "repair_options": [
+        {
+          "option_id": "repair_003_format",
+          "type": "safe_format_string",
+          "description": "Use safe format string with %s specifier",
+          "risk_level": "minimal",
+          "code_changes": [
+            {
+              "operation": "replace",
+              "original_code": "printf(error_msg); // User-controlled format string",
+              "fixed_code": "printf(\"%s\", error_msg); // Safe format string",
+              "line_number": 78,
+              "explanation": "Use explicit format specifier to prevent format string attacks"
+            }
+          ],
+          "validation_tests": [
+            "Test with normal error message",
+            "Test with format specifiers in message (%s, %d, %n)",
+            "Test with malicious format string"
+          ]
+        }
+      ],
+      "recommended_option": "repair_003_format",
+      "testing_requirements": {
+        "unit_tests": true,
+        "integration_tests": false,
+        "regression_tests": true,
+        "fuzzing_validation": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-004",
+      "title": "Medium Severity Integer Overflow in allocate_buffer()",
+      "severity": "medium",
+      "file": "src/memory.c",
+      "line": 67,
+      "function": "allocate_buffer",
+      "repair_strategy": "overflow_protection",
+      "confidence": "medium",
+      "estimated_effort": "medium",
+      "risk_assessment": "low",
+      "automated_repair_available": true,
+      "repair_options": [
+        {
+          "option_id": "repair_004_check",
+          "type": "overflow_detection",
+          "description": "Add overflow detection before multiplication",
+          "risk_level": "low",
+          "code_changes": [
+            {
+              "operation": "replace",
+              "original_code": "size_t total = count * item_size; // Potential overflow",
+              "fixed_code": "// Check for overflow before multiplication\nif (count != 0 && item_size > SIZE_MAX / count) {\n    return NULL;  // Overflow would occur\n}\nsize_t total = count * item_size;",
+              "line_number": 67,
+              "explanation": "Check for potential overflow before performing multiplication"
+            }
+          ],
+          "validation_tests": [
+            "Test with values that would cause overflow",
+            "Test with maximum safe values",
+            "Test with zero values"
+          ]
+        }
+      ],
+      "recommended_option": "repair_004_check",
+      "testing_requirements": {
+        "unit_tests": true,
+        "integration_tests": true,
+        "regression_tests": true,
+        "fuzzing_validation": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-005",
+      "title": "Medium Severity Null Pointer Dereference in process_request()",
+      "severity": "medium",
+      "file": "src/request.c",
+      "line": 234,
+      "function": "process_request",
+      "repair_strategy": "null_check",
+      "confidence": "high",
+      "estimated_effort": "low",
+      "risk_assessment": "minimal",
+      "automated_repair_available": false,
+      "repair_not_available_reason": "Requires understanding of proper error handling semantics for this API",
+      "manual_repair_guidance": {
+        "description": "Add null pointer validation at function entry",
+        "suggested_approach": "Determine appropriate error return value and add null check",
+        "code_location": "Beginning of process_request function",
+        "considerations": [
+          "What should the function return when request is NULL?",
+          "Should this log an error or fail silently?",
+          "Are there other parameters that also need validation?"
+        ]
+      },
+      "testing_requirements": {
+        "unit_tests": true,
+        "integration_tests": true,
+        "regression_tests": true,
+        "fuzzing_validation": false
+      }
+    }
+  ],
+  "repair_summary": {
+    "total_repairs_attempted": 4,
+    "successful_repairs": 4,
+    "failed_repairs": 0,
+    "manual_review_required": 1,
+    "estimated_total_effort": "medium",
+    "risk_assessment": "low"
+  },
+  "validation_plan": {
+    "unit_testing": {
+      "required": true,
+      "coverage_target": "95%",
+      "focus_areas": ["boundary conditions", "error paths", "null inputs"]
+    },
+    "integration_testing": {
+      "required": true,
+      "test_scenarios": ["normal operation", "error conditions", "edge cases"]
+    },
+    "regression_testing": {
+      "required": true,
+      "baseline": "pre-repair functionality",
+      "automated": true
+    },
+    "security_validation": {
+      "fuzzing_required": true,
+      "penetration_testing": false,
+      "code_review": true
+    }
+  }
+}

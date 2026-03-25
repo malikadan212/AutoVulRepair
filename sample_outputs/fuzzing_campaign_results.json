@@ -1,0 +1,186 @@
+{
+  "campaign_id": "fuzz-campaign-2024-001",
+  "start_time": "2024-01-27T14:32:15Z",
+  "end_time": "2024-01-27T15:55:42Z",
+  "duration": "1h 23m 27s",
+  "total_harnesses": 7,
+  "harnesses_executed": 7,
+  "overall_status": "completed",
+  "summary": {
+    "total_executions": 2847392,
+    "total_crashes": 8,
+    "unique_crashes": 5,
+    "coverage_achieved": "67.3%",
+    "new_edges_found": 1247,
+    "corpus_size": 892
+  },
+  "harness_results": [
+    {
+      "target_id": "parser_parse_input_oob",
+      "harness_file": "parser_parse_input_harness",
+      "execution_status": "completed_with_crashes",
+      "execution_time": "18m 45s",
+      "executions": 456789,
+      "crashes_found": 3,
+      "coverage": "78.4%",
+      "edges_found": 234,
+      "corpus_growth": 156,
+      "crashes": [
+        {
+          "crash_id": "crash_001",
+          "crash_type": "heap-buffer-overflow",
+          "sanitizer": "AddressSanitizer",
+          "crash_input_size": 1024,
+          "crash_input_hash": "sha256:a1b2c3d4e5f6...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7f8b4c000810\nREAD of size 1 at 0x7f8b4c000810 thread T0\n    #0 0x4a2b3c in parse_input src/parser.c:145:12",
+          "severity": "high"
+        },
+        {
+          "crash_id": "crash_002", 
+          "crash_type": "heap-buffer-overflow",
+          "sanitizer": "AddressSanitizer",
+          "crash_input_size": 2048,
+          "crash_input_hash": "sha256:b2c3d4e5f6g7...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7f8b4c001020\nWRITE of size 8 at 0x7f8b4c001020 thread T0\n    #0 0x4a2b5d in parse_input src/parser.c:147:8",
+          "severity": "critical"
+        },
+        {
+          "crash_id": "crash_003",
+          "crash_type": "stack-buffer-overflow", 
+          "sanitizer": "AddressSanitizer",
+          "crash_input_size": 512,
+          "crash_input_hash": "sha256:c3d4e5f6g7h8...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7fff12345678\nWRITE of size 1 at 0x7fff12345678 thread T0\n    #0 0x4a2b1a in parse_input src/parser.c:149:5",
+          "severity": "high"
+        }
+      ]
+    },
+    {
+      "target_id": "session_cleanup_session_uaf",
+      "harness_file": "session_cleanup_session_harness",
+      "execution_status": "completed_with_crashes",
+      "execution_time": "22m 12s",
+      "executions": 387456,
+      "crashes_found": 2,
+      "coverage": "65.2%",
+      "edges_found": 189,
+      "corpus_growth": 134,
+      "crashes": [
+        {
+          "crash_id": "crash_004",
+          "crash_type": "heap-use-after-free",
+          "sanitizer": "AddressSanitizer", 
+          "crash_input_size": 32,
+          "crash_input_hash": "sha256:d4e5f6g7h8i9...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: heap-use-after-free on address 0x7f8b4c000400\nREAD of size 4 at 0x7f8b4c000400 thread T0\n    #0 0x4a3c2d in cleanup_session src/session.c:91:8",
+          "severity": "critical"
+        },
+        {
+          "crash_id": "crash_005",
+          "crash_type": "heap-use-after-free",
+          "sanitizer": "AddressSanitizer",
+          "crash_input_size": 64,
+          "crash_input_hash": "sha256:e5f6g7h8i9j0...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: heap-use-after-free on address 0x7f8b4c000408\nWRITE of size 1 at 0x7f8b4c000408 thread T0\n    #0 0x4a3c4f in cleanup_session src/session.c:93:12",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "target_id": "memory_allocate_buffer_integer-ub",
+      "harness_file": "memory_allocate_buffer_harness",
+      "execution_status": "completed_with_crashes",
+      "execution_time": "15m 33s",
+      "executions": 523847,
+      "crashes_found": 1,
+      "coverage": "45.7%",
+      "edges_found": 98,
+      "corpus_growth": 87,
+      "crashes": [
+        {
+          "crash_id": "crash_006",
+          "crash_type": "signed-integer-overflow",
+          "sanitizer": "UndefinedBehaviorSanitizer",
+          "crash_input_size": 16,
+          "crash_input_hash": "sha256:f6g7h8i9j0k1...",
+          "stack_trace_preview": "runtime error: signed integer overflow: 4294967295 * 1024 cannot be represented in type 'long'\n    #0 0x4a4d1e in allocate_buffer src/memory.c:67:15",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "target_id": "request_process_request_null-deref",
+      "harness_file": "request_process_request_harness",
+      "execution_status": "completed_with_crashes",
+      "execution_time": "19m 8s",
+      "executions": 445623,
+      "crashes_found": 1,
+      "coverage": "72.1%",
+      "edges_found": 167,
+      "corpus_growth": 123,
+      "crashes": [
+        {
+          "crash_id": "crash_007",
+          "crash_type": "segv",
+          "sanitizer": "AddressSanitizer",
+          "crash_input_size": 4,
+          "crash_input_hash": "sha256:g7h8i9j0k1l2...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000\nThe signal is caused by a READ memory access.\nNull pointer dereference.\n    #0 0x4a5e3f in process_request src/request.c:234:5",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "target_id": "logging_log_error_format-string",
+      "harness_file": "logging_log_error_harness",
+      "execution_status": "completed_with_crashes",
+      "execution_time": "12m 45s",
+      "executions": 634521,
+      "crashes_found": 1,
+      "coverage": "58.9%",
+      "edges_found": 145,
+      "corpus_growth": 98,
+      "crashes": [
+        {
+          "crash_id": "crash_008",
+          "crash_type": "stack-buffer-overflow",
+          "sanitizer": "AddressSanitizer",
+          "crash_input_size": 256,
+          "crash_input_hash": "sha256:h8i9j0k1l2m3...",
+          "stack_trace_preview": "ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7fff87654321\nWRITE of size 8 at 0x7fff87654321 thread T0\n    #0 0x4a6f5a in log_error src/logging.c:78:12",
+          "severity": "high"
+        }
+      ]
+    },
+    {
+      "target_id": "config_get_config_value_oob",
+      "harness_file": "config_get_config_value_harness",
+      "execution_status": "completed_no_crashes",
+      "execution_time": "16m 22s",
+      "executions": 498765,
+      "crashes_found": 0,
+      "coverage": "83.6%",
+      "edges_found": 201,
+      "corpus_growth": 145,
+      "crashes": []
+    },
+    {
+      "target_id": "error_error_cleanup_uaf",
+      "harness_file": "error_error_cleanup_harness",
+      "execution_status": "completed_no_crashes",
+      "execution_time": "18m 42s",
+      "executions": 400391,
+      "crashes_found": 0,
+      "coverage": "69.4%",
+      "edges_found": 213,
+      "corpus_growth": 149,
+      "crashes": []
+    }
+  ],
+  "performance_metrics": {
+    "average_exec_per_second": 567,
+    "peak_memory_usage": "2.3 GB",
+    "cpu_utilization": "78%",
+    "disk_usage": "1.2 GB"
+  }
+}

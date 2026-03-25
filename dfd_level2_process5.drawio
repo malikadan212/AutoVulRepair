@@ -1,0 +1,325 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="DFD Level 2 - Process 5 Decomposition" id="dfd2p5">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- Title -->
+        <mxCell id="title" value="Data Flow Diagram - Level 2 (Gane &amp; Sarson Notation)&#xa;Process 5: Execute Fuzzing - Detailed Decomposition" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="20" width="800" height="50" as="geometry"/>
+        </mxCell>
+        
+        <!-- System Boundary Box -->
+        <mxCell id="boundary" value="Process 5 Boundary" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;strokeWidth=3;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="150" width="1200" height="900" as="geometry"/>
+        </mxCell>
+        
+        <!-- SUB-PROCESSES (Decimal numbered circles) -->
+        
+        <!-- Process 5.1: Initialize Campaign -->
+        <mxCell id="p51" value="5.1&#xa;&#xa;Initialize&#xa;Campaign" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="400" y="250" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5.2: Prepare Corpus -->
+        <mxCell id="p52" value="5.2&#xa;&#xa;Prepare&#xa;Corpus" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="250" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5.3: Execute Fuzzer -->
+        <mxCell id="p53" value="5.3&#xa;&#xa;Execute&#xa;Fuzzer" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="250" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5.4: Monitor Execution -->
+        <mxCell id="p54" value="5.4&#xa;&#xa;Monitor&#xa;Execution" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="250" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5.5: Detect Crashes -->
+        <mxCell id="p55" value="5.5&#xa;&#xa;Detect&#xa;Crashes" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="500" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5.6: Collect Coverage -->
+        <mxCell id="p56" value="5.6&#xa;&#xa;Collect&#xa;Coverage" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="500" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 5.7: Generate Campaign Report -->
+        <mxCell id="p57" value="5.7&#xa;&#xa;Generate Campaign&#xa;Report" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="750" width="110" height="110" as="geometry"/>
+        </mxCell>
+        
+        <!-- DATA STORES (From Level 1 - same numbering) -->
+        
+        <!-- D5: Harness Code (Input to Process 5) -->
+        <mxCell id="d5" value="D5    Harness Code" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="80" y="285" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D6: Crash Artifacts (Output from Process 5) -->
+        <mxCell id="d6" value="D6    Crash Artifacts" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="535" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- D8: System Metrics (for monitoring) -->
+        <mxCell id="d8" value="D8    System Metrics" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=12;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="285" width="200" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- EXTERNAL ENTITIES (From Level 1) -->
+        
+        <!-- Monitoring System -->
+        <mxCell id="monitoring" value="Monitoring&#xa;System" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="200" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- Process 8: Manage Resources -->
+        <mxCell id="p8_external" value="Process 8&#xa;Manage&#xa;Resources" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#000000;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="750" width="120" height="70" as="geometry"/>
+        </mxCell>
+        
+        <!-- BOUNDARY DATA FLOWS (From Level 1) -->
+        
+        <!-- INPUT: From Process 4 (compiled harnesses) -->
+        <mxCell id="input_p4" value="compiled harnesses" style="endArrow=classic;html=1;entryX=0;entryY=0.5;strokeWidth=3;fontSize=12;strokeColor=#0000FF;" edge="1" parent="1" target="p51">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="200" y="305" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="label_p4" value="FROM: Process 4&#xa;(Generate Harnesses)" style="text;html=1;strokeColor=none;fillColor=#fff2cc;align=center;verticalAlign=middle;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="140" height="35" as="geometry"/>
+        </mxCell>
+        
+        <!-- OUTPUT: To Process 6 (crash data) -->
+        <mxCell id="output_p6" value="crash data" style="endArrow=classic;html=1;exitX=1;exitY=0.5;strokeWidth=3;fontSize=12;strokeColor=#FF0000;" edge="1" parent="1" source="p55">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="1600" y="555" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="label_p6" value="TO: Process 6&#xa;(Triage Results)" style="text;html=1;strokeColor=none;fillColor=#fff2cc;align=center;verticalAlign=middle;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1580" y="510" width="140" height="35" as="geometry"/>
+        </mxCell>
+        
+        <!-- OUTPUT: To Monitoring System (performance metrics) -->
+        <mxCell id="output_monitoring" value="performance metrics" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=3;fontSize=12;strokeColor=#FF0000;" edge="1" parent="1" source="p54" target="monitoring">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- INPUT/OUTPUT: Process 8 (resource requests/allocation) -->
+        <mxCell id="output_p8" value="resource requests" style="endArrow=classic;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.25;strokeWidth=3;fontSize=12;strokeColor=#FF0000;" edge="1" parent="1" source="p51" target="p8_external">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="input_p8" value="resource allocation" style="endArrow=classic;html=1;exitX=1;exitY=0.75;entryX=0;entryY=0.75;strokeWidth=3;fontSize=12;strokeColor=#0000FF;" edge="1" parent="1" source="p8_external" target="p51">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- INTERNAL DATA FLOWS (Between sub-processes) -->
+        
+        <!-- P5.1 to P5.2 -->
+        <mxCell id="f1" value="campaign configuration" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p51" target="p52">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.2 to P5.3 -->
+        <mxCell id="f2" value="seed corpus" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p52" target="p53">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.3 to P5.4 -->
+        <mxCell id="f3" value="execution status" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p53" target="p54">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.3 to P5.5 -->
+        <mxCell id="f4" value="fuzzer output" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p53" target="p55">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.3 to P5.6 -->
+        <mxCell id="f5" value="coverage data" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p53" target="p56">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.4 to P5.3 (feedback loop) -->
+        <mxCell id="f6" value="control signals" style="endArrow=classic;html=1;exitX=0;exitY=0.75;entryX=1;entryY=0.75;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p54" target="p53">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.5 to P5.7 -->
+        <mxCell id="f7" value="crash summaries" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=1;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p55" target="p57">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.6 to P5.7 -->
+        <mxCell id="f8" value="coverage statistics" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p56" target="p57">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.4 to P5.7 -->
+        <mxCell id="f9" value="execution metrics" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p54" target="p57">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- DATA STORE INTERACTIONS -->
+        
+        <!-- D5 to P5.1 -->
+        <mxCell id="f10" value="harness binaries" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="d5" target="p51">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.5 to D6 -->
+        <mxCell id="f11" value="crash artifacts" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p55" target="d6">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- P5.4 to D8 -->
+        <mxCell id="f12" value="metrics data" style="endArrow=classic;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;strokeWidth=2;fontSize=11;strokeColor=#000000;" edge="1" parent="1" source="p54" target="d8">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="400" y="600" as="sourcePoint"/>
+            <mxPoint x="450" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- LEGEND -->
+        <mxCell id="legend_box" value="LEGEND - Gane &amp; Sarson Notation" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1100" width="1640" height="100" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_process" value="5.1&#xa;Sub-Process" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#000000;fontSize=11;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1135" width="60" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_datastore" value="D5    Data Store" style="shape=partialRectangle;whiteSpace=wrap;html=1;left=0;right=0;fillColor=none;strokeColor=#000000;fontSize=11;strokeWidth=2;align=left;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1145" width="150" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_entity" value="External Entity" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#000000;fontSize=11;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="390" y="1145" width="120" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_internal" value="" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#000000;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="550" y="1165" as="sourcePoint"/>
+            <mxPoint x="650" y="1165" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_internal_text" value="internal data flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="660" y="1155" width="130" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_boundary_in" value="" style="endArrow=classic;html=1;strokeWidth=3;strokeColor=#0000FF;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="830" y="1165" as="sourcePoint"/>
+            <mxPoint x="930" y="1165" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_boundary_in_text" value="boundary input" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="940" y="1155" width="110" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_boundary_out" value="" style="endArrow=classic;html=1;strokeWidth=3;strokeColor=#FF0000;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1090" y="1165" as="sourcePoint"/>
+            <mxPoint x="1190" y="1165" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="leg_boundary_out_text" value="boundary output" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="1155" width="120" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="leg_boundary_box" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;fontSize=11;strokeWidth=3;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="1145" width="80" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_boundary_text" value="process boundary" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="1155" width="120" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="note1" value="Note: All sub-processes numbered 5.1 - 5.7" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="1135" width="260" height="20" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="note2" value="Note: Boundary flows match Level-1 exactly" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="1175" width="260" height="20" as="geometry"/>
+        </mxCell>
+        
+        <!-- SUB-PROCESS DESCRIPTIONS BOX -->
+        <mxCell id="desc_box" value="SUB-PROCESS DESCRIPTIONS (Process 5 Decomposition)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1230" width="1640" height="140" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="desc_text" value="5.1 Initialize Campaign - Set up fuzzing environment, configure sanitizers, allocate resources, and prepare execution parameters&#xa;&#xa;5.2 Prepare Corpus - Load seed files, generate initial test cases, and organize corpus directory structure&#xa;&#xa;5.3 Execute Fuzzer - Run LibFuzzer with configured harnesses, sanitizers, and fuzzing parameters (iterations, timeout, memory limits)&#xa;&#xa;5.4 Monitor Execution - Track fuzzing progress, resource usage, execution speed, and corpus growth in real-time&#xa;&#xa;5.5 Detect Crashes - Identify crashes, hangs, and sanitizer violations; capture crash inputs and stack traces&#xa;&#xa;5.6 Collect Coverage - Gather code coverage data, track new edges discovered, and measure fuzzing effectiveness&#xa;&#xa;5.7 Generate Campaign Report - Compile fuzzing statistics, crash summaries, coverage metrics, and execution timeline" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1260" width="1620" height="100" as="geometry"/>
+        </mxCell>
+        
+        <!-- BALANCING VERIFICATION BOX -->
+        <mxCell id="balance_box" value="LEVEL-1 TO LEVEL-2 BALANCING VERIFICATION" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1400" width="800" height="120" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="balance_text" value="✓ INPUTS from Level-1 Process 5:&#xa;  • compiled harnesses (from Process 4)&#xa;  • harness binaries (from D5: Harness Code)&#xa;  • resource allocation (from Process 8)&#xa;&#xa;✓ OUTPUTS from Level-1 Process 5:&#xa;  • crash data (to Process 6)&#xa;  • crash artifacts (to D6: Crash Artifacts)&#xa;  • performance metrics (to Monitoring System)&#xa;  • resource requests (to Process 8)&#xa;  • metrics data (to D8: System Metrics)&#xa;&#xa;All boundary flows are preserved with identical names and connections." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1430" width="780" height="80" as="geometry"/>
+        </mxCell>
+        
+        <!-- DATA FLOW SUMMARY BOX -->
+        <mxCell id="summary_box" value="DATA FLOW SUMMARY" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;verticalAlign=top;align=left;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="920" y="1400" width="800" height="120" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="summary_text" value="Internal Flow Sequence:&#xa;1. Initialize campaign with resources → 2. Prepare seed corpus&#xa;3. Execute fuzzer with harnesses → 4. Monitor execution in real-time&#xa;5. Detect crashes and violations → 6. Collect coverage data&#xa;7. Generate comprehensive campaign report&#xa;&#xa;Key Decision Points:&#xa;• Campaign initialization coordinates with resource manager&#xa;• Monitoring provides feedback loop to control fuzzer execution&#xa;• Parallel collection of crashes and coverage data&#xa;• Real-time metrics sent to monitoring system&#xa;• Campaign report aggregates all execution data" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="930" y="1430" width="780" height="80" as="geometry"/>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

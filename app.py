@@ -34,6 +34,10 @@ from src.fuzz_exec.executor import FuzzExecutor
 
 load_dotenv()
 
+# ---------------------------------------------------------------------------
+# Temporary development helper: skip static/dynamic analysis when testing new
+# AI patch module.  This flag is NOT intended for production and can be
+
 # Configure logging with timestamps
 logging.basicConfig(
     level=logging.DEBUG,  # Set to DEBUG to see more details
@@ -1779,7 +1783,7 @@ def scan_public():
             logger.info(f"[SCAN_SUBMISSION] Analysis thread started successfully")
             
             
-            # For form submissions, redirect to detailed findings page
+            # For form submissions, normally redirect to detailed findings page
             if is_form_submission:
                 try:
                     findings_url = url_for('detailed_findings', scan_id=scan_id)

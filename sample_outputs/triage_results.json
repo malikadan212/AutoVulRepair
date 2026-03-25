@@ -1,0 +1,217 @@
+{
+  "triage_timestamp": "2024-01-27T15:56:15Z",
+  "total_crashes": 8,
+  "unique_vulnerabilities": 5,
+  "triage_time": "8m 33s",
+  "severity_distribution": {
+    "critical": 3,
+    "high": 2,
+    "medium": 2,
+    "low": 1
+  },
+  "triaged_vulnerabilities": [
+    {
+      "vulnerability_id": "VULN-2024-001",
+      "title": "Critical Buffer Overflow in parse_input()",
+      "severity": "critical",
+      "cvss_score": 9.8,
+      "cwe": "CWE-119",
+      "affected_function": "parse_input",
+      "source_file": "src/parser.c",
+      "line_number": 145,
+      "bug_class": "Buffer Overflow",
+      "exploitability": "high",
+      "impact": "Remote Code Execution",
+      "related_crashes": ["crash_001", "crash_002", "crash_003"],
+      "crash_signature": "heap-buffer-overflow:parse_input:src/parser.c:145",
+      "root_cause": "The parse_input function uses strcpy() without bounds checking, allowing attackers to overflow the destination buffer with crafted input.",
+      "attack_vector": "Network/Local input processing",
+      "prerequisites": "Attacker can control input to parse_input function",
+      "reproduction_steps": [
+        "1. Create input string longer than destination buffer (1024 bytes)",
+        "2. Call parse_input() with oversized input",
+        "3. Observe heap buffer overflow crash"
+      ],
+      "minimal_reproducer": {
+        "input_size": 1024,
+        "input_pattern": "A" * 1024,
+        "crash_type": "heap-buffer-overflow"
+      },
+      "static_analysis_correlation": {
+        "rule_id": "bufferAccessOutOfBounds",
+        "confidence": "high",
+        "matches_static_finding": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-002",
+      "title": "Critical Use-After-Free in cleanup_session()",
+      "severity": "critical",
+      "cvss_score": 9.1,
+      "cwe": "CWE-416",
+      "affected_function": "cleanup_session",
+      "source_file": "src/session.c",
+      "line_number": 89,
+      "bug_class": "Use-After-Free",
+      "exploitability": "high",
+      "impact": "Memory Corruption, Potential Code Execution",
+      "related_crashes": ["crash_004", "crash_005"],
+      "crash_signature": "heap-use-after-free:cleanup_session:src/session.c:89",
+      "root_cause": "Session data is accessed after being freed, leading to use-after-free condition that can be exploited for arbitrary code execution.",
+      "attack_vector": "Session management API",
+      "prerequisites": "Attacker can trigger session cleanup with controlled session data",
+      "reproduction_steps": [
+        "1. Create session with controlled data structure",
+        "2. Trigger cleanup_session() function",
+        "3. Observe use-after-free crash when freed memory is accessed"
+      ],
+      "minimal_reproducer": {
+        "input_size": 32,
+        "input_pattern": "Controlled session structure",
+        "crash_type": "heap-use-after-free"
+      },
+      "static_analysis_correlation": {
+        "rule_id": "useAfterFree",
+        "confidence": "high",
+        "matches_static_finding": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-003",
+      "title": "High Severity Format String in log_error()",
+      "severity": "high",
+      "cvss_score": 8.2,
+      "cwe": "CWE-134",
+      "affected_function": "log_error",
+      "source_file": "src/logging.c",
+      "line_number": 78,
+      "bug_class": "Format String",
+      "exploitability": "medium",
+      "impact": "Information Disclosure, Potential Code Execution",
+      "related_crashes": ["crash_008"],
+      "crash_signature": "stack-buffer-overflow:log_error:src/logging.c:78",
+      "root_cause": "User-controlled format string passed directly to printf() allows format string attacks.",
+      "attack_vector": "Error logging with user-controlled messages",
+      "prerequisites": "Attacker can control error messages passed to log_error()",
+      "reproduction_steps": [
+        "1. Craft malicious format string with %n specifiers",
+        "2. Trigger error condition that logs the malicious string",
+        "3. Observe format string vulnerability exploitation"
+      ],
+      "minimal_reproducer": {
+        "input_size": 256,
+        "input_pattern": "%n%n%n%n%n%n%n%n",
+        "crash_type": "stack-buffer-overflow"
+      },
+      "static_analysis_correlation": {
+        "rule_id": "formatString",
+        "confidence": "high",
+        "matches_static_finding": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-004",
+      "title": "Medium Severity Integer Overflow in allocate_buffer()",
+      "severity": "medium",
+      "cvss_score": 6.5,
+      "cwe": "CWE-190",
+      "affected_function": "allocate_buffer",
+      "source_file": "src/memory.c",
+      "line_number": 67,
+      "bug_class": "Integer Overflow",
+      "exploitability": "medium",
+      "impact": "Memory Corruption, Potential Heap Overflow",
+      "related_crashes": ["crash_006"],
+      "crash_signature": "signed-integer-overflow:allocate_buffer:src/memory.c:67",
+      "root_cause": "Integer overflow in size calculation (count * item_size) can wrap around, leading to undersized allocation and subsequent heap overflow.",
+      "attack_vector": "Memory allocation with large parameters",
+      "prerequisites": "Attacker can control count and item_size parameters",
+      "reproduction_steps": [
+        "1. Call allocate_buffer with large count and item_size values",
+        "2. Trigger integer overflow in multiplication",
+        "3. Observe undersized allocation and potential heap corruption"
+      ],
+      "minimal_reproducer": {
+        "input_size": 16,
+        "input_pattern": "count=0xFFFFFFFF, item_size=1024",
+        "crash_type": "signed-integer-overflow"
+      },
+      "static_analysis_correlation": {
+        "rule_id": "integerOverflow",
+        "confidence": "medium",
+        "matches_static_finding": true
+      }
+    },
+    {
+      "vulnerability_id": "VULN-2024-005",
+      "title": "Medium Severity Null Pointer Dereference in process_request()",
+      "severity": "medium",
+      "cvss_score": 5.3,
+      "cwe": "CWE-476",
+      "affected_function": "process_request",
+      "source_file": "src/request.c",
+      "line_number": 234,
+      "bug_class": "Null Pointer Dereference",
+      "exploitability": "low",
+      "impact": "Denial of Service",
+      "related_crashes": ["crash_007"],
+      "crash_signature": "segv:process_request:src/request.c:234",
+      "root_cause": "Function does not validate request parameter before dereferencing, leading to null pointer dereference when called with NULL.",
+      "attack_vector": "API call with null request parameter",
+      "prerequisites": "Attacker can call process_request with NULL parameter",
+      "reproduction_steps": [
+        "1. Call process_request() with NULL parameter",
+        "2. Observe segmentation fault when NULL pointer is dereferenced"
+      ],
+      "minimal_reproducer": {
+        "input_size": 4,
+        "input_pattern": "NULL pointer",
+        "crash_type": "segv"
+      },
+      "static_analysis_correlation": {
+        "rule_id": "nullPointer",
+        "confidence": "high",
+        "matches_static_finding": true
+      }
+    }
+  ],
+  "crash_deduplication": {
+    "total_raw_crashes": 8,
+    "unique_crash_signatures": 5,
+    "deduplication_rate": "37.5%",
+    "grouped_crashes": {
+      "heap-buffer-overflow:parse_input": ["crash_001", "crash_002", "crash_003"],
+      "heap-use-after-free:cleanup_session": ["crash_004", "crash_005"],
+      "stack-buffer-overflow:log_error": ["crash_008"],
+      "signed-integer-overflow:allocate_buffer": ["crash_006"],
+      "segv:process_request": ["crash_007"]
+    }
+  },
+  "remediation_priority": [
+    {
+      "vulnerability_id": "VULN-2024-001",
+      "priority": 1,
+      "reason": "Critical severity, high exploitability, RCE impact"
+    },
+    {
+      "vulnerability_id": "VULN-2024-002", 
+      "priority": 2,
+      "reason": "Critical severity, high exploitability, memory corruption"
+    },
+    {
+      "vulnerability_id": "VULN-2024-003",
+      "priority": 3,
+      "reason": "High severity, format string vulnerability"
+    },
+    {
+      "vulnerability_id": "VULN-2024-004",
+      "priority": 4,
+      "reason": "Medium severity, integer overflow with heap impact"
+    },
+    {
+      "vulnerability_id": "VULN-2024-005",
+      "priority": 5,
+      "reason": "Medium severity, DoS impact only"
+    }
+  ]
+}
