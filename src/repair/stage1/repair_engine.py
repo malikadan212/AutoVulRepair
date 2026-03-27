@@ -10,8 +10,16 @@ from .classifier import classify_vulnerability, is_stage1_repairable
 from .null_pointer import NullPointerRepair
 from .uninitialized_var import UninitializedVarRepair
 from .dead_code import DeadCodeRepair
-from .integer_overflow import IntegerOverflowRepair
+from .integer_overflow import IntegerOverflowFixer
+from .buffer_overflow import BufferOverflowFixer
+from .temporal_safety_cets import CETSFixer
+from .memory_leak import MemoryLeakFixer
+from .format_string_vulnerability import PHPTaintFixer
+from .race_condition import RaceConditionFixer
+from .file_handling import FileHandlingFixer
 from .memfix import MemFixRepair
+import uuid
+import difflib
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +43,50 @@ class Stage1RepairEngine:
         self.null_pointer_repair = NullPointerRepair()
         self.uninitialized_var_repair = UninitializedVarRepair()
         self.dead_code_repair = DeadCodeRepair()
-        self.integer_overflow_repair = IntegerOverflowRepair()
+        self.integer_overflow_repair = IntegerOverflowFixer()
+        self.buffer_overflow_repair = BufferOverflowFixer()
+        self.cets_repair = CETSFixer()
+        self.memory_leak_repair = MemoryLeakFixer()
+        self.php_taint_repair = PHPTaintFixer()
+        self.race_condition_repair = RaceConditionFixer()
+        self.file_handling_repair = FileHandlingFixer()
         self.memfix_repair = MemFixRepair()
         
         logger.info(f"Stage1RepairEngine initialized (dead_code={enable_dead_code})")
+        
+    def _wrap_batch_to_patch(self, vuln: Dict[str, Any], source_code: str, source_file: str, category: str, obj: Any) -> Optional[Dict[str, Any]]:
+        try:
+            repaired_code, vulns, repaired_lines_map = obj.batch_repair(source_code)
+            if not repaired_lines_map:
+                return None
+            
+            diff = ''.join(difflib.unified_diff(
+                source_code.splitlines(True),
+                repaired_code.splitlines(True),
+                fromfile=source_file + "\t(original)",
+                tofile=source_file + "\t(repaired)"
+            ))
+            
+            line_num = vuln.get('line', 0)
+            target_repaired = repaired_lines_map.get(line_num, "Batch fixed file")
+            
+            original_lines = source_code.split('\n')
+            original_line = original_lines[line_num - 1] if 0 < line_num <= len(original_lines) else ""
+            
+            return {
+                'patch_id': str(uuid.uuid4()),
+                'vulnerability_id': vuln.get('id', ''),
+                'file': source_file,
+                'line': line_num,
+                'original': original_line,
+                'repaired': target_repaired,
+                'diff': diff,
+                'description': f"Automated {category} repair applied",
+                'confidence': 0.90
+            }
+        except Exception as e:
+            logger.error(f"Wrapper error for {category}: {e}")
+            return None
     
     def can_repair(self, vuln: Dict[str, Any]) -> bool:
         """
@@ -102,7 +150,19 @@ class Stage1RepairEngine:
             elif category == 'dead_code':
                 patch = self.dead_code_repair.generate_patch(vuln, source_code, source_file)
             elif category == 'integer_overflow':
-                patch = self.integer_overflow_repair.generate_patch(vuln, source_code, source_file)
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.integer_overflow_repair)
+            elif category == 'buffer_overflow':
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.buffer_overflow_repair)
+            elif category == 'cets':
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.cets_repair)
+            elif category == 'memory_leak':
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.memory_leak_repair)
+            elif category == 'format_string':
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.php_taint_repair)
+            elif category == 'race_condition':
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.race_condition_repair)
+            elif category == 'file_handling':
+                patch = self._wrap_batch_to_patch(vuln, source_code, source_file, category, self.file_handling_repair)
             elif category == 'memory_dealloc':
                 patch = self.memfix_repair.generate_patch(vuln, source_code, source_file)
             else:

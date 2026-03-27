@@ -59,24 +59,55 @@ STAGE1_CATEGORIES = {
     }
 }
 
-# Vulnerabilities that should NOT be auto-repaired (route to Stage 2 AI)
-STAGE2_ONLY = {
+    # Category 6: Buffer Overflow (BovInspector)
     'buffer_overflow': {
-        'cwes': ['121', '122', '788'],
+        'cwes': ['119', '120', '121', '122', '788'],
         'cppcheck_ids': ['bufferAccessOutOfBounds', 'arrayIndexOutOfBounds'],
-        'reason': 'Non-local repair required'
+        'priority': 20,
+        'enabled': True,
+        'success_rate': 0.85
     },
+    
+    # Category 7: Format String / PHP Taint (format_string_vulnerability)
     'format_string': {
-        'cwes': ['134'],
-        'cppcheck_ids': ['invalidPrintfArgType_sint', 'invalidPrintfArgType_uint'],
-        'reason': 'Requires understanding calling convention'
+        'cwes': ['134', '79', '89', '94', '98', '22'],
+        'cppcheck_ids': ['invalidPrintfArgType_sint', 'invalidPrintfArgType_uint', 'taint'],
+        'priority': 20,
+        'enabled': True,
+        'success_rate': 0.88
     },
+    
+    # Category 8: Race Condition (RacerF)
     'race_condition': {
         'cwes': ['362'],
-        'cppcheck_ids': ['raceAfterInterlockedDecrement'],
-        'reason': 'Multi-threading complexity'
+        'cppcheck_ids': ['raceAfterInterlockedDecrement', 'dataRace'],
+        'priority': 18,
+        'enabled': True,
+        'success_rate': 0.82
+    },
+    
+    # Category 9: Temporal Safety / Use-After-Free (CETS)
+    'cets': {
+        'cwes': ['415', '416', '590'],
+        'cppcheck_ids': ['doubleFree', 'deallocuse'],
+        'priority': 19,
+        'enabled': True,
+        'success_rate': 0.90
+    },
+    
+    # Category 10: File Handling / Resource Leaks (Relda2)
+    'file_handling': {
+        'cwes': ['772'],
+        'cppcheck_ids': ['resourceLeak'],
+        'priority': 16,
+        'enabled': True,
+        'success_rate': 0.90
     }
 }
+
+# Vulnerabilities that should NOT be auto-repaired (route to Stage 2 AI)
+STAGE2_ONLY = {}
+
 
 
 def classify_vulnerability(vuln: Dict[str, Any]) -> Dict[str, Any]:
