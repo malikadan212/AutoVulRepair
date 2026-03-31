@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Repository Scanner - AutoVulRepair</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .scan-card {
+            transition: transform 0.2s;
+            border-left: 4px solid #007bff;
+        }
+        .scan-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .capability-badge {
+            font-size: 0.8em;
+            margin: 2px;
+        }
+        .scan-progress {
+            height: 8px;
+        }
+        .tool-status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .tool-available { background-color: #28a745; }
+        .tool-unavailable { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-shield-alt"></i> AutoVulRepair
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/dashboard">Dashboard</a>
+                <a class="nav-link" href="/logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1><i class="fas fa-code-branch"></i> Advanced Repository Scanner</h1>
+                <p class="text-muted">Comprehensive static analysis for repositories and pull requests</p>
+            </div>
+        </div>
+
+        <!-- Scanner Capabilities -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-tools"></i> Scanner Capabilities</h5>
+                    </div>
+                    <div class="card-body" id="capabilities-section">
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading capabilities...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Options -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card scan-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-repository"></i> Full Repository Scan</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Comprehensive analysis of entire repository with multiple tools</p>
+                        <form id="repo-scan-form">
+                            <div class="mb-3">
+                                <label class="form-label">Repository URL</label>
+                                <input type="url" class="form-control" id="repo-url" 
+                                       placeholder="https://github.com/owner/repo" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Analysis Tools</label>
+                                <div id="repo-tools-selection">
+                                    <!-- Tools will be populated dynamically -->
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-play"></i> Start Repository Scan
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card scan-card">
+                    <div class="card-header bg-success text-white">
+                        <h5><i class="fas fa-code-branch"></i> Pull Request Scan</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Differential analysis of changed files in pull requests</p>
+                        <form id="pr-scan-form">
+                            <div class="mb-3">
+                                <label class="form-label">Repository (owner/repo)</label>
+                                <input type="text" class="form-control" id="pr-repo" 
+                                       placeholder="owner/repository" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Pull Request Number</label>
+                                <input type="number" class="form-control" id="pr-number" 
+                                       placeholder="123" min="1" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Analysis Tools</label>
+                                <div id="pr-tools-selection">
+                                    <!-- Tools will be populated dynamically -->
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-play"></i> Start PR Scan
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch Scanning -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card scan-card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5><i class="fas fa-layer-group"></i> Batch Repository Scan</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Scan multiple repositories simultaneously (max 10)</p>
+                        <form id="batch-scan-form">
+                            <div class="mb-3">
+                                <label class="form-label">Repository URLs (one per line)</label>
+                                <textarea class="form-control" id="batch-repos" rows="5" 
+                                          placeholder="https://github.com/owner/repo1&#10;https://github.com/owner/repo2"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Analysis Tools</label>
+                                <div id="batch-tools-selection">
+                                    <!-- Tools will be populated dynamically -->
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-warning">
+                                <i class="fas fa-play"></i> Start Batch Scan
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Scans -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-tasks"></i> Active Scans</h5>
+                    </div>
+                    <div class="card-body" id="active-scans">
+                        <p class="text-muted">No active scans</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Modal -->
+    <div class="modal fade" id="resultsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Scan Results</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="scan-results-content">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Load capabilities on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCapabilities();
+            setupEventListeners();
+        });
+
+        async function loadCapabilities() {
+            try {
+                const response = await fetch('/api/v2/scan/capabilities');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCapabilities(data.capabilities);
+                    populateToolSelections(data.capabilities.tools);
+                } else {
+                    document.getElementById('capabilities-section').innerHTML = 
+                        '<div class="alert alert-danger">Failed to load capabilities</div>';
+                }
+            } catch (error) {
+                console.error('Error loading capabilities:', error);
+                document.getElementById('capabilities-section').innerHTML = 
+                    '<div class="alert alert-danger">Error loading capabilities</div>';
+            }
+        }
+
+        function displayCapabilities(capabilities) {
+            const section = document.getElementById('capabilities-section');
+            
+            let html = '<div class="row">';
+            
+            // Tools
+            html += '<div class="col-md-6"><h6>Available Analysis Tools</h6>';
+            for (const [toolName, toolInfo] of Object.entries(capabilities.tools)) {
+                const statusClass = toolInfo.available ? 'tool-available' : 'tool-unavailable';
+                const statusText = toolInfo.available ? 'Available' : 'Not Available';
+                
+                html += `
+                    <div class="mb-2">
+                        <span class="tool-status ${statusClass}"></span>
+                        <strong>${toolName.toUpperCase()}</strong> - ${statusText}
+                        <br><small class="text-muted">Languages: ${toolInfo.languages.join(', ')}</small>
+                `;
+                
+                if (toolInfo.available) {
+                    html += '<br><small class="text-success"><i class="fas fa-docker"></i> Docker-based analysis</small>';
+                } else {
+                    html += '<br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Will use pattern-based fallback</small>';
+                }
+                
+                html += '</div>';
+            }
+            html += '</div>';
+            
+            // Limits and capabilities
+            html += '<div class="col-md-6"><h6>Analysis Methods</h6>';
+            html += `
+                <div class="mb-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="badge bg-success me-2">Docker</span>
+                        <span>Full static analysis with real tools</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="badge bg-primary me-2">Local</span>
+                        <span>Local tool installation (if available)</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="badge bg-warning me-2">Pattern</span>
+                        <span>Fallback pattern matching (lower accuracy)</span>
+                    </div>
+                </div>
+                
+                <h6>Scan Limits</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-file"></i> Max file size: ${capabilities.limits.max_file_size_mb}MB</li>
+                    <li><i class="fas fa-folder"></i> Max repo size: ${capabilities.limits.max_repo_size_mb}MB</li>
+                    <li><i class="fas fa-clock"></i> Timeout: ${capabilities.limits.timeout_minutes} minutes</li>
+                </ul>
+                <h6>Supported Languages</h6>
+                <div>
+            `;
+            
+            capabilities.supported_languages.forEach(lang => {
+                html += `<span class="badge bg-secondary capability-badge">${lang}</span>`;
+            });
+            
+            html += '</div></div></div>';
+            
+            section.innerHTML = html;
+        }
+
+        function populateToolSelections(tools) {
+            const containers = ['repo-tools-selection', 'pr-tools-selection', 'batch-tools-selection'];
+            
+            containers.forEach(containerId => {
+                const container = document.getElementById(containerId);
+                let html = '';
+                
+                for (const [toolName, toolInfo] of Object.entries(tools)) {
+                    const checked = toolInfo.available && (toolName === 'cppcheck' || toolName === 'codeql') ? 'checked' : '';
+                    const disabled = !toolInfo.available ? 'disabled' : '';
+                    
+                    html += `
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" 
+                                   id="${containerId}-${toolName}" value="${toolName}" 
+                                   ${checked} ${disabled}>
+                            <label class="form-check-label" for="${containerId}-${toolName}">
+                                ${toolName.toUpperCase()}
+                            </label>
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+            });
+        }
+
+        function setupEventListeners() {
+            // Repository scan form
+            document.getElementById('repo-scan-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const repoUrl = document.getElementById('repo-url').value;
+                const tools = getSelectedTools('repo-tools-selection');
+                
+                if (tools.length === 0) {
+                    alert('Please select at least one analysis tool');
+                    return;
+                }
+                
+                await startRepositoryScan(repoUrl, tools);
+            });
+
+            // PR scan form
+            document.getElementById('pr-scan-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const repoName = document.getElementById('pr-repo').value;
+                const prNumber = parseInt(document.getElementById('pr-number').value);
+                const tools = getSelectedTools('pr-tools-selection');
+                
+                if (tools.length === 0) {
+                    alert('Please select at least one analysis tool');
+                    return;
+                }
+                
+                await startPRScan(repoName, prNumber, tools);
+            });
+
+            // Batch scan form
+            document.getElementById('batch-scan-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const repoUrls = document.getElementById('batch-repos').value
+                    .split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url.length > 0);
+                
+                const tools = getSelectedTools('batch-tools-selection');
+                
+                if (repoUrls.length === 0) {
+                    alert('Please enter at least one repository URL');
+                    return;
+                }
+                
+                if (tools.length === 0) {
+                    alert('Please select at least one analysis tool');
+                    return;
+                }
+                
+                await startBatchScan(repoUrls, tools);
+            });
+        }
+
+        function getSelectedTools(containerId) {
+            const checkboxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        async function startRepositoryScan(repoUrl, tools) {
+            try {
+                const response = await fetch('/api/v2/scan/repository', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo_url: repoUrl,
+                        analysis_tools: tools
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showScanResults(data);
+                } else {
+                    alert('Scan failed: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error starting repository scan:', error);
+                alert('Error starting scan');
+            }
+        }
+
+        async function startPRScan(repoName, prNumber, tools) {
+            try {
+                const response = await fetch('/api/v2/scan/pull-request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo_full_name: repoName,
+                        pr_number: prNumber,
+                        analysis_tools: tools
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showScanResults(data);
+                } else {
+                    alert('PR scan failed: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error starting PR scan:', error);
+                alert('Error starting PR scan');
+            }
+        }
+
+        async function startBatchScan(repoUrls, tools) {
+            try {
+                const response = await fetch('/api/v2/scan/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repositories: repoUrls,
+                        analysis_tools: tools
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showBatchResults(data);
+                } else {
+                    alert('Batch scan failed: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error starting batch scan:', error);
+                alert('Error starting batch scan');
+            }
+        }
+
+        function showScanResults(data) {
+            const content = document.getElementById('scan-results-content');
+            const results = data.results;
+            
+            let html = `
+                <div class="alert alert-${results.status === 'completed' ? 'success' : 'info'}">
+                    <h6>Scan ${results.status === 'completed' ? 'Completed' : 'Started'}</h6>
+                    <p>Scan ID: ${data.scan_id}</p>
+                    <p>Status: ${results.status}</p>
+                </div>
+            `;
+            
+            // Show analysis summary with warnings
+            if (results.analysis_summary) {
+                const summary = results.analysis_summary;
+                const alertClass = summary.fallback_used ? 'warning' : 'info';
+                
+                html += `
+                    <div class="alert alert-${alertClass}">
+                        <h6><i class="fas fa-info-circle"></i> Analysis Method</h6>
+                        <p>${summary.message}</p>
+                `;
+                
+                if (summary.warning) {
+                    html += `<p class="mb-0"><strong>⚠️ ${summary.warning}</strong></p>`;
+                }
+                
+                html += '</div>';
+            }
+            
+            if (results.findings && results.findings.length > 0) {
+                html += '<h6>Findings</h6>';
+                html += '<div class="table-responsive">';
+                html += '<table class="table table-striped">';
+                html += '<thead><tr><th>Severity</th><th>File</th><th>Line</th><th>Message</th><th>Method</th></tr></thead>';
+                html += '<tbody>';
+                
+                results.findings.forEach(finding => {
+                    const severityClass = {
+                        'critical': 'danger',
+                        'high': 'warning',
+                        'medium': 'info',
+                        'low': 'secondary'
+                    }[finding.severity] || 'secondary';
+                    
+                    const methodBadge = finding.analysis_method === 'pattern_fallback' 
+                        ? '<span class="badge bg-warning">Pattern</span>'
+                        : finding.analysis_method === 'docker'
+                        ? '<span class="badge bg-success">Docker</span>'
+                        : '<span class="badge bg-primary">Local</span>';
+                    
+                    html += `
+                        <tr>
+                            <td><span class="badge bg-${severityClass}">${finding.severity}</span></td>
+                            <td>${finding.file_path}</td>
+                            <td>${finding.line_number}</td>
+                            <td>${finding.message}</td>
+                            <td>${methodBadge}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table></div>';
+            } else {
+                html += '<div class="alert alert-success">No vulnerabilities found!</div>';
+            }
+            
+            content.innerHTML = html;
+            
+            const modal = new bootstrap.Modal(document.getElementById('resultsModal'));
+            modal.show();
+        }
+
+        function showBatchResults(data) {
+            const content = document.getElementById('scan-results-content');
+            
+            let html = `
+                <div class="alert alert-info">
+                    <h6>Batch Scan Results</h6>
+                    <p>Total scans: ${data.total_scans}</p>
+                    <p>Successful: ${data.successful_scans}</p>
+                </div>
+            `;
+            
+            html += '<div class="table-responsive">';
+            html += '<table class="table table-striped">';
+            html += '<thead><tr><th>Repository</th><th>Status</th><th>Findings</th><th>Scan ID</th></tr></thead>';
+            html += '<tbody>';
+            
+            data.batch_results.forEach(result => {
+                const statusClass = result.success ? 'success' : 'danger';
+                const statusText = result.success ? result.status : 'Failed';
+                
+                html += `
+                    <tr>
+                        <td>${result.repo_url}</td>
+                        <td><span class="badge bg-${statusClass}">${statusText}</span></td>
+                        <td>${result.findings_count || 0}</td>
+                        <td>${result.scan_id || 'N/A'}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table></div>';
+            
+            content.innerHTML = html;
+            
+            const modal = new bootstrap.Modal(document.getElementById('resultsModal'));
+            modal.show();
+        }
+    </script>
+</body>
+</html>

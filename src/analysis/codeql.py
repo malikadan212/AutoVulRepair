@@ -34,7 +34,14 @@ class CodeQLAnalyzer:
             self.use_docker = False
     
     def is_available(self) -> bool:
-        """Check if CodeQL is available on the system"""
+        """Check if CodeQL is available (Docker or local)"""
+        # Check Docker first
+        if self.use_docker and self.docker_runner:
+            if (self.docker_runner.image_exists('vuln-scanner/codeql:latest') or 
+                self.docker_runner.image_exists('mcr.microsoft.com/cstsectools/codeql-container:latest')):
+                return True
+        
+        # Fallback to local installation
         try:
             result = subprocess.run([self.tool_name, '--version'], 
                                   capture_output=True, text=True, timeout=10)

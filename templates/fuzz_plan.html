@@ -578,9 +578,21 @@
         {% if fuzz_plan %}
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-value">{{ fuzz_plan.metadata.deduplicated_targets }}</div>
-                <div class="stat-label">Fuzz Targets</div>
+                <div class="stat-value">{{ fuzz_plan.metadata.deduplicated_targets or fuzz_plan.targets|length }}</div>
+                <div class="stat-label">Regular Targets</div>
             </div>
+            {% if fuzz_plan.metadata.integration_enabled %}
+            <div class="stat-card" style="border: 2px solid #28a745;">
+                <div class="stat-value" style="color: #28a745;">{{ fuzz_plan.metadata.integration_targets or 0 }}</div>
+                <div class="stat-label">🔗 Integration Targets</div>
+            </div>
+            {% endif %}
+            {% if fuzz_plan.metadata.race_condition_enabled %}
+            <div class="stat-card" style="border: 2px solid #dc3545;">
+                <div class="stat-value" style="color: #dc3545;">{{ fuzz_plan.metadata.race_condition_targets or 0 }}</div>
+                <div class="stat-label">🏁 Race Condition Targets</div>
+            </div>
+            {% endif %}
             <div class="stat-card">
                 <div class="stat-value">{{ fuzz_plan.metadata.total_findings }}</div>
                 <div class="stat-label">Total Findings</div>
@@ -595,11 +607,55 @@
             </div>
         </div>
 
+        {% if fuzz_plan.metadata.integration_enabled or fuzz_plan.metadata.race_condition_enabled %}
+        <div class="integration-info" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 10px; margin-bottom: 30px; border-left: 5px solid #28a745;">
+            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+                <div style="font-size: 24px;">🚀</div>
+                <div>
+                    <h3 style="color: #2e7d32; margin: 0; font-size: 18px;">Advanced Fuzzing Enabled</h3>
+                    <p style="color: #388e3c; margin: 5px 0 0 0; font-size: 14px;">
+                        {% if fuzz_plan.metadata.integration_enabled and fuzz_plan.metadata.race_condition_enabled %}
+                        Testing component interactions AND race conditions for comprehensive vulnerability discovery
+                        {% elif fuzz_plan.metadata.integration_enabled %}
+                        Testing component interactions for real-world vulnerabilities
+                        {% elif fuzz_plan.metadata.race_condition_enabled %}
+                        Testing race conditions for concurrency vulnerabilities
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; font-size: 13px;">
+                {% if fuzz_plan.metadata.integration_enabled %}
+                <div>
+                    <strong style="color: #2e7d32;">🔗 Integration Finds:</strong>
+                    <div style="color: #388e3c; margin-top: 5px;">Authentication bypasses, Business logic flaws, Component interaction bugs</div>
+                </div>
+                {% endif %}
+                {% if fuzz_plan.metadata.race_condition_enabled %}
+                <div>
+                    <strong style="color: #2e7d32;">🏁 Race Condition Finds:</strong>
+                    <div style="color: #388e3c; margin-top: 5px;">Concurrency bugs, TOCTOU vulnerabilities, Thread safety violations</div>
+                </div>
+                {% endif %}
+                <div>
+                    <strong style="color: #2e7d32;">⚡ Advantage:</strong>
+                    <div style="color: #388e3c; margin-top: 5px;">Tests what attackers actually exploit, not just individual function crashes</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="targets-container">
             <div class="targets-header">
                 <h2>Fuzz Targets ({{ fuzz_plan.targets|length }})</h2>
                 <div class="filter-buttons">
                     <button class="filter-btn active" onclick="filterTargets('all')">All</button>
+                    {% if fuzz_plan.metadata.integration_enabled %}
+                    <button class="filter-btn" onclick="filterTargets('integration')" style="background: #e8f5e9; color: #2e7d32; border-color: #28a745;">🔗 Integration</button>
+                    {% endif %}
+                    {% if fuzz_plan.metadata.race_condition_enabled %}
+                    <button class="filter-btn" onclick="filterTargets('race_condition')" style="background: #ffebee; color: #d32f2f; border-color: #dc3545;">🏁 Race Condition</button>
+                    {% endif %}
                     <button class="filter-btn" onclick="filterTargets('OOB')">OOB</button>
                     <button class="filter-btn" onclick="filterTargets('UAF')">UAF</button>
                     <button class="filter-btn" onclick="filterTargets('Integer-UB')">Integer-UB</button>
@@ -608,17 +664,128 @@
             </div>
 
             {% for target in fuzz_plan.targets %}
-            <div class="target-card" data-bug-class="{{ target.bug_class }}">
+            <div class="target-card" data-bug-class="{{ target.bug_class }}" data-target-type="{{ target.type or 'regular' }}">
                 <div class="target-header">
                     <div>
-                        <div class="target-title">Target #{{ loop.index }}</div>
+                        <div class="target-title">
+                            {% if target.type == 'integration' %}
+                            🔗 Integration Target #{{ loop.index }}
+                            {% elif target.type == 'race_condition' %}
+                            🏁 Race Condition Target #{{ loop.index }}
+                            {% else %}
+                            Target #{{ loop.index }}
+                            {% endif %}
+                        </div>
                         <div class="target-function">{{ target.function_name }}()</div>
                     </div>
-                    <div
-                        class="priority-badge {% if target.priority >= 15 %}priority-high{% elif target.priority >= 10 %}priority-medium{% else %}priority-low{% endif %}">
-                        Priority: {{ target.priority }}
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        {% if target.type == 'integration' %}
+                        <span style="background: #28a745; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">INTEGRATION</span>
+                        {% elif target.type == 'race_condition' %}
+                        <span style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">RACE CONDITION</span>
+                        {% endif %}
+                        <div
+                            class="priority-badge {% if target.priority >= 15 %}priority-high{% elif target.priority >= 10 %}priority-medium{% else %}priority-low{% endif %}">
+                            Priority: {{ target.priority }}
+                        </div>
                     </div>
                 </div>
+
+                {% if target.type == 'integration' and target.integration_chain %}
+                <!-- Integration Chain Visualization -->
+                <div style="background: #f8fff9; border: 2px solid #c8e6c9; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                    <div style="font-weight: 600; color: #2e7d32; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <span>🔄</span> Component Chain Flow
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;">
+                        {% for component in target.integration_chain.components %}
+                        <div style="background: white; border: 1px solid #81c784; padding: 8px 12px; border-radius: 6px; color: #2e7d32; font-family: 'Courier New', monospace;">
+                            {{ component.name }}
+                            {% if component.is_auth %}<span style="background: #ffecb3; color: #f57f17; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">AUTH</span>{% endif %}
+                            {% if component.is_validation %}<span style="background: #e1f5fe; color: #0277bd; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">VALID</span>{% endif %}
+                            {% if component.is_database %}<span style="background: #fce4ec; color: #c2185b; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">DB</span>{% endif %}
+                        </div>
+                        {% if not loop.last %}
+                        <span style="color: #4caf50; font-weight: bold;">→</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    
+                    {% if target.integration_chain.vulnerability_surface %}
+                    <div style="margin-top: 12px;">
+                        <div style="font-weight: 600; color: #d32f2f; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                            <span>⚠️</span> Vulnerability Surface
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            {% for vuln in target.integration_chain.vulnerability_surface %}
+                            <span style="background: #ffebee; color: #d32f2f; padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid #ffcdd2;">
+                                {{ vuln.replace('_', ' ').title() }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div style="margin-top: 12px;">
+                        <div style="font-weight: 600; color: #1976d2; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                            <span>🌐</span> Endpoint Type: <span style="text-transform: capitalize;">{{ target.integration_chain.endpoint_type }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if target.type == 'race_condition' and target.race_condition_config %}
+                <!-- Race Condition Configuration -->
+                <div style="background: #fff5f5; border: 2px solid #ffcdd2; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                    <div style="font-weight: 600; color: #d32f2f; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <span>🏁</span> Race Condition Configuration
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; font-size: 12px;">
+                        <div>
+                            <strong style="color: #d32f2f;">Threads:</strong>
+                            <div style="color: #c62828;">{{ target.race_condition_config.thread_count }}</div>
+                        </div>
+                        <div>
+                            <strong style="color: #d32f2f;">Executions:</strong>
+                            <div style="color: #c62828;">{{ target.race_condition_config.execution_count }}</div>
+                        </div>
+                        <div>
+                            <strong style="color: #d32f2f;">Timing Variation:</strong>
+                            <div style="color: #c62828;">{{ "%.3f"|format(target.race_condition_config.timing_variation) }}s</div>
+                        </div>
+                    </div>
+                    
+                    {% if target.race_condition_config.vulnerability_types %}
+                    <div style="margin-top: 12px;">
+                        <div style="font-weight: 600; color: #d32f2f; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                            <span>⚠️</span> Vulnerability Types
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            {% for vuln in target.race_condition_config.vulnerability_types %}
+                            <span style="background: #ffebee; color: #d32f2f; padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid #ffcdd2;">
+                                {{ vuln.replace('_', ' ').title() }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if target.race_condition_config.shared_resources %}
+                    <div style="margin-top: 12px;">
+                        <div style="font-weight: 600; color: #d32f2f; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                            <span>🔄</span> Shared Resources
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            {% for resource in target.race_condition_config.shared_resources %}
+                            <span style="background: #fff3e0; color: #e65100; padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid #ffcc02;">
+                                {{ resource.type }}: {{ resource.access_pattern }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
 
                 <div class="target-details">
                     <div class="detail-item">
@@ -703,8 +870,20 @@
             </div>
             {% endfor %}
 
-            <div class="bug-class-legend">
+                <div class="bug-class-legend">
                 <strong style="margin-right: 10px;">Bug Classes:</strong>
+                {% if fuzz_plan.metadata.integration_enabled %}
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e8f5e9; border: 1px solid #28a745;"></div>
+                    <span class="legend-label">Integration-Bug - Component Interaction Vulnerabilities</span>
+                </div>
+                {% endif %}
+                {% if fuzz_plan.metadata.race_condition_enabled %}
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffebee; border: 1px solid #dc3545;"></div>
+                    <span class="legend-label">Race-Condition - Concurrency Vulnerabilities</span>
+                </div>
+                {% endif %}
                 <div class="legend-item">
                     <div class="legend-color" style="background: #e3f2fd;"></div>
                     <span class="legend-label">OOB - Out of Bounds</span>
@@ -728,12 +907,39 @@
             <div class="no-plan" id="noPlanMessage">
                 <h2>No Fuzz Plan Generated Yet</h2>
                 <p>Click the button above to generate a fuzz plan from static analysis findings.</p>
-                <p style="font-size: 13px; color: #999;">This will analyze vulnerabilities and create optimized fuzz
-                    targets.</p>
+                <p style="font-size: 13px; color: #999;">This will analyze vulnerabilities and create optimized fuzz targets.</p>
+                
+                <!-- Advanced Fuzzing Options -->
+                <div style="background: #f8fff9; border: 2px solid #c8e6c9; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: left;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                        <input type="checkbox" id="enableIntegration" style="transform: scale(1.2);">
+                        <label for="enableIntegration" style="font-weight: 600; color: #2e7d32; cursor: pointer;">
+                            🚀 Enable Integration Fuzzing (Beta)
+                        </label>
+                    </div>
+                    <div style="font-size: 13px; color: #388e3c; margin-left: 30px; margin-bottom: 15px;">
+                        <div style="margin-bottom: 8px;"><strong>✨ What it finds:</strong> Authentication bypasses, business logic flaws, component interaction bugs</div>
+                        <div style="margin-bottom: 8px;"><strong>🎯 How it works:</strong> Tests component chains end-to-end instead of individual functions</div>
+                        <div><strong>⚡ Advantage:</strong> Discovers real-world attack scenarios that static analysis misses</div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                        <input type="checkbox" id="enableRaceCondition" style="transform: scale(1.2);">
+                        <label for="enableRaceCondition" style="font-weight: 600; color: #d32f2f; cursor: pointer;">
+                            🏁 Enable Race Condition Fuzzing (New!)
+                        </label>
+                    </div>
+                    <div style="font-size: 13px; color: #c62828; margin-left: 30px;">
+                        <div style="margin-bottom: 8px;"><strong>✨ What it finds:</strong> Concurrency bugs, TOCTOU vulnerabilities, thread safety violations</div>
+                        <div style="margin-bottom: 8px;"><strong>🎯 How it works:</strong> Tests functions under concurrent execution with timing variations</div>
+                        <div><strong>⚡ Advantage:</strong> Finds production-only bugs that appear under load and concurrent access</div>
+                    </div>
+                </div>
             </div>
             <div class="loading" id="loadingMessage" style="display: none;">
                 <div class="spinner"></div>
                 <p>Generating fuzz plan...</p>
+                <p id="integrationStatus" style="font-size: 13px; color: #666; margin-top: 10px;"></p>
             </div>
         </div>
         {% endif %}
@@ -754,9 +960,35 @@
         function generateFuzzPlan() {
             document.getElementById('noPlanMessage').style.display = 'none';
             document.getElementById('loadingMessage').style.display = 'block';
+            
+            // Check if advanced fuzzing options are enabled
+            const enableIntegration = document.getElementById('enableIntegration')?.checked || false;
+            const enableRaceCondition = document.getElementById('enableRaceCondition')?.checked || false;
+            const integrationStatus = document.getElementById('integrationStatus');
+            
+            if ((enableIntegration || enableRaceCondition) && integrationStatus) {
+                let statusText = '🔍 Analyzing ';
+                if (enableIntegration && enableRaceCondition) {
+                    statusText += 'component interactions and race conditions...';
+                } else if (enableIntegration) {
+                    statusText += 'component interactions for integration targets...';
+                } else if (enableRaceCondition) {
+                    statusText += 'concurrency patterns for race condition targets...';
+                }
+                integrationStatus.textContent = statusText;
+            }
+
+            const requestBody = {
+                enable_integration: enableIntegration,
+                enable_race_condition: enableRaceCondition
+            };
 
             fetch('/api/fuzz-plan/generate/' + SCAN_ID, {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
             })
                 .then(response => response.json())
                 .then(data => {
@@ -775,7 +1007,7 @@
                 });
         }
 
-        function filterTargets(bugClass) {
+        function filterTargets(filterType) {
             const cards = document.querySelectorAll('.target-card');
             const buttons = document.querySelectorAll('.filter-btn');
 
@@ -783,11 +1015,22 @@
             event.target.classList.add('active');
 
             cards.forEach(card => {
-                if (bugClass === 'all' || card.dataset.bugClass === bugClass) {
-                    card.style.display = 'block';
+                const bugClass = card.dataset.bugClass;
+                const targetType = card.dataset.targetType;
+                
+                let shouldShow = false;
+                
+                if (filterType === 'all') {
+                    shouldShow = true;
+                } else if (filterType === 'integration') {
+                    shouldShow = targetType === 'integration';
+                } else if (filterType === 'race_condition') {
+                    shouldShow = targetType === 'race_condition';
                 } else {
-                    card.style.display = 'none';
+                    shouldShow = bugClass === filterType;
                 }
+                
+                card.style.display = shouldShow ? 'block' : 'none';
             });
         }
 

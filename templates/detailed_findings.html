@@ -15,15 +15,48 @@
         <i class="fas fa-bug text-danger"></i>
         Vulnerability Analysis
       </h2>
-      <p class="text-muted mb-0">Detailed findings for scan {{ scan_id }}</p>
+      <div class="d-flex align-items-center">
+        <p class="text-muted mb-0 me-3">Detailed findings for scan {{ scan_id }}</p>
+        {% if current_user.is_authenticated %}
+        <div class="d-flex align-items-center">
+          {% if current_user.avatar_url %}
+          <img src="{{ current_user.avatar_url }}" alt="Avatar" class="rounded-circle me-2" width="20" height="20">
+          {% endif %}
+          <small class="text-muted">Scan by <strong>{{ current_user.username }}</strong></small>
+        </div>
+        {% endif %}
+      </div>
     </div>
     <div>
-      <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-secondary">
+      {% if current_user.is_authenticated %}
+      <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary me-2">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+      </a>
+      {% else %}
+      <a href="{{ url_for('no_login_scan') }}" class="btn btn-outline-secondary me-2">
         <i class="fas fa-arrow-left"></i> Back to Scan
       </a>
-      <button class="btn btn-primary" onclick="exportFindings()">
-        <i class="fas fa-download"></i> Export Report
-      </button>
+      {% endif %}
+      <div class="btn-group">
+        <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+          <i class="fas fa-download"></i> Export Report
+        </button>
+        <div class="dropdown-menu dropdown-menu-right">
+          <a class="dropdown-item" href="/api/scan/{{ scan_id }}/export/json">
+            <i class="fas fa-file-code mr-2"></i> JSON Format
+          </a>
+          <a class="dropdown-item" href="/api/scan/{{ scan_id }}/export/csv">
+            <i class="fas fa-file-csv mr-2"></i> CSV Format
+          </a>
+          <a class="dropdown-item" href="/api/scan/{{ scan_id }}/export/sarif">
+            <i class="fas fa-file-alt mr-2"></i> SARIF Format
+          </a>
+          <div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="#" onclick="exportFindings(); return false;">
+            <i class="fas fa-file-text mr-2"></i> Text Summary
+          </a>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -91,9 +124,10 @@
         {% endif %}
       </div>
       <div class="btn-group">
-        <a href="{{ url_for('patch_dashboard', scan_id=scan_id) }}" class="btn btn-success">
+        <!-- Temporarily disabled AI Patching button to avoid template error -->
+        <!-- <a href="{{ url_for('repair_dashboard', scan_id=scan_id) }}" class="btn btn-success">
           <i class="fas fa-wrench"></i> AI Patching
-        </a>
+        </a> -->
         <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
           <i class="fas fa-sitemap"></i> Generate Fuzz Plan
         </a>
@@ -116,6 +150,37 @@
       </div>
     </div>
   </div>
+
+  <!-- Fuzzing Status Integration -->
+  {% if fuzzing_status and fuzzing_status.available %}
+  <div class="alert alert-{% if fuzzing_status.total_crashes > 0 %}warning{% else %}info{% endif %}">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h6 class="mb-1">
+          <i class="fas fa-{% if fuzzing_status.total_crashes > 0 %}exclamation-triangle{% else %}shield-alt{% endif %}"></i>
+          Fuzzing Results - {{ fuzzing_status.message }}
+        </h6>
+        <small>
+          Tested {{ fuzzing_status.total_targets }} targets in {{ fuzzing_status.runtime }}s
+          {% if fuzzing_status.total_crashes > 0 %}
+          <span class="mx-2">|</span>
+          <strong class="text-danger">{{ fuzzing_status.total_crashes }} exploitable crashes found</strong>
+          {% endif %}
+        </small>
+      </div>
+      <div class="btn-group">
+        <a href="{{ url_for('fuzz_execution_view', scan_id=scan_id) }}" class="btn btn-{% if fuzzing_status.total_crashes > 0 %}warning{% else %}info{% endif %}">
+          <i class="fas fa-bug"></i> View Fuzzing Details
+        </a>
+        {% if fuzzing_status.total_crashes > 0 %}
+        <button class="btn btn-danger" onclick="showFuzzingEvidence()">
+          <i class="fas fa-fire"></i> Show Crash Evidence
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   <!-- Filters and Search -->
@@ -240,20 +305,13 @@
           <div class="col-md-6">
             <p class="mb-1">
               <i class="fas fa-shield-alt text-muted"></i>
-              <strong>CWE:</strong> 
-              {% if vuln.severity == 'high' %}
-                CWE-787 (Buffer Overflow)
-              {% elif vuln.severity == 'medium' %}
-                CWE-476 (NULL Pointer Dereference)
-              {% else %}
-                CWE-563 (Unused Variable)
-              {% endif %}
+              <strong>CWE:</strong> {{ vuln.cwe }} ({{ vuln.cwe_description }})
             </p>
             <p class="mb-1">
               <i class="fas fa-exclamation-triangle text-muted"></i>
               <strong>Risk Score:</strong> 
               <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
-                {% if vuln.severity == 'high' %}8.5{% elif vuln.severity == 'medium' %}5.2{% else %}2.1{% endif %}
+                {{ "%.1f"|format(vuln.cvss_score) }}
               </span>
             </p>
           </div>
@@ -292,24 +350,8 @@
             <h6><i class="fas fa-info-circle"></i> Vulnerability Details</h6>
             <div class="alert alert-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
               <p class="mb-2"><strong>Description:</strong> {{ vuln.description }}</p>
-              <p class="mb-2"><strong>Impact:</strong> 
-                {% if vuln.severity == 'high' %}
-                  This vulnerability could allow an attacker to execute arbitrary code or cause a denial of service.
-                {% elif vuln.severity == 'medium' %}
-                  This issue may lead to application crashes or unexpected behavior under certain conditions.
-                {% else %}
-                  This is a code quality issue that should be addressed to improve maintainability.
-                {% endif %}
-              </p>
-              <p class="mb-0"><strong>Recommendation:</strong> 
-                {% if vuln.severity == 'high' %}
-                  Immediate action required. Use safe string functions or implement proper bounds checking.
-                {% elif vuln.severity == 'medium' %}
-                  Should be fixed in the next release cycle. Add null pointer checks and validation.
-                {% else %}
-                  Consider removing unused code or adding appropriate comments.
-                {% endif %}
-              </p>
+              <p class="mb-2"><strong>Impact:</strong> {{ vuln.impact }}</p>
+              <p class="mb-0"><strong>Recommendation:</strong> {{ vuln.recommendation }}</p>
             </div>
           </div>
 
@@ -484,6 +526,144 @@ function exportFindings() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/* Show fuzzing evidence modal */
+function showFuzzingEvidence() {
+  if (!scanId) return;
+  
+  // Create modal content
+  var modalHtml = `
+    <div class="modal fade" id="fuzzingEvidenceModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="fas fa-fire text-danger"></i>
+              Fuzzing Crash Evidence
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="fuzzingEvidenceContent">
+              <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading fuzzing evidence...</p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <a href="/fuzz-execution/${scanId}" class="btn btn-primary">
+              <i class="fas fa-external-link-alt"></i> View Full Fuzzing Results
+            </a>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Remove existing modal if any
+  var existingModal = document.getElementById('fuzzingEvidenceModal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+  
+  // Add modal to page
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  
+  // Show modal
+  var modal = new bootstrap.Modal(document.getElementById('fuzzingEvidenceModal'));
+  modal.show();
+  
+  // Load fuzzing results
+  fetch('/api/fuzz/results/' + scanId)
+    .then(response => response.json())
+    .then(data => {
+      var content = document.getElementById('fuzzingEvidenceContent');
+      if (!content) return;
+      
+      if (data.error) {
+        content.innerHTML = '<div class="alert alert-warning">No fuzzing results available yet.</div>';
+        return;
+      }
+      
+      var html = '<div class="row">';
+      
+      // Summary stats
+      var totalCrashes = data.results.reduce((sum, r) => sum + (r.crashes_found || 0), 0);
+      html += `
+        <div class="col-12 mb-3">
+          <div class="alert alert-danger">
+            <h6><i class="fas fa-exclamation-triangle"></i> Vulnerability Confirmation</h6>
+            <p class="mb-0">Fuzzing found <strong>${totalCrashes} exploitable inputs</strong> that crash your code, confirming these vulnerabilities are real and exploitable.</p>
+          </div>
+        </div>
+      `;
+      
+      // Show each target with crashes
+      data.results.forEach(result => {
+        if (result.crashes_found > 0) {
+          var vulnType = result.target.replace('fuzz_test_', '').replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+          html += `
+            <div class="col-md-6 mb-3">
+              <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                  <h6 class="mb-0"><i class="fas fa-bug"></i> ${vulnType}</h6>
+                </div>
+                <div class="card-body">
+                  <p><strong>${result.crashes_found}</strong> crash-inducing inputs found</p>
+                  <p class="small text-muted">Runtime: ${result.runtime}s</p>
+                  <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-danger" onclick="analyzeCrashes('${result.target}')">
+                      <i class="fas fa-search"></i> Analyze
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="downloadCrashes('${result.target}')">
+                      <i class="fas fa-download"></i> Download
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      });
+      
+      html += '</div>';
+      content.innerHTML = html;
+    })
+    .catch(error => {
+      var content = document.getElementById('fuzzingEvidenceContent');
+      if (content) {
+        content.innerHTML = '<div class="alert alert-danger">Error loading fuzzing evidence: ' + error + '</div>';
+      }
+    });
+}
+
+/* Analyze crashes for a specific target */
+function analyzeCrashes(targetName) {
+  if (!scanId || !targetName) return;
+  
+  fetch('/api/fuzz/crashes/' + scanId + '/' + targetName + '/analyze')
+    .then(response => response.json())
+    .then(data => {
+      if (data.analysis) {
+        alert(data.analysis);
+      } else {
+        alert('No detailed analysis available for this crash.');
+      }
+    })
+    .catch(error => {
+      alert('Error loading crash analysis: ' + error);
+    });
+}
+
+/* Download crashes for a specific target */
+function downloadCrashes(targetName) {
+  if (!scanId || !targetName) return;
+  window.location.href = '/api/fuzz/crashes/' + scanId + '/' + targetName + '/download';
 }
 
 /* ---------- Polling for scan status ---------- */

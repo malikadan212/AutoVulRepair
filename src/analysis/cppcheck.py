@@ -44,7 +44,13 @@ class CppcheckAnalyzer:
             self.use_docker = False
     
     def is_available(self) -> bool:
-        """Check if Cppcheck is available in PATH"""
+        """Check if Cppcheck is available (Docker or local)"""
+        # Check Docker first
+        if self.use_docker and self.docker_runner:
+            if self.docker_runner.image_exists('vuln-scanner/cppcheck:latest'):
+                return True
+        
+        # Fallback to local installation
         try:
             result = subprocess.run(['cppcheck', '--version'], 
                                   capture_output=True, text=True, timeout=10)

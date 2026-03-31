@@ -2,47 +2,399 @@
 
 {% block title %}Start Scan{% endblock %}
 
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/modules/scan-form.js') }}"></script>
+{% endblock %}
+
 {% block content %}
-  <h2>Start a new scan</h2>
-  <form method="post" action="{{ url_for('scan') }}" enctype="multipart/form-data">
-    <div class="mb-3">
-      <label for="repo_url" class="form-label">GitHub Repository URL</label>
-      <input type="url" class="form-control" id="repo_url" name="repo_url" placeholder="https://github.com/owner/repo">
-    </div>
-    <div class="mb-3">
-      <label for="zip_file" class="form-label">Or upload ZIP</label>
-      <input class="form-control" type="file" id="zip_file" name="zip_file" accept=".zip">
-    </div>
-    
-    <!-- Static Analysis Tool Selection -->
-    <div class="card mb-3">
-      <div class="card-header">
-        <h6 class="mb-0">Choose Analysis Engine</h6>
+<div class="container mt-4">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2>
+            <i class="fas fa-search text-primary"></i>
+            Start Security Scan
+          </h2>
+          <p class="text-muted mb-0">Scan your repositories for security vulnerabilities</p>
+        </div>
+        <div>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+          </a>
+        </div>
       </div>
-      <div class="card-body">
-        <div class="row">
-          <div class="col-md-6">
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="analysis_tool" id="cppcheck_auth" value="cppcheck" checked>
-              <label class="form-check-label" for="cppcheck_auth">
-                <strong>Cppcheck</strong> - Fast Analysis
-                <br><small class="text-muted">Lightweight C/C++ analyzer for quick vulnerability detection with minimal resource usage</small>
-              </label>
-            </div>
+      
+      <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        <strong>Authenticated Scan:</strong> Your scan results will be saved to your dashboard and you can track progress in real-time.
+      </div>
+
+      <!-- New Advanced Scanner Notice -->
+      <div class="alert alert-success">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <i class="fas fa-rocket"></i>
+            <strong>New: Advanced Repository Scanner Available!</strong>
+            <p class="mb-0 mt-1">Try our enhanced scanner with Docker-based analysis, PR scanning, and batch processing.</p>
           </div>
-          <div class="col-md-6">
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="analysis_tool" id="codeql_auth" value="codeql">
-              <label class="form-check-label" for="codeql_auth">
-                <strong>CodeQL</strong> - Deep Analysis
-                <br><small class="text-muted">Advanced semantic analysis engine for comprehensive security vulnerability discovery</small>
-              </label>
+          <a href="{{ url_for('advanced_scan_dashboard') }}" class="btn btn-success">
+            <i class="fas fa-arrow-right"></i> Try Advanced Scanner
+          </a>
+        </div>
+      </div>
+
+      <form method="POST" action="{{ url_for('scan') }}" enctype="multipart/form-data">
+        <div class="card">
+          <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="scanTabs" role="tablist">
+              <li class="nav-item">
+                <button class="nav-link active" id="github-tab" data-bs-toggle="tab" data-bs-target="#github" type="button" role="tab">GitHub Repository</button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab">Upload ZIP</button>
+              </li>
+            </ul>
+          </div>
+          
+          <div class="card-body">
+            <div class="tab-content">
+              <!-- GitHub Repo Tab -->
+              <div class="tab-pane fade show active" id="github" role="tabpanel">
+                <div class="mb-3">
+                  <label class="form-label">Select Repository</label>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary" onclick="loadUserRepositories()">
+                      <i class="fas fa-sync-alt"></i> Load My Repositories
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="toggleManualEntry()">
+                      <i class="fas fa-keyboard"></i> Enter URL Manually
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Repository Selection -->
+                <div id="repositorySelection" style="display: none;">
+                  <div class="mb-3">
+                    <label for="repoSelect" class="form-label">Choose from Your Repositories</label>
+                    <select class="form-select" id="repoSelect" onchange="onRepositorySelected()">
+                      <option value="">Select a repository...</option>
+                    </select>
+                    <div class="form-text">
+                      <span id="repoLoadingText">Click "Load My Repositories" to see your GitHub repos</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Pull Request Selection -->
+                  <div id="pullRequestSection" style="display: none;">
+                    <div class="mb-3">
+                      <label class="form-label">Scan Options</label>
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" name="scanType" id="scanFullRepo" value="full" checked>
+                        <label class="form-check-label" for="scanFullRepo">
+                          <strong>Full Repository Scan</strong>
+                          <br><small class="text-muted">Scan entire repository (slower but comprehensive)</small>
+                        </label>
+                      </div>
+                      <div class="form-check mt-2">
+                        <input class="form-check-input" type="radio" name="scanType" id="scanPullRequest" value="pr">
+                        <label class="form-check-label" for="scanPullRequest">
+                          <strong>Pull Request Scan</strong>
+                          <br><small class="text-muted">Scan only changed files in recent PRs (faster)</small>
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <!-- PR Selection -->
+                    <div id="prSelectionDiv" style="display: none;">
+                      <div class="mb-3">
+                        <label for="prSelect" class="form-label">Select Pull Request</label>
+                        <select class="form-select" id="prSelect">
+                          <option value="">Loading pull requests...</option>
+                        </select>
+                        <div class="form-text">
+                          Choose a pull request to scan only the changed files
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Manual URL Entry -->
+                <div id="manualUrlEntry">
+                  <div class="mb-3">
+                    <label for="repo_url" class="form-label">GitHub Repository URL</label>
+                    <input type="url" class="form-control" id="repo_url" name="repo_url" 
+                           placeholder="https://github.com/username/repository"
+                           pattern="https://github\.com/[\w\-\.]+/[\w\-\.]+(\.git)?/?">
+                    <div class="form-text">
+                      Enter the URL of a public GitHub repository to scan for vulnerabilities.
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- ZIP Upload Tab -->
+              <div class="tab-pane fade" id="upload" role="tabpanel">
+                <div class="mb-3">
+                  <label for="zip_file" class="form-label">Upload Repository ZIP</label>
+                  <input type="file" class="form-control" id="zip_file" name="zip_file" accept=".zip">
+                  <div class="form-text">
+                    Upload a ZIP file of your repository. Perfect for private repos or local projects.
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Static Analysis Tool Selection -->
+            <div class="card mt-4">
+              <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                  <h6 class="mb-0">Choose Analysis Engine</h6>
+                  <span class="badge bg-success">Tools Available</span>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="analysis_tool" id="cppcheck" value="cppcheck" checked>
+                      <label class="form-check-label" for="cppcheck">
+                        <strong>Cppcheck</strong> - Fast Analysis
+                        <span class="badge bg-success ms-2">Available</span>
+                        <br><small class="text-muted">Lightweight C/C++ analyzer for quick vulnerability detection with minimal resource usage</small>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="radio" name="analysis_tool" id="codeql" value="codeql">
+                      <label class="form-check-label" for="codeql">
+                        <strong>CodeQL</strong> - Deep Analysis
+                        <span class="badge bg-success ms-2">Available</span>
+                        <br><small class="text-muted">Advanced semantic analysis engine for comprehensive security vulnerability discovery</small>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="text-center mt-4">
+              <button type="submit" class="btn btn-primary btn-lg">
+                <i class="fas fa-search"></i> Start Security Scan
+              </button>
             </div>
           </div>
         </div>
+      </form>
+      
+      <!-- User Benefits -->
+      <div class="row mt-5">
+        <div class="col-md-4 text-center">
+          <i class="fas fa-save fa-2x text-primary mb-2"></i>
+          <h6>Saved Results</h6>
+          <small class="text-muted">All scan results saved to your dashboard</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-chart-line fa-2x text-primary mb-2"></i>
+          <h6>Progress Tracking</h6>
+          <small class="text-muted">Real-time scan progress and notifications</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-history fa-2x text-primary mb-2"></i>
+          <h6>Scan History</h6>
+          <small class="text-muted">Access all your previous scan results</small>
+        </div>
       </div>
     </div>
+  </div>
+</div>
+
+<script>
+// Repository and PR management
+let userRepositories = [];
+let selectedRepository = null;
+let repositoryPulls = [];
+
+// Load user's GitHub repositories
+async function loadUserRepositories() {
+    const loadBtn = document.querySelector('button[onclick="loadUserRepositories()"]');
+    const originalText = loadBtn.innerHTML;
+    const repoLoadingText = document.getElementById('repoLoadingText');
     
-    <button type="submit" class="btn btn-success">Start Scan</button>
-  </form>
+    try {
+        // Show loading state
+        loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+        loadBtn.disabled = true;
+        repoLoadingText.textContent = 'Loading your repositories...';
+        
+        const response = await fetch('/api/github/repositories');
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load repositories');
+        }
+        
+        userRepositories = data.repositories || [];
+        
+        // Populate repository dropdown
+        const repoSelect = document.getElementById('repoSelect');
+        repoSelect.innerHTML = '<option value="">Select a repository...</option>';
+        
+        userRepositories.forEach(repo => {
+            const option = document.createElement('option');
+            option.value = repo.full_name;
+            option.textContent = `${repo.full_name} ${repo.private ? '(Private)' : '(Public)'}`;
+            option.dataset.repoData = JSON.stringify(repo);
+            repoSelect.appendChild(option);
+        });
+        
+        // Show repository selection
+        document.getElementById('repositorySelection').style.display = 'block';
+        document.getElementById('manualUrlEntry').style.display = 'none';
+        
+        repoLoadingText.innerHTML = `
+            <i class="fas fa-check text-success"></i> 
+            Loaded ${userRepositories.length} repositories. 
+            Rate limit: ${data.rate_limit.remaining || 'Unknown'} remaining.
+        `;
+        
+    } catch (error) {
+        console.error('Error loading repositories:', error);
+        repoLoadingText.innerHTML = `
+            <i class="fas fa-exclamation-triangle text-danger"></i> 
+            Error: ${error.message}
+        `;
+    } finally {
+        loadBtn.innerHTML = originalText;
+        loadBtn.disabled = false;
+    }
+}
+
+// Handle repository selection
+async function onRepositorySelected() {
+    const repoSelect = document.getElementById('repoSelect');
+    const selectedValue = repoSelect.value;
+    
+    if (!selectedValue) {
+        document.getElementById('pullRequestSection').style.display = 'none';
+        selectedRepository = null;
+        return;
+    }
+    
+    // Get repository data
+    const selectedOption = repoSelect.options[repoSelect.selectedIndex];
+    selectedRepository = JSON.parse(selectedOption.dataset.repoData);
+    
+    // Show scan options
+    document.getElementById('pullRequestSection').style.display = 'block';
+    
+    // Set the hidden repo URL for form submission
+    document.getElementById('repo_url').value = selectedRepository.clone_url;
+    
+    // Load pull requests
+    await loadRepositoryPulls(selectedRepository.full_name);
+}
+
+// Load pull requests for selected repository
+async function loadRepositoryPulls(repoFullName) {
+    const prSelect = document.getElementById('prSelect');
+    
+    try {
+        prSelect.innerHTML = '<option value="">Loading pull requests...</option>';
+        
+        const response = await fetch(`/api/github/repository/${encodeURIComponent(repoFullName)}/pulls`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load pull requests');
+        }
+        
+        repositoryPulls = data.pulls || [];
+        
+        // Populate PR dropdown
+        prSelect.innerHTML = '<option value="">Select a pull request...</option>';
+        
+        if (repositoryPulls.length === 0) {
+            prSelect.innerHTML = '<option value="">No open pull requests found</option>';
+        } else {
+            repositoryPulls.forEach(pr => {
+                const option = document.createElement('option');
+                option.value = pr.number;
+                option.textContent = `#${pr.number}: ${pr.title}`;
+                option.dataset.prData = JSON.stringify(pr);
+                prSelect.appendChild(option);
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error loading pull requests:', error);
+        prSelect.innerHTML = '<option value="">Error loading pull requests</option>';
+    }
+}
+
+// Toggle between repository selection and manual URL entry
+function toggleManualEntry() {
+    const repoSelection = document.getElementById('repositorySelection');
+    const manualEntry = document.getElementById('manualUrlEntry');
+    
+    if (repoSelection.style.display === 'none') {
+        repoSelection.style.display = 'block';
+        manualEntry.style.display = 'none';
+    } else {
+        repoSelection.style.display = 'none';
+        manualEntry.style.display = 'block';
+        // Clear repository selection
+        selectedRepository = null;
+        document.getElementById('repoSelect').value = '';
+        document.getElementById('pullRequestSection').style.display = 'none';
+    }
+}
+
+// Handle scan type change
+document.addEventListener('DOMContentLoaded', function() {
+    const scanTypeRadios = document.querySelectorAll('input[name="scanType"]');
+    const prSelectionDiv = document.getElementById('prSelectionDiv');
+    
+    scanTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.value === 'pr') {
+                prSelectionDiv.style.display = 'block';
+            } else {
+                prSelectionDiv.style.display = 'none';
+            }
+        });
+    });
+});
+
+// Form submission handling
+document.querySelector('form').addEventListener('submit', function(e) {
+    const scanType = document.querySelector('input[name="scanType"]:checked')?.value;
+    
+    if (scanType === 'pr') {
+        const prSelect = document.getElementById('prSelect');
+        const selectedPR = prSelect.value;
+        
+        if (!selectedPR) {
+            e.preventDefault();
+            alert('Please select a pull request to scan');
+            return;
+        }
+        
+        // Add PR information to form
+        const prInput = document.createElement('input');
+        prInput.type = 'hidden';
+        prInput.name = 'pr_number';
+        prInput.value = selectedPR;
+        this.appendChild(prInput);
+        
+        const scanTypeInput = document.createElement('input');
+        scanTypeInput.type = 'hidden';
+        scanTypeInput.name = 'scan_type';
+        scanTypeInput.value = 'pr';
+        this.appendChild(scanTypeInput);
+    }
+});
+</script>
 {% endblock %}

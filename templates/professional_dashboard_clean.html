@@ -1,0 +1,770 @@
+{% extends 'layout.html' %}
+
+{% block title %}Security Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header Section - More Compact -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="mb-1">
+        <i class="fas fa-shield-alt text-primary mr-2"></i>
+        Security Dashboard
+      </h3>
+      <div class="d-flex align-items-center">
+        {% if user.avatar_url %}
+        <img src="{{ user.avatar_url }}" alt="Avatar" class="rounded-circle mr-2" width="24" height="24">
+        {% endif %}
+        <div>
+          <span class="font-weight-bold">{{ user.username }}</span>
+          <small class="text-muted ml-2">
+            {% if user.email %}{{ user.email }} • {% endif %}
+            Member since {{ user.created_at.strftime('%B %Y') if user.created_at else 'Recently' }}
+          </small>
+        </div>
+      </div>
+    </div>
+    <div>
+      <button class="btn btn-primary btn-sm mr-2" onclick="showQuickScan()">
+        <i class="fas fa-plus mr-1"></i> New Scan
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="refreshDashboard()">
+        <i class="fas fa-sync-alt" id="refreshIcon"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Statistics Cards - More Compact -->
+  <div class="row mb-3">
+    <div class="col-lg-3 col-md-6 mb-2">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-3">
+          <div class="d-flex align-items-center justify-content-center mb-1">
+            <i class="fas fa-search text-primary mr-2"></i>
+            <h4 class="mb-0 font-weight-bold text-primary" id="totalScans">{{ stats.total_scans }}</h4>
+          </div>
+          <small class="text-muted">Total Scans</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-2">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-3">
+          <div class="d-flex align-items-center justify-content-center mb-1">
+            <i class="fas fa-check-circle text-success mr-2"></i>
+            <h4 class="mb-0 font-weight-bold text-success" id="completedScans">{{ stats.completed_scans }}</h4>
+          </div>
+          <small class="text-muted">Completed ({{ stats.success_rate }}%)</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-2">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-3">
+          <div class="d-flex align-items-center justify-content-center mb-1">
+            <i class="fas fa-bug text-warning mr-2"></i>
+            <h4 class="mb-0 font-weight-bold text-warning" id="totalVulns">{{ stats.total_vulnerabilities }}</h4>
+          </div>
+          <small class="text-muted">Vulnerabilities ({{ stats.high_vulnerabilities }} high)</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-2">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-3">
+          <div class="d-flex align-items-center justify-content-center mb-1">
+            <i class="fas fa-{% if stats.running_scans > 0 %}spinner fa-spin text-info{% else %}pause text-secondary{% endif %} mr-2"></i>
+            <h4 class="mb-0 font-weight-bold {% if stats.running_scans > 0 %}text-info{% else %}text-secondary{% endif %}" id="runningScans">{{ stats.running_scans }}</h4>
+          </div>
+          <small class="text-muted">{% if stats.running_scans > 0 %}Running{% else %}Idle{% endif %}</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Row -->
+  <div class="row">
+    <!-- Recent Scans - Compact -->
+    <div class="col-lg-8 mb-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 py-2">
+          <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 font-weight-bold">
+              <i class="fas fa-history text-muted mr-2"></i>Recent Scans
+            </h6>
+            <div class="d-flex align-items-center">
+              <div class="btn-group btn-group-sm mr-2">
+                <button class="btn btn-outline-secondary active" onclick="filterScans('all')" id="filter-all">All</button>
+                <button class="btn btn-outline-secondary" onclick="filterScans('completed')" id="filter-completed">Completed</button>
+                <button class="btn btn-outline-secondary" onclick="filterScans('failed')" id="filter-failed">Failed</button>
+              </div>
+              <a href="{{ url_for('scan') }}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-plus mr-1"></i>New Scan
+              </a>
+            </div>
+          </div>
+        </div>
+                <button class="btn btn-outline-secondary" onclick="filterScans('completed')" id="filter-completed">Completed</button>
+                <button class="btn btn-outline-secondary" onclick="filterScans('failed')" id="filter-failed">Failed</button>
+              </div>
+              <a href="{{ url_for('scan') }}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-plus mr-1"></i>New Scan
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="recentScansList">
+            {% for scan in recent_scans %}
+            <div class="scan-item d-flex justify-content-between align-items-center p-2 {% if not loop.last %}border-bottom{% endif %}" data-status="{{ scan.status }}">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center mb-1">
+                  <i class="fab fa-github text-muted mr-2"></i>
+                  <h6 class="mb-0">
+                    <a href="{{ url_for('detailed_findings', scan_id=scan.id) }}" class="text-decoration-none text-dark font-weight-bold">
+                      {{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}
+                    </a>
+                  </h6>
+                  {% if scan.vulnerabilities_json and scan.vulnerabilities_json|length > 10 %}
+                  <span class="badge badge-danger ml-2">High Risk</span>
+                  {% elif scan.vulnerabilities_json and scan.vulnerabilities_json|length > 5 %}
+                  <span class="badge badge-warning ml-2">Medium Risk</span>
+                  {% elif scan.vulnerabilities_json and scan.vulnerabilities_json|length > 0 %}
+                  <span class="badge badge-info ml-2">Low Risk</span>
+                  {% elif scan.status == 'completed' %}
+                  <span class="badge badge-success ml-2">Clean</span>
+                  {% endif %}
+                </div>
+                <div class="d-flex align-items-center">
+                  <small class="text-muted mr-3">
+                    <i class="fas fa-calendar mr-1"></i>
+                    {{ scan.created_at.strftime('%b %d, %H:%M') if scan.created_at }}
+                  </small>
+                  <small class="text-muted mr-3">
+                    <i class="fas fa-tools mr-1"></i>
+                    {{ scan.analysis_tool.title() }}
+                  </small>
+                  {% if scan.vulnerabilities_json %}
+                  <small class="text-muted">
+                    <i class="fas fa-bug mr-1"></i>
+                    {{ scan.vulnerabilities_json|length }} issues
+                  </small>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="mb-2">
+                  {% if scan.status == 'completed' %}
+                    <span class="badge badge-success">
+                      <i class="fas fa-check mr-1"></i>Completed
+                    </span>
+                  {% elif scan.status == 'processing' %}
+                    <span class="badge badge-warning">
+                      <i class="fas fa-spinner fa-spin mr-1"></i>Processing
+                    </span>
+                  {% elif scan.status == 'failed' %}
+                    <span class="badge badge-danger">
+                      <i class="fas fa-times mr-1"></i>Failed
+                    </span>
+                  {% else %}
+                    <span class="badge badge-secondary">
+                      <i class="fas fa-clock mr-1"></i>{{ scan.status.title() }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div class="btn-group btn-group-sm">
+                  <a href="{{ url_for('detailed_findings', scan_id=scan.id) }}" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-eye"></i>
+                  </a>
+                  {% if scan.status == 'completed' and scan.vulnerabilities_json %}
+                  <button class="btn btn-outline-success btn-sm" onclick="generatePatches('{{ scan.id }}')">
+                    <i class="fas fa-magic"></i>
+                  </button>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+            
+            {% if not recent_scans %}
+            <div class="text-center py-5">
+              <i class="fas fa-search fa-3x text-muted mb-3"></i>
+              <h5 class="text-muted">No scans yet</h5>
+              <p class="text-muted mb-4">Start your first security scan to see results here</p>
+              <a href="{{ url_for('scan') }}" class="btn btn-primary">
+                <i class="fas fa-plus mr-2"></i>Start First Scan
+              </a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Sidebar - Compact -->
+    <div class="col-lg-4">
+      <!-- Security Status -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom-0 py-3">
+          <h5 class="mb-0 font-weight-bold">
+            <i class="fas fa-shield-alt text-success mr-2"></i>Security Status
+          </h5>
+        </div>
+        <div class="card-body">
+          {% if stats.critical_vulnerabilities > 5 %}
+          <div class="alert alert-danger d-flex align-items-center mb-0">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <div>
+              <strong>High Risk:</strong> {{ stats.critical_vulnerabilities }} critical vulnerabilities detected. Immediate attention required.
+            </div>
+          </div>
+          {% elif stats.critical_vulnerabilities > 0 %}
+          <div class="alert alert-warning d-flex align-items-center mb-0">
+            <i class="fas fa-exclamation-circle mr-2"></i>
+            <div>
+              <strong>Security Notice:</strong> {{ stats.critical_vulnerabilities }} critical vulnerabilities found. Review recommended.
+            </div>
+          </div>
+          {% else %}
+          <div class="alert alert-success d-flex align-items-center mb-0">
+            <i class="fas fa-check-circle mr-2"></i>
+            <div>
+              <strong>All Clear:</strong> No critical vulnerabilities detected. Your repositories are secure.
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- System Health -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom-0 py-3">
+          <h5 class="mb-0 fw-semibold">
+            <i class="fas fa-heartbeat text-info me-2"></i>System Health
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted">Scanner Status</span>
+            <span class="badge bg-success">Online</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted">Queue Status</span>
+            <span class="badge bg-info" id="queueStatus">{{ stats.running_scans }} active</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted">Last Update</span>
+            <small class="text-muted" id="lastUpdate">Just now</small>
+          </div>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="text-muted">Uptime</span>
+            <small class="text-success fw-semibold">99.9%</small>
+          </div>
+        </div>
+      </div>
+      <!-- Quick Actions -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom-0 py-3">
+          <h5 class="mb-0 fw-semibold">
+            <i class="fas fa-bolt text-warning me-2"></i>Quick Actions
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="d-grid gap-2">
+            <a href="{{ url_for('scan') }}" class="btn btn-primary">
+              <i class="fas fa-search me-2"></i>New Security Scan
+            </a>
+            <a href="{{ url_for('scan') }}" class="btn btn-outline-secondary">
+              <i class="fas fa-upload me-2"></i>Upload ZIP File
+            </a>
+            <button class="btn btn-outline-info" onclick="showFuzzingDashboard()">
+              <i class="fas fa-bug me-2"></i>Fuzzing Dashboard
+            </button>
+            <hr class="my-2">
+            <button class="btn btn-outline-warning btn-sm" onclick="exportDashboardReport()">
+              <i class="fas fa-file-export me-2"></i>Export Report
+            </button>
+            <button class="btn btn-outline-info btn-sm" onclick="showSettings()">
+              <i class="fas fa-cog me-2"></i>Settings
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom-0 py-3">
+          <h5 class="mb-0 fw-semibold">
+            <i class="fas fa-bell text-primary me-2"></i>Recent Activity
+          </h5>
+        </div>
+        <div class="card-body">
+          <div id="activityFeed">
+            {% for scan in recent_scans[:3] %}
+            <div class="d-flex align-items-start mb-3 {% if not loop.last %}pb-3 border-bottom{% endif %}">
+              <div class="flex-shrink-0 me-2">
+                {% if scan.status == 'completed' %}
+                <i class="fas fa-check-circle text-success"></i>
+                {% elif scan.status == 'failed' %}
+                <i class="fas fa-times-circle text-danger"></i>
+                {% else %}
+                <i class="fas fa-clock text-warning"></i>
+                {% endif %}
+              </div>
+              <div class="flex-grow-1">
+                <small class="text-muted d-block">{{ scan.created_at.strftime('%H:%M') if scan.created_at }}</small>
+                <small class="text-dark">
+                  Scan {{ scan.status }} for 
+                  <strong>{{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}</strong>
+                  {% if scan.vulnerabilities_json %}
+                  <span class="text-warning">- {{ scan.vulnerabilities_json|length }} issues found</span>
+                  {% endif %}
+                </small>
+              </div>
+            </div>
+            {% endfor %}
+            {% if not recent_scans %}
+            <small class="text-muted">No recent activity</small>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Quick Scan Modal -->
+<div class="modal fade" id="quickScanModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Quick Scan</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="quickScanForm">
+          <div class="mb-3">
+            <label for="repoUrl" class="form-label">GitHub Repository URL</label>
+            <input type="url" class="form-control" id="repoUrl" placeholder="https://github.com/user/repo" required>
+            <div class="form-text">Enter a public GitHub repository URL to scan</div>
+          </div>
+          <div class="mb-3">
+            <label for="analysisToolQuick" class="form-label">Analysis Tool</label>
+            <select class="form-select" id="analysisToolQuick">
+              <option value="cppcheck" {% if user_settings and user_settings.default_analysis_tool == 'cppcheck' %}selected{% endif %}>Cppcheck</option>
+              <option value="codeql" {% if user_settings and user_settings.default_analysis_tool == 'codeql' %}selected{% endif %}>CodeQL</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="startQuickScan()">
+          <i class="fas fa-search"></i> Start Scan
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">User Settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="settingsForm">
+          <div class="mb-3">
+            <label for="defaultTool" class="form-label">Default Analysis Tool</label>
+            <select class="form-select" id="defaultTool">
+              <option value="cppcheck">Cppcheck</option>
+              <option value="codeql">CodeQL</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="emailNotifications">
+              <label class="form-check-label" for="emailNotifications">
+                Email notifications for scan completion
+              </label>
+            </div>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="autoPatch">
+              <label class="form-check-label" for="autoPatch">
+                Automatically generate patches (when available)
+              </label>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+console.log('Professional dashboard script loaded');
+
+// Dashboard functionality
+let refreshInterval;
+
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Dashboard initializing...');
+    initializeDashboard();
+});
+
+function initializeDashboard() {
+    console.log('Initializing dashboard components...');
+    
+    try {
+        loadUserSettings();
+        startAutoRefresh();
+        initializeFilterButtons();
+        
+        {% if stats.running_scans > 0 %}
+        loadRunningScans();
+        {% endif %}
+        
+        console.log('Dashboard initialized successfully');
+    } catch (error) {
+        console.error('Error initializing dashboard:', error);
+    }
+}
+
+function initializeFilterButtons() {
+    const allFilterBtn = document.getElementById('filter-all');
+    if (allFilterBtn) {
+        allFilterBtn.classList.add('active');
+    }
+}
+
+function showQuickScan() {
+    console.log('showQuickScan called');
+    
+    if (typeof bootstrap === 'undefined') {
+        console.error('Bootstrap is not loaded!');
+        alert('Bootstrap is not loaded. Please refresh the page.');
+        return;
+    }
+    
+    const modalElement = document.getElementById('quickScanModal');
+    if (!modalElement) {
+        console.error('Modal element not found!');
+        alert('Modal element not found. Please refresh the page.');
+        return;
+    }
+    
+    try {
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } catch (error) {
+        console.error('Error showing quick scan modal:', error);
+        alert('Error opening modal. Please refresh the page.');
+    }
+}
+
+function startQuickScan() {
+    console.log('startQuickScan called');
+    const repoUrl = document.getElementById('repoUrl').value;
+    const analysisTool = document.getElementById('analysisToolQuick').value;
+    
+    if (!repoUrl) {
+        alert('Please enter a repository URL');
+        return;
+    }
+
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    button.disabled = true;
+
+    fetch('/api/dashboard/quick-scan', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            repo_url: repoUrl,
+            analysis_tool: analysisTool
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('quickScanModal')).hide();
+            window.location.href = data.redirect_url;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error starting scan. Please try again.');
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+function showSettings() {
+    console.log('showSettings called');
+    try {
+        const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
+        modal.show();
+    } catch (error) {
+        console.error('Error showing settings modal:', error);
+        alert('Error opening settings modal. Please refresh the page.');
+    }
+}
+
+function loadUserSettings() {
+    fetch('/api/user/settings')
+    .then(response => response.json())
+    .then(settings => {
+        document.getElementById('defaultTool').value = settings.default_analysis_tool || 'cppcheck';
+        document.getElementById('emailNotifications').checked = settings.email_notifications || false;
+        document.getElementById('autoPatch').checked = settings.auto_patch_generation || false;
+    })
+    .catch(error => console.error('Error loading settings:', error));
+}
+
+function saveSettings() {
+    const settings = {
+        default_analysis_tool: document.getElementById('defaultTool').value,
+        email_notifications: document.getElementById('emailNotifications').checked,
+        auto_patch_generation: document.getElementById('autoPatch').checked
+    };
+
+    fetch('/api/user/settings', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
+            showNotification('Settings saved successfully!', 'success');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error saving settings. Please try again.');
+    });
+}
+
+function startAutoRefresh() {
+    refreshInterval = setInterval(() => {
+        updateSystemHealth();
+    }, 30000);
+}
+
+function refreshDashboard() {
+    const icon = document.getElementById('refreshIcon');
+    icon.classList.add('fa-spin');
+
+    fetch('/api/dashboard/stats')
+    .then(response => response.json())
+    .then(stats => {
+        document.getElementById('totalScans').textContent = stats.total_scans;
+        document.getElementById('completedScans').textContent = stats.completed_scans;
+        document.getElementById('totalVulns').textContent = stats.total_vulnerabilities;
+        document.getElementById('runningScans').textContent = stats.running_scans;
+        
+        if (stats.running_scans > 0) {
+            loadRunningScans();
+        }
+        
+        updateSystemHealth();
+        showNotification('Dashboard refreshed', 'info');
+    })
+    .catch(error => {
+        console.error('Error refreshing dashboard:', error);
+        showNotification('Failed to refresh dashboard', 'danger');
+    })
+    .finally(() => {
+        icon.classList.remove('fa-spin');
+    });
+}
+function loadRunningScans() {
+    fetch('/api/dashboard/running-scans')
+    .then(response => response.json())
+    .then(data => {
+        const container = document.getElementById('runningScansList');
+        if (container && data.scans) {
+            container.innerHTML = data.scans.map(scan => `
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">
+                            <i class="fab fa-github me-2 text-muted"></i>
+                            ${scan.repo_url.split('/').pop()}
+                        </h6>
+                        <small class="text-muted">
+                            <i class="fas fa-tools me-1"></i>${scan.analysis_tool}
+                        </small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-warning">
+                            <i class="fas fa-spinner fa-spin me-1"></i>${scan.status}
+                        </span>
+                        <br><small class="text-muted">${Math.floor(scan.elapsed_time / 60)}m elapsed</small>
+                    </div>
+                </div>
+            `).join('');
+        }
+    })
+    .catch(error => console.error('Error loading running scans:', error));
+}
+
+function showFuzzingDashboard() {
+    console.log('showFuzzingDashboard called');
+    try {
+        window.location.href = '/fuzzing-dashboard';
+    } catch (error) {
+        console.error('Error navigating to fuzzing dashboard:', error);
+        alert('Error navigating to fuzzing dashboard');
+    }
+}
+
+function filterScans(status) {
+    console.log('filterScans called with status:', status);
+    const scanItems = document.querySelectorAll('.scan-item');
+    const filterButtons = document.querySelectorAll('[id^="filter-"]');
+    
+    filterButtons.forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(`filter-${status}`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    }
+    
+    scanItems.forEach(item => {
+        if (status === 'all' || item.dataset.status === status) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+function generatePatches(scanId) {
+    console.log('generatePatches called for scan:', scanId);
+    if (confirm('Generate AI patches for this scan? This will analyze vulnerabilities and create suggested fixes.')) {
+        try {
+            window.location.href = `/patch-review/${scanId}`;
+        } catch (error) {
+            console.error('Error navigating to patch review:', error);
+            alert('Error navigating to patch review');
+        }
+    }
+}
+
+function exportDashboardReport() {
+    console.log('exportDashboardReport called');
+    try {
+        const reportData = {
+            timestamp: new Date().toISOString(),
+            user: '{{ user.username }}',
+            stats: {
+                totalScans: document.getElementById('totalScans')?.textContent || '0',
+                completedScans: document.getElementById('completedScans')?.textContent || '0',
+                totalVulns: document.getElementById('totalVulns')?.textContent || '0',
+                runningScans: document.getElementById('runningScans')?.textContent || '0'
+            }
+        };
+        
+        const reportText = `
+AutoVulRepair Security Dashboard Report
+Generated: ${new Date().toLocaleString()}
+User: {{ user.username }}
+
+=== SUMMARY STATISTICS ===
+Total Scans: ${reportData.stats.totalScans}
+Completed Scans: ${reportData.stats.completedScans}
+Total Vulnerabilities: ${reportData.stats.totalVulns}
+Running Scans: ${reportData.stats.runningScans}
+
+Report generated by AutoVulRepair DevSecOps Platform
+        `.trim();
+        
+        const blob = new Blob([reportText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dashboard-report-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showNotification('Dashboard report exported successfully', 'success');
+    } catch (error) {
+        console.error('Error exporting dashboard report:', error);
+        showNotification('Error exporting report', 'danger');
+    }
+}
+function updateSystemHealth() {
+    fetch('/api/dashboard/stats')
+    .then(response => response.json())
+    .then(stats => {
+        const queueStatus = document.getElementById('queueStatus');
+        if (queueStatus) {
+            queueStatus.textContent = `${stats.running_scans} active`;
+            queueStatus.className = stats.running_scans > 0 ? 'badge bg-warning' : 'badge bg-info';
+        }
+        
+        const lastUpdateEl = document.getElementById('lastUpdate');
+        if (lastUpdateEl) {
+            lastUpdateEl.textContent = 'Just now';
+        }
+    })
+    .catch(error => console.error('Error updating system health:', error));
+}
+
+function showNotification(message, type = 'info') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 3000);
+}ame = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 3000);
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

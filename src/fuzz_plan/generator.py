@@ -127,7 +127,7 @@ class FuzzPlanGenerator:
         'Type-Confusion': ['fuzz/types.dict'],
     }
     
-    def __init__(self, findings_path: str, max_targets: int = 100, source_dir: Optional[str] = None):
+    def __init__(self, findings_path: str, max_targets: int = 100, source_dir: Optional[str] = None, enable_integration: bool = False, enable_race_condition: bool = False):
         """Initialize generator with static findings - Issue #7 fixed"""
         self.findings_path = findings_path
         self.findings_data = None
@@ -135,6 +135,8 @@ class FuzzPlanGenerator:
         self.max_targets = max_targets  # Resource limit
         self.source_dir = source_dir  # Optional source directory for signature extraction
         self.signature_extractor = SignatureExtractor()
+        self.enable_integration = enable_integration  # New: Enable integration fuzzing
+        self.enable_race_condition = enable_race_condition  # New: Enable race condition fuzzing
         
     def load_findings(self) -> None:
         """Load static findings from JSON"""
@@ -514,6 +516,193 @@ class FuzzPlanGenerator:
         
         return target
     
+    def generate_integration_targets(self) -> List[Dict[str, Any]]:
+        """Generate integration fuzzing targets (NEW)"""
+        if not self.enable_integration or not self.source_dir:
+            return []
+        
+        try:
+            from src.integration.discovery import IntegrationTargetDiscovery
+            
+            print("[FUZZ_PLAN] Generating integration targets...")
+            
+            # Discover integration chains
+            discovery = IntegrationTargetDiscovery(self.source_dir)
+            chains = discovery.discover_integration_chains()
+            
+            if not chains:
+                print("[FUZZ_PLAN] No integration chains found")
+                return []
+            
+            # Convert chains to fuzz targets
+            integration_targets = []
+            for chain in chains:
+                target = {
+                    'target_id': chain.chain_id,
+                    'type': 'integration',  # Mark as integration target
+                    'source_file': chain.entry_point.file_path,
+                    'file_stem': Path(chain.entry_point.file_path).stem,
+                    'function_name': chain.entry_point.name,
+                    'bug_class': 'Integration-Bug',
+                    'rule_id': 'integration_fuzzing',
+                    'severity': 'high',  # Integration bugs are typically high severity
+                    'confidence': 'medium',
+                    'line_number': chain.entry_point.line_number,
+                    'column_number': 0,
+                    'message': f'Integration chain: {" → ".join(comp.name for comp in chain.components[:3])}{"..." if len(chain.components) > 3 else ""}',
+                    'cwe': '',
+                    'sanitizers': ['address', 'undefined'],  # Standard sanitizers for integration
+                    'seed_directories': ['fuzz/seeds/integration/', 'fuzz/seeds/api/'],
+                    'dictionaries': ['fuzz/integration.dict', 'fuzz/auto.dict'],
+                    'priority': chain.priority_score,
+                    'harness_type': 'integration_chain',
+                    'harness_template': 'integration_chain',
+                    
+                    # Integration-specific metadata
+                    'integration_chain': {
+                        'entry_point': {
+                            'name': chain.entry_point.name,
+                            'file_path': chain.entry_point.file_path,
+                            'parameters': chain.entry_point.parameters
+                        },
+                        'components': [
+                            {
+                                'name': comp.name,
+                                'file_path': comp.file_path,
+                                'line_number': comp.line_number,
+                                'is_validation': comp.is_validation,
+                                'is_auth': comp.is_auth,
+                                'is_database': comp.is_database
+                            }
+                            for comp in chain.components
+                        ],
+                        'vulnerability_surface': chain.vulnerability_surface,
+                        'data_flow': chain.data_flow,
+                        'endpoint_type': chain.endpoint_type
+                    }
+                }
+                
+                integration_targets.append(target)
+            
+            print(f"[FUZZ_PLAN] Generated {len(integration_targets)} integration targets")
+            return integration_targets
+            
+        except ImportError:
+            print("[FUZZ_PLAN] Integration discovery module not available")
+            return []
+        except Exception as e:
+            print(f"[FUZZ_PLAN] Failed to generate integration targets: {e}")
+            return []
+
+    def generate_race_condition_targets(self) -> List[Dict[str, Any]]:
+        """Generate race condition fuzzing targets (NEW)"""
+        if not self.enable_race_condition or not self.source_dir:
+            return []
+        
+        try:
+            from src.race_condition.integration import RaceConditionIntegration
+            
+            print("[FUZZ_PLAN] Generating race condition targets...")
+            
+            # Initialize race condition integration
+            race_integration = RaceConditionIntegration(self.source_dir)
+            
+            # Discover race condition targets
+            race_targets = race_integration.discover_race_targets()
+            
+            if not race_targets:
+                print("[FUZZ_PLAN] No race condition targets found")
+                return []
+            
+            # Generate fuzz plan targets
+            race_fuzz_targets = race_integration.generate_race_fuzz_plan_targets()
+            
+            print(f"[FUZZ_PLAN] Generated {len(race_fuzz_targets)} race condition targets")
+            return race_fuzz_targets
+            
+        except ImportError:
+            print("[FUZZ_PLAN] Race condition module not available")
+            return []
+        except Exception as e:
+            print(f"[FUZZ_PLAN] Failed to generate race condition targets: {e}")
+            return []
+        """Generate integration fuzzing targets (NEW)"""
+        if not self.enable_integration or not self.source_dir:
+            return []
+        
+        try:
+            from src.integration.discovery import IntegrationTargetDiscovery
+            
+            print("[FUZZ_PLAN] Generating integration targets...")
+            
+            # Discover integration chains
+            discovery = IntegrationTargetDiscovery(self.source_dir)
+            chains = discovery.discover_integration_chains()
+            
+            if not chains:
+                print("[FUZZ_PLAN] No integration chains found")
+                return []
+            
+            # Convert chains to fuzz targets
+            integration_targets = []
+            for chain in chains:
+                target = {
+                    'target_id': chain.chain_id,
+                    'type': 'integration',  # Mark as integration target
+                    'source_file': chain.entry_point.file_path,
+                    'file_stem': Path(chain.entry_point.file_path).stem,
+                    'function_name': chain.entry_point.name,
+                    'bug_class': 'Integration-Bug',
+                    'rule_id': 'integration_fuzzing',
+                    'severity': 'high',  # Integration bugs are typically high severity
+                    'confidence': 'medium',
+                    'line_number': chain.entry_point.line_number,
+                    'column_number': 0,
+                    'message': f'Integration chain: {" → ".join(comp.name for comp in chain.components[:3])}{"..." if len(chain.components) > 3 else ""}',
+                    'cwe': '',
+                    'sanitizers': ['address', 'undefined'],  # Standard sanitizers for integration
+                    'seed_directories': ['fuzz/seeds/integration/', 'fuzz/seeds/api/'],
+                    'dictionaries': ['fuzz/integration.dict', 'fuzz/auto.dict'],
+                    'priority': chain.priority_score,
+                    'harness_type': 'integration_chain',
+                    'harness_template': 'integration_chain',
+                    
+                    # Integration-specific metadata
+                    'integration_chain': {
+                        'entry_point': {
+                            'name': chain.entry_point.name,
+                            'file_path': chain.entry_point.file_path,
+                            'parameters': chain.entry_point.parameters
+                        },
+                        'components': [
+                            {
+                                'name': comp.name,
+                                'file_path': comp.file_path,
+                                'line_number': comp.line_number,
+                                'is_validation': comp.is_validation,
+                                'is_auth': comp.is_auth,
+                                'is_database': comp.is_database
+                            }
+                            for comp in chain.components
+                        ],
+                        'vulnerability_surface': chain.vulnerability_surface,
+                        'data_flow': chain.data_flow,
+                        'endpoint_type': chain.endpoint_type
+                    }
+                }
+                
+                integration_targets.append(target)
+            
+            print(f"[FUZZ_PLAN] Generated {len(integration_targets)} integration targets")
+            return integration_targets
+            
+        except ImportError:
+            print("[FUZZ_PLAN] Integration discovery module not available")
+            return []
+        except Exception as e:
+            print(f"[FUZZ_PLAN] Failed to generate integration targets: {e}")
+            return []
+    
     def generate_fuzz_plan(self) -> Dict[str, Any]:
         """Generate complete fuzz plan (FR1)"""
         print(f"[FUZZ_PLAN] Generating fuzz plan...")
@@ -548,6 +737,18 @@ class FuzzPlanGenerator:
         if skipped_count > 0:
             print(f"[FUZZ_PLAN] Skipped {skipped_count} invalid findings")
         
+        # Generate integration targets if enabled
+        integration_targets = self.generate_integration_targets()
+        if integration_targets:
+            targets.extend(integration_targets)
+            print(f"[FUZZ_PLAN] Added {len(integration_targets)} integration targets")
+        
+        # Generate race condition targets if enabled
+        race_condition_targets = self.generate_race_condition_targets()
+        if race_condition_targets:
+            targets.extend(race_condition_targets)
+            print(f"[FUZZ_PLAN] Added {len(race_condition_targets)} race condition targets")
+        
         # Sort by priority (highest first)
         targets.sort(key=lambda t: t['priority'], reverse=True)
         
@@ -562,12 +763,23 @@ class FuzzPlanGenerator:
         bug_class_breakdown = defaultdict(int)
         signatures_extracted = 0
         signatures_failed = 0
+        integration_count = 0
+        race_condition_count = 0
+        
         for target in targets:
             bug_class_breakdown[target['bug_class']] += 1
             if 'function_signature' in target:
                 signatures_extracted += 1
             elif target.get('signature_status') == 'not_extracted':
                 signatures_failed += 1
+            
+            # Count integration targets
+            if target.get('type') == 'integration':
+                integration_count += 1
+            
+            # Count race condition targets
+            if target.get('type') == 'race_condition':
+                race_condition_count += 1
         
         fuzz_plan = {
             'version': '1.0',
@@ -576,14 +788,19 @@ class FuzzPlanGenerator:
             'targets': targets,
             'metadata': {
                 'total_findings': self.findings_data['total_findings'],
-                'deduplicated_targets': len(targets),
+                'deduplicated_targets': len(targets) - integration_count - race_condition_count,  # Exclude special targets from dedup count
+                'integration_targets': integration_count,
+                'race_condition_targets': race_condition_count,
+                'total_targets': len(targets),
                 'bug_class_breakdown': dict(bug_class_breakdown),
                 'sanitizers_used': list(set(
                     san for t in targets for san in t['sanitizers']
                 )),
                 'signatures_extracted': signatures_extracted,
                 'signatures_failed': signatures_failed,
-                'signature_extraction_rate': f"{signatures_extracted}/{len(targets)}" if len(targets) > 0 else "0/0"
+                'signature_extraction_rate': f"{signatures_extracted}/{len(targets)}" if len(targets) > 0 else "0/0",
+                'integration_enabled': self.enable_integration,
+                'race_condition_enabled': self.enable_race_condition
             }
         }
         

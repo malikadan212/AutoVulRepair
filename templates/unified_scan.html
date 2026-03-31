@@ -1,0 +1,843 @@
+{% extends 'layout.html' %}
+
+{% block title %}Security Scanner{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/modules/scan-form.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row justify-content-center">
+    <div class="col-12">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2>
+            <i class="fas fa-shield-alt text-primary"></i>
+            Security Scanner
+          </h2>
+          <p class="text-muted mb-0">Comprehensive static analysis for repositories, pull requests, and code</p>
+        </div>
+        <div>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+          </a>
+        </div>
+      </div>
+      
+      <div class="alert alert-info d-flex align-items-center">
+        <div class="flex-grow-1">
+          <i class="fas fa-info-circle me-2"></i>
+          <strong>Authenticated Scan:</strong> Your scan results will be saved to your dashboard and you can track progress in real-time.
+        </div>
+        {% if current_user.is_authenticated %}
+        <div class="d-flex align-items-center ms-3">
+          {% if current_user.avatar_url %}
+          <img src="{{ current_user.avatar_url }}" alt="Avatar" class="rounded-circle me-2" width="24" height="24">
+          {% endif %}
+          <small class="text-muted">Scanning as <strong>{{ current_user.username }}</strong></small>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Scanner Capabilities -->
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">
+              <h5><i class="fas fa-tools"></i> Scanner Capabilities</h5>
+            </div>
+            <div class="card-body" id="capabilities-section">
+              <div class="text-center">
+                <div class="spinner-border" role="status">
+                  <span class="visually-hidden">Loading capabilities...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scan Options Tabs -->
+      <div class="card">
+        <div class="card-header">
+          <ul class="nav nav-tabs card-header-tabs" id="scanTabs" role="tablist">
+            <li class="nav-item">
+              <button class="nav-link active" id="single-repo-tab" data-bs-toggle="tab" data-bs-target="#single-repo" type="button" role="tab">
+                <i class="fas fa-repository"></i> Repository Scan
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" id="pr-scan-tab" data-bs-toggle="tab" data-bs-target="#pr-scan" type="button" role="tab">
+                <i class="fas fa-code-branch"></i> Pull Request Scan
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" id="batch-scan-tab" data-bs-toggle="tab" data-bs-target="#batch-scan" type="button" role="tab">
+                <i class="fas fa-layer-group"></i> Batch Scan
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab">
+                <i class="fas fa-upload"></i> Upload ZIP
+              </button>
+            </li>
+          </ul>
+        </div>
+        
+        <div class="card-body">
+          <div class="tab-content">
+            <!-- Single Repository Scan -->
+            <div class="tab-pane fade show active" id="single-repo" role="tabpanel">
+              <form method="POST" action="{{ url_for('scan') }}" id="single-repo-form">
+                <div class="row">
+                  <div class="col-md-8">
+                    <div class="mb-3">
+                      <label class="form-label">Repository Source</label>
+                      <div class="d-flex gap-2 mb-3">
+                        <button type="button" class="btn btn-outline-primary" onclick="loadUserRepositories()">
+                          <i class="fas fa-sync-alt"></i> Load My Repositories
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="toggleManualEntry()">
+                          <i class="fas fa-keyboard"></i> Enter URL Manually
+                        </button>
+                      </div>
+                      
+                      <!-- Repository Selection -->
+                      <div id="repositorySelection" style="display: none;">
+                        <div class="mb-3">
+                          <select class="form-select" id="repoSelect" onchange="onRepositorySelected()">
+                            <option value="">Select a repository...</option>
+                          </select>
+                          <div class="form-text">
+                            <span id="repoLoadingText">Click "Load My Repositories" to see your GitHub repos</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <!-- Manual URL Entry -->
+                      <div id="manualUrlEntry">
+                        <div class="mb-3">
+                          <input type="url" class="form-control" id="repo_url" name="repo_url" 
+                                 placeholder="https://github.com/username/repository"
+                                 pattern="https://github\.com/[\w\-\.]+/[\w\-\.]+(\.git)?\/?/?"
+                                 required>
+                          <div class="form-text">
+                            Enter the URL of a public GitHub repository to scan for vulnerabilities.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Analysis Tools</label>
+                      <div id="single-repo-tools-selection">
+                        <!-- Tools will be populated dynamically -->
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="text-center">
+                  <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="fas fa-play"></i> Start Repository Scan
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Pull Request Scan -->
+            <div class="tab-pane fade" id="pr-scan" role="tabpanel">
+              <form id="pr-scan-form">
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="mb-3">
+                      <label class="form-label">Repository (owner/repo)</label>
+                      <input type="text" class="form-control" id="pr-repo" 
+                             placeholder="owner/repository" required>
+                      <div class="form-text">
+                        Enter the repository name in format: owner/repository
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="mb-3">
+                      <label class="form-label">Pull Request Number</label>
+                      <input type="number" class="form-control" id="pr-number" 
+                             placeholder="123" min="1" required>
+                      <div class="form-text">
+                        Enter the PR number to scan only changed files
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="mb-3">
+                  <label class="form-label">Analysis Tools</label>
+                  <div id="pr-tools-selection">
+                    <!-- Tools will be populated dynamically -->
+                  </div>
+                </div>
+                
+                <div class="text-center">
+                  <button type="submit" class="btn btn-success btn-lg">
+                    <i class="fas fa-play"></i> Start PR Scan
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Batch Repository Scan -->
+            <div class="tab-pane fade" id="batch-scan" role="tabpanel">
+              <form id="batch-scan-form">
+                <div class="mb-3">
+                  <label class="form-label">Repository URLs (one per line, max 10)</label>
+                  <textarea class="form-control" id="batch-repos" rows="6" 
+                            placeholder="https://github.com/owner/repo1&#10;https://github.com/owner/repo2&#10;https://github.com/owner/repo3"></textarea>
+                  <div class="form-text">
+                    Enter up to 10 repository URLs, one per line
+                  </div>
+                </div>
+                
+                <div class="mb-3">
+                  <label class="form-label">Analysis Tools</label>
+                  <div id="batch-tools-selection">
+                    <!-- Tools will be populated dynamically -->
+                  </div>
+                </div>
+                
+                <div class="text-center">
+                  <button type="submit" class="btn btn-warning btn-lg">
+                    <i class="fas fa-play"></i> Start Batch Scan
+                  </button>
+                </div>
+              </form>
+            </div>
+            
+            <!-- ZIP Upload -->
+            <div class="tab-pane fade" id="upload" role="tabpanel">
+              <form method="POST" action="{{ url_for('scan') }}" enctype="multipart/form-data" id="upload-form">
+                <div class="row">
+                  <div class="col-md-8">
+                    <div class="mb-3">
+                      <label for="zip_file" class="form-label">Upload Repository ZIP</label>
+                      <input type="file" class="form-control" id="zip_file" name="zip_file" accept=".zip" required>
+                      <div class="form-text">
+                        Upload a ZIP file of your repository. Perfect for private repos or local projects.
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Analysis Tool</label>
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" name="analysis_tool" id="upload-cppcheck" value="cppcheck" checked>
+                        <label class="form-check-label" for="upload-cppcheck">
+                          <strong>Cppcheck</strong>
+                        </label>
+                      </div>
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" name="analysis_tool" id="upload-codeql" value="codeql">
+                        <label class="form-check-label" for="upload-codeql">
+                          <strong>CodeQL</strong>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="text-center">
+                  <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="fas fa-upload"></i> Upload and Scan
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Scans -->
+      <div class="row mt-4">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">
+              <h5><i class="fas fa-tasks"></i> Active Scans</h5>
+            </div>
+            <div class="card-body" id="active-scans">
+              <p class="text-muted">No active scans</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- User Benefits -->
+      <div class="row mt-4">
+        <div class="col-md-4 text-center">
+          <i class="fas fa-save fa-2x text-primary mb-2"></i>
+          <h6>Saved Results</h6>
+          <small class="text-muted">All scan results saved to your dashboard</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-chart-line fa-2x text-primary mb-2"></i>
+          <h6>Progress Tracking</h6>
+          <small class="text-muted">Real-time scan progress and notifications</small>
+        </div>
+        <div class="col-md-4 text-center">
+          <i class="fas fa-history fa-2x text-primary mb-2"></i>
+          <h6>Scan History</h6>
+          <small class="text-muted">Access all your previous scan results</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Results Modal -->
+<div class="modal fade" id="resultsModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Scan Results</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="scan-results-content">
+        <!-- Results will be populated here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.scan-card {
+  transition: transform 0.2s;
+  border-left: 4px solid #007bff;
+}
+.scan-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.capability-badge {
+  font-size: 0.8em;
+  margin: 2px;
+}
+.tool-status {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.tool-available { background-color: #28a745; }
+.tool-unavailable { background-color: #dc3545; }
+</style>
+
+<script>
+// Repository and PR management
+let userRepositories = [];
+let selectedRepository = null;
+let repositoryPulls = [];
+
+// Enhanced logging for scan operations
+console.log('🛡️  Security Scanner Debug Logs Enabled');
+console.log('📍 Current page: Unified Scan Interface');
+
+{% if current_user.is_authenticated %}
+console.log('👤 Authenticated user detected for scanning');
+console.log('📊 User scan context:', {
+    username: '{{ current_user.username }}',
+    user_id: '{{ current_user.id }}',
+    can_save_scans: true,
+    dashboard_access: true
+});
+{% else %}
+console.log('⚠️  No authenticated user - scans will not be saved');
+{% endif %}
+
+// Load capabilities on page load
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('🔧 Initializing scan interface...');
+  loadCapabilities();
+  setupEventListeners();
+});
+
+async function loadCapabilities() {
+  console.log('🔍 Loading scanner capabilities...');
+  try {
+    const response = await fetch('/api/v2/scan/capabilities');
+    const data = await response.json();
+    
+    if (data.success) {
+      console.log('✅ Scanner capabilities loaded successfully');
+      console.log('🛠️  Available tools:', Object.keys(data.capabilities.tools));
+      console.log('🔧 Tool details:', data.capabilities.tools);
+      console.log('📋 Supported languages:', data.capabilities.supported_languages);
+      
+      displayCapabilities(data.capabilities);
+      populateToolSelections(data.capabilities.tools);
+    } else {
+      console.error('❌ Failed to load scanner capabilities:', data);
+      document.getElementById('capabilities-section').innerHTML = 
+        '<div class="alert alert-danger">Failed to load capabilities</div>';
+    }
+  } catch (error) {
+    console.error('💥 Error loading capabilities:', error);
+    document.getElementById('capabilities-section').innerHTML = 
+      '<div class="alert alert-danger">Error loading capabilities</div>';
+  }
+}
+
+function displayCapabilities(capabilities) {
+  const section = document.getElementById('capabilities-section');
+  
+  let html = '<div class="row">';
+  
+  // Tools
+  html += '<div class="col-md-6"><h6>Available Analysis Tools</h6>';
+  for (const [toolName, toolInfo] of Object.entries(capabilities.tools)) {
+    const statusClass = toolInfo.available ? 'tool-available' : 'tool-unavailable';
+    const statusText = toolInfo.available ? 'Available' : 'Not Available';
+    
+    html += `
+      <div class="mb-2">
+        <span class="tool-status ${statusClass}"></span>
+        <strong>${toolName.toUpperCase()}</strong> - ${statusText}
+        <br><small class="text-muted">Languages: ${toolInfo.languages.join(', ')}</small>
+    `;
+    
+    if (toolInfo.available) {
+      html += '<br><small class="text-success"><i class="fas fa-docker"></i> Docker-based analysis</small>';
+    } else {
+      html += '<br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Will use pattern-based fallback</small>';
+    }
+    
+    html += '</div>';
+  }
+  html += '</div>';
+  
+  // Limits and capabilities
+  html += '<div class="col-md-6">';
+  html += '<h6>Scan Limits</h6>';
+  html += `
+    <ul class="list-unstyled">
+      <li><i class="fas fa-file"></i> Max file size: ${capabilities.limits.max_file_size_mb}MB</li>
+      <li><i class="fas fa-folder"></i> Max repo size: ${capabilities.limits.max_repo_size_mb}MB</li>
+      <li><i class="fas fa-clock"></i> Timeout: ${capabilities.limits.timeout_minutes} minutes</li>
+    </ul>
+    <h6>Supported Languages</h6>
+    <div>
+  `;
+  
+  capabilities.supported_languages.forEach(lang => {
+    html += `<span class="badge bg-secondary capability-badge">${lang}</span>`;
+  });
+  
+  html += '</div></div></div>';
+  
+  section.innerHTML = html;
+}
+
+function populateToolSelections(tools) {
+  const containers = ['single-repo-tools-selection', 'pr-tools-selection', 'batch-tools-selection'];
+  
+  containers.forEach(containerId => {
+    const container = document.getElementById(containerId);
+    let html = '';
+    
+    for (const [toolName, toolInfo] of Object.entries(tools)) {
+      const checked = toolInfo.available && toolName === 'cppcheck' ? 'checked' : '';
+      const disabled = !toolInfo.available ? 'disabled' : '';
+      
+      html += `
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" 
+                 id="${containerId}-${toolName}" value="${toolName}" 
+                 ${checked} ${disabled}>
+          <label class="form-check-label" for="${containerId}-${toolName}">
+            <strong>${toolName.toUpperCase()}</strong>
+            ${toolInfo.available ? '<span class="badge bg-success ms-1">Available</span>' : '<span class="badge bg-secondary ms-1">Unavailable</span>'}
+            <br><small class="text-muted">${toolInfo.languages.join(', ')}</small>
+          </label>
+        </div>
+      `;
+    }
+    
+    container.innerHTML = html;
+  });
+}
+
+function setupEventListeners() {
+  console.log('🎛️  Setting up scan form event listeners...');
+  
+  // Single repository form
+  document.getElementById('single-repo-form').addEventListener('submit', function(e) {
+    console.log('📝 Repository scan form submitted');
+    
+    // Check if repository URL is provided
+    const repoUrl = document.getElementById('repo_url').value.trim();
+    if (!repoUrl) {
+      console.error('❌ No repository URL provided');
+      e.preventDefault();
+      alert('Please enter a repository URL or select a repository from the dropdown');
+      return;
+    }
+    
+    console.log('🔗 Repository URL:', repoUrl);
+    
+    // Validate GitHub URL format
+    const githubUrlPattern = /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(\.git)?\/?$/;
+    if (!githubUrlPattern.test(repoUrl)) {
+      console.error('❌ Invalid GitHub URL format:', repoUrl);
+      e.preventDefault();
+      alert('Please enter a valid GitHub repository URL (e.g., https://github.com/username/repository)');
+      return;
+    }
+    
+    console.log('✅ GitHub URL format valid');
+    
+    const tools = getSelectedTools('single-repo-tools-selection');
+    if (tools.length === 0) {
+      console.error('❌ No analysis tools selected');
+      e.preventDefault();
+      alert('Please select at least one analysis tool');
+      return;
+    }
+    
+    console.log('🛠️  Selected analysis tools:', tools);
+    console.log('💾 Scan will be saved to database for user: {{ current_user.username if current_user.is_authenticated else "Anonymous" }}');
+    console.log('🚀 Starting repository scan...');
+    
+    // Add selected tools to form
+    tools.forEach(tool => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'analysis_tool';
+      input.value = tool;
+      this.appendChild(input);
+    });
+  });
+
+  // PR scan form
+  document.getElementById('pr-scan-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    console.log('🔀 Pull Request scan initiated');
+    
+    const repoName = document.getElementById('pr-repo').value;
+    const prNumber = parseInt(document.getElementById('pr-number').value);
+    const tools = getSelectedTools('pr-tools-selection');
+    
+    console.log('📊 PR Scan details:', {
+      repository: repoName,
+      pr_number: prNumber,
+      tools: tools,
+      user: '{{ current_user.username if current_user.is_authenticated else "Anonymous" }}'
+    });
+    
+    if (tools.length === 0) {
+      console.error('❌ No analysis tools selected for PR scan');
+      alert('Please select at least one analysis tool');
+      return;
+    }
+    
+    console.log('🚀 Starting PR differential scan...');
+    await startPRScan(repoName, prNumber, tools);
+  });
+
+  // Batch scan form
+  document.getElementById('batch-scan-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    console.log('📦 Batch scan initiated');
+    
+    const repoUrls = document.getElementById('batch-repos').value
+      .split('\n')
+      .map(url => url.trim())
+      .filter(url => url.length > 0);
+    
+    const tools = getSelectedTools('batch-tools-selection');
+    
+    console.log('📊 Batch scan details:', {
+      repository_count: repoUrls.length,
+      repositories: repoUrls,
+      tools: tools,
+      user: '{{ current_user.username if current_user.is_authenticated else "Anonymous" }}'
+    });
+    
+    if (repoUrls.length === 0) {
+      console.error('❌ No repository URLs provided for batch scan');
+      alert('Please enter at least one repository URL');
+      return;
+    }
+    
+    if (repoUrls.length > 10) {
+      console.error('❌ Too many repositories for batch scan:', repoUrls.length);
+      alert('Maximum 10 repositories allowed for batch scanning');
+      return;
+    }
+    
+    if (tools.length === 0) {
+      console.error('❌ No analysis tools selected for batch scan');
+      alert('Please select at least one analysis tool');
+      return;
+    }
+    
+    console.log('🚀 Starting batch repository scan...');
+    await startBatchScan(repoUrls, tools);
+  });
+}
+
+function getSelectedTools(containerId) {
+  const checkboxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
+  return Array.from(checkboxes).map(cb => cb.value);
+}
+
+// Repository management functions (from original scan.html)
+async function loadUserRepositories() {
+  console.log('📚 Loading user repositories from GitHub...');
+  
+  const loadBtn = document.querySelector('button[onclick="loadUserRepositories()"]');
+  const originalText = loadBtn.innerHTML;
+  const repoLoadingText = document.getElementById('repoLoadingText');
+  
+  try {
+    loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+    loadBtn.disabled = true;
+    repoLoadingText.textContent = 'Loading your repositories...';
+    
+    console.log('🔗 Fetching repositories from GitHub API...');
+    
+    const response = await fetch('/api/github/repositories');
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to load repositories');
+    }
+    
+    userRepositories = data.repositories || [];
+    
+    console.log('✅ Successfully loaded repositories:', {
+      count: userRepositories.length,
+      rate_limit_remaining: data.rate_limit?.remaining || 'Unknown',
+      user: '{{ current_user.username if current_user.is_authenticated else "Anonymous" }}'
+    });
+    
+    const repoSelect = document.getElementById('repoSelect');
+    repoSelect.innerHTML = '<option value="">Select a repository...</option>';
+    
+    userRepositories.forEach(repo => {
+      const option = document.createElement('option');
+      option.value = repo.full_name;
+      option.textContent = `${repo.full_name} ${repo.private ? '(Private)' : '(Public)'}`;
+      option.dataset.repoData = JSON.stringify(repo);
+      repoSelect.appendChild(option);
+    });
+    
+    document.getElementById('repositorySelection').style.display = 'block';
+    document.getElementById('manualUrlEntry').style.display = 'none';
+    
+    repoLoadingText.innerHTML = `
+      <i class="fas fa-check text-success"></i> 
+      Loaded ${userRepositories.length} repositories. 
+      Rate limit: ${data.rate_limit.remaining || 'Unknown'} remaining.
+    `;
+    
+    console.log('📋 Repository dropdown populated with user repositories');
+    
+  } catch (error) {
+    console.error('💥 Error loading repositories:', error);
+    repoLoadingText.innerHTML = `
+      <i class="fas fa-exclamation-triangle text-danger"></i> 
+      Error: ${error.message}
+    `;
+  } finally {
+    loadBtn.innerHTML = originalText;
+    loadBtn.disabled = false;
+  }
+}
+
+function onRepositorySelected() {
+  const repoSelect = document.getElementById('repoSelect');
+  const selectedValue = repoSelect.value;
+  
+  if (!selectedValue) {
+    selectedRepository = null;
+    console.log('📝 Repository selection cleared');
+    return;
+  }
+  
+  const selectedOption = repoSelect.options[repoSelect.selectedIndex];
+  selectedRepository = JSON.parse(selectedOption.dataset.repoData);
+  
+  console.log('📚 Repository selected:', {
+    name: selectedRepository.full_name,
+    private: selectedRepository.private,
+    clone_url: selectedRepository.clone_url,
+    language: selectedRepository.language,
+    size: selectedRepository.size
+  });
+  
+  document.getElementById('repo_url').value = selectedRepository.clone_url;
+  console.log('✅ Repository URL auto-filled from selection');
+}
+
+function toggleManualEntry() {
+  const repoSelection = document.getElementById('repositorySelection');
+  const manualEntry = document.getElementById('manualUrlEntry');
+  
+  if (repoSelection.style.display === 'none') {
+    repoSelection.style.display = 'block';
+    manualEntry.style.display = 'none';
+  } else {
+    repoSelection.style.display = 'none';
+    manualEntry.style.display = 'block';
+    selectedRepository = null;
+    document.getElementById('repoSelect').value = '';
+  }
+}
+
+// Advanced scanning functions
+async function startPRScan(repoName, prNumber, tools) {
+  try {
+    const response = await fetch('/api/v2/scan/pull-request', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        repo_full_name: repoName,
+        pr_number: prNumber,
+        analysis_tools: tools
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      showScanResults(data);
+    } else {
+      alert('PR scan failed: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Error starting PR scan:', error);
+    alert('Error starting PR scan');
+  }
+}
+
+async function startBatchScan(repoUrls, tools) {
+  try {
+    const response = await fetch('/api/v2/scan/batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        repositories: repoUrls,
+        analysis_tools: tools
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      showBatchResults(data);
+    } else {
+      alert('Batch scan failed: ' + data.error);
+    }
+  } catch (error) {
+    console.error('Error starting batch scan:', error);
+    alert('Error starting batch scan');
+  }
+}
+
+function showScanResults(data) {
+  const content = document.getElementById('scan-results-content');
+  const results = data.results;
+  
+  let html = `
+    <div class="alert alert-${results.status === 'completed' ? 'success' : 'info'}">
+      <h6>Scan ${results.status === 'completed' ? 'Completed' : 'Started'}</h6>
+      <p>Scan ID: ${data.scan_id}</p>
+      <p>Status: ${results.status}</p>
+    </div>
+  `;
+  
+  if (results.findings && results.findings.length > 0) {
+    html += '<h6>Findings</h6>';
+    html += '<div class="table-responsive">';
+    html += '<table class="table table-striped">';
+    html += '<thead><tr><th>Severity</th><th>File</th><th>Line</th><th>Message</th></tr></thead>';
+    html += '<tbody>';
+    
+    results.findings.forEach(finding => {
+      const severityClass = {
+        'critical': 'danger',
+        'high': 'warning',
+        'medium': 'info',
+        'low': 'secondary'
+      }[finding.severity] || 'secondary';
+      
+      html += `
+        <tr>
+          <td><span class="badge bg-${severityClass}">${finding.severity}</span></td>
+          <td>${finding.file_path}</td>
+          <td>${finding.line_number}</td>
+          <td>${finding.message}</td>
+        </tr>
+      `;
+    });
+    
+    html += '</tbody></table></div>';
+  } else {
+    html += '<div class="alert alert-success">No vulnerabilities found!</div>';
+  }
+  
+  content.innerHTML = html;
+  
+  const modal = new bootstrap.Modal(document.getElementById('resultsModal'));
+  modal.show();
+}
+
+function showBatchResults(data) {
+  const content = document.getElementById('scan-results-content');
+  
+  let html = `
+    <div class="alert alert-info">
+      <h6>Batch Scan Results</h6>
+      <p>Total scans: ${data.total_scans}</p>
+      <p>Successful: ${data.successful_scans}</p>
+    </div>
+  `;
+  
+  html += '<div class="table-responsive">';
+  html += '<table class="table table-striped">';
+  html += '<thead><tr><th>Repository</th><th>Status</th><th>Findings</th><th>Scan ID</th></tr></thead>';
+  html += '<tbody>';
+  
+  data.batch_results.forEach(result => {
+    const statusClass = result.success ? 'success' : 'danger';
+    const statusText = result.success ? result.status : 'Failed';
+    
+    html += `
+      <tr>
+        <td>${result.repo_url}</td>
+        <td><span class="badge bg-${statusClass}">${statusText}</span></td>
+        <td>${result.findings_count || 0}</td>
+        <td>${result.scan_id || 'N/A'}</td>
+      </tr>
+    `;
+  });
+  
+  html += '</tbody></table></div>';
+  
+  content.innerHTML = html;
+  
+  const modal = new bootstrap.Modal(document.getElementById('resultsModal'));
+  modal.show();
+}
+</script>
+{% endblock %}

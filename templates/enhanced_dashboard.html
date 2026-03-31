@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Dashboard - AutoVulRepair DevSecOps</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.min.js"></script>
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --danger-gradient: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            --info-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --dark-gradient: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --shadow-light: 0 8px 32px rgba(0, 0, 0, 0.1);
+            --shadow-medium: 0 12px 40px rgba(0, 0, 0, 0.15);
+            --shadow-heavy: 0 20px 60px rgba(0, 0, 0, 0.2);
+        }
+
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.1) !important;
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: var(--shadow-light);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.5rem;
+            color: white !important;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+        }
+
+        .welcome-header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: var(--shadow-medium);
+        }
+
+        .welcome-header h2 {
+            color: white;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            font-size: 2.5rem;
+        }
+
+        .welcome-header p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+
+        .dashboard-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            box-shadow: var(--shadow-medium);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .dashboard-card:hover {
+            transform: translateY(-8px);
+            box-shadow: var(--shadow-heavy);
+        }
+
+        .stat-card {
+            background: var(--primary-gradient);
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+            pointer-events: none;
+        }
+
+        .stat-card.success {
+            background: var(--success-gradient);
+        }
+
+        .stat-card.warning {
+            background: var(--warning-gradient);
+        }
+
+        .stat-card.danger {
+            background: var(--danger-gradient);
+        }
+
+        .stat-card.info {
+            background: var(--info-gradient);
+        }
+
+        .stat-card .card-body {
+            position: relative;
+            z-index: 2;
+            padding: 2rem;
+        }
+
+        .stat-card i {
+            font-size: 3rem;
+            opacity: 0.9;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card h3 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card p {
+            font-size: 1rem;
+            opacity: 0.9;
+            margin: 0;
+        }
+
+        .stat-card small {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .quick-action-btn {
+            border-radius: 12px;
+            padding: 14px 28px;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .quick-action-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .quick-action-btn:hover::before {
+            left: 100%;
+        }
+
+        .quick-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+
+        .scan-item {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-left: 4px solid #dee2e6;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 0 16px 16px 0;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .scan-item:hover {
+            transform: translateX(8px);
+            box-shadow: var(--shadow-light);
+        }
+
+        .scan-item.completed { 
+            border-left-color: #28a745;
+            background: linear-gradient(90deg, rgba(40, 167, 69, 0.1) 0%, rgba(255, 255, 255, 0.9) 10%);
+        }
+        .scan-item.failed { 
+            border-left-color: #dc3545;
+            background: linear-gradient(90deg, rgba(220, 53, 69, 0.1) 0%, rgba(255, 255, 255, 0.9) 10%);
+        }
+        .scan-item.processing { 
+            border-left-color: #ffc107;
+            background: linear-gradient(90deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 255, 255, 0.9) 10%);
+        }
+        .scan-item.queued { 
+            border-left-color: #6c757d;
+            background: linear-gradient(90deg, rgba(108, 117, 125, 0.1) 0%, rgba(255, 255, 255, 0.9) 10%);
+        }
+
+        .vulnerability-badge {
+            font-size: 0.75rem;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            background: linear-gradient(45deg, #ff9a9e 0%, #fecfef 100%);
+            color: #333;
+        }
+
+        .badge {
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .refresh-indicator {
+            display: none;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1.2rem;
+        }
+
+        .refresh-indicator.active {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            padding: 1rem;
+        }
+
+        .modal-content {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            box-shadow: var(--shadow-heavy);
+        }
+
+        .modal-header {
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 20px 20px 0 0;
+        }
+
+        .form-control, .form-select {
+            border-radius: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            padding: 12px 16px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-weight: 600;
+        }
+
+        .btn-success {
+            background: var(--success-gradient);
+            border: none;
+        }
+
+        .btn-warning {
+            background: var(--warning-gradient);
+            border: none;
+        }
+
+        .btn-danger {
+            background: var(--danger-gradient);
+            border: none;
+        }
+
+        .btn-info {
+            background: var(--info-gradient);
+            border: none;
+        }
+
+        .dropdown-menu {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            box-shadow: var(--shadow-medium);
+        }
+
+        .dropdown-item:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #6c757d;
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.5;
+        }
+
+        .empty-state h5 {
+            color: #495057;
+            margin-bottom: 1rem;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .gradient-text {
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+        }
+
+        /* Responsive improvements */
+        @media (max-width: 768px) {
+            .welcome-header h2 {
+                font-size: 2rem;
+            }
+            
+            .stat-card h3 {
+                font-size: 2rem;
+            }
+            
+            .dashboard-card {
+                margin-bottom: 1.5rem;
+            }
+        }
+
+        /* Loading animations */
+        .loading-shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        /* Enhanced animations and effects */
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-in-left {
+            animation: slideInLeft 0.8s ease-out;
+        }
+
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .slide-in-right {
+            animation: slideInRight 0.8s ease-out;
+        }
+
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .scale-in {
+            animation: scaleIn 0.5s ease-out;
+        }
+
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* Enhanced hover effects */
+        .stat-card:hover {
+            transform: translateY(-12px) scale(1.02);
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.25);
+        }
+
+        .quick-action-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 12px 35px rgba(0,0,0,0.25);
+        }
+
+        /* Floating elements */
+        .floating {
+            animation: floating 3s ease-in-out infinite;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        /* Progress bars for running scans */
+        .progress-bar-animated {
+            background: linear-gradient(45deg, 
+                rgba(255,255,255,0.2) 25%, 
+                transparent 25%, 
+                transparent 50%, 
+                rgba(255,255,255,0.2) 50%, 
+                rgba(255,255,255,0.2) 75%, 
+                transparent 75%);
+            background-size: 20px 20px;
+            animation: progress-bar-stripes 1s linear infinite;
+        }
+
+        @keyframes progress-bar-stripes {
+            0% { background-position: 0 0; }
+            100% { background-position: 20px 0; }
+        }
+
+        /* Enhanced status indicators */
+        .status-indicator {
+            position: relative;
+            display: inline-block;
+        }
+
+        .status-indicator::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: rotate 2s linear infinite;
+            opacity: 0;
+        }
+
+        .status-indicator.processing::before {
+            opacity: 1;
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Enhanced tooltips */
+        .tooltip-custom {
+            position: relative;
+            cursor: help;
+        }
+
+        .tooltip-custom::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .tooltip-custom:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Enhanced scan items with better visual hierarchy */
+        .scan-item {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scan-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            transition: left 0.6s ease;
+        }
+
+        .scan-item:hover::before {
+            left: 100%;
+        }
+
+        /* Enhanced vulnerability badges with severity colors */
+        .vulnerability-badge.critical {
+            background: linear-gradient(45deg, #dc3545 0%, #c82333 100%);
+            color: white;
+        }
+
+        .vulnerability-badge.high {
+            background: linear-gradient(45deg, #fd7e14 0%, #e55a00 100%);
+            color: white;
+        }
+
+        .vulnerability-badge.medium {
+            background: linear-gradient(45deg, #ffc107 0%, #e0a800 100%);
+            color: #333;
+        }
+
+        .vulnerability-badge.low {
+            background: linear-gradient(45deg, #28a745 0%, #1e7e34 100%);
+            color: white;
+        }
+
+        /* Enhanced chart container */
+        .chart-container {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        /* Particle background effect */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) rotate(360deg); opacity: 0; }
+        }
+
+        /* Enhanced notification styles */
+        .notification-container {
+            position: fixed;
+            top: 120px;
+            right: 20px;
+            z-index: 9999;
+            max-width: 400px;
+        }
+
+        .notification {
+            margin-bottom: 10px;
+            transform: translateX(100%);
+            animation: slideInNotification 0.5s ease-out forwards;
+        }
+
+        @keyframes slideInNotification {
+            to { transform: translateX(0); }
+        }
+
+        /* Enhanced modal styles */
+        .modal-content {
+            border: none;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px 20px 0 0;
+        }
+
+        .modal-header .btn-close {
+            filter: invert(1);
+        }
+
+        /* Enhanced form controls */
+        .form-control:focus, .form-select:focus {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Real-time status indicators */
+        .live-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #28a745;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-shield-alt me-2"></i>AutoVulRepair DevSecOps
+            </a>
+            <div class="navbar-nav ms-auto">
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-white" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-user-circle me-2"></i>{{ user.username }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" onclick="showSettings()">
+                            <i class="fas fa-cog me-2"></i>Settings
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                            <i class="fas fa-sign-out-alt me-2"></i>Logout
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container" style="margin-top: 100px;">
+        <!-- Particle background -->
+        <div class="particles" id="particles"></div>
+        
+        <!-- Welcome Header -->
+        <div class="welcome-header fade-in">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2><span class="live-indicator"></span>Welcome back, {{ user.username }}! 👋</h2>
+                    <p>Here's your security scanning overview and recent activity</p>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-light quick-action-btn floating" onclick="showQuickScan()">
+                        <i class="fas fa-plus me-2"></i>Quick Scan
+                    </button>
+                    <span class="refresh-indicator" id="refreshIndicator">
+                        <i class="fas fa-sync-alt"></i>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-5">
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="dashboard-card stat-card scale-in" style="animation-delay: 0.1s">
+                    <div class="card-body text-center">
+                        <i class="fas fa-search tooltip-custom" data-tooltip="Total security scans performed"></i>
+                        <h3 id="totalScans">{{ stats.total_scans }}</h3>
+                        <p class="mb-0">Total Scans</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="dashboard-card stat-card success scale-in" style="animation-delay: 0.2s">
+                    <div class="card-body text-center">
+                        <i class="fas fa-check-circle tooltip-custom" data-tooltip="Successfully completed scans"></i>
+                        <h3 id="completedScans">{{ stats.completed_scans }}</h3>
+                        <p class="mb-0">Completed</p>
+                        <small>({{ stats.success_rate }}% success rate)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="dashboard-card stat-card warning scale-in" style="animation-delay: 0.3s">
+                    <div class="card-body text-center">
+                        <i class="fas fa-exclamation-triangle tooltip-custom" data-tooltip="Security vulnerabilities discovered"></i>
+                        <h3 id="totalVulns">{{ stats.total_vulnerabilities }}</h3>
+                        <p class="mb-0">Vulnerabilities</p>
+                        <small>{{ stats.critical_vulnerabilities }} critical, {{ stats.high_vulnerabilities }} high</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="dashboard-card stat-card {% if stats.running_scans > 0 %}danger{% else %}info{% endif %} scale-in" style="animation-delay: 0.4s">
+                    <div class="card-body text-center">
+                        <i class="fas fa-{% if stats.running_scans > 0 %}spinner fa-spin{% else %}clock{% endif %} tooltip-custom" data-tooltip="{% if stats.running_scans > 0 %}Currently running scans{% else %}System idle{% endif %}"></i>
+                        <h3 id="runningScans">{{ stats.running_scans }}</h3>
+                        <p class="mb-0">{% if stats.running_scans > 0 %}Running{% else %}Idle{% endif %}</p>
+                        <small>Avg: {{ stats.avg_scan_time }}min</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Recent Scans -->
+            <div class="col-lg-8 mb-4">
+                <div class="dashboard-card slide-in-left">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-transparent border-0 pt-4 px-4">
+                        <h5 class="mb-0 gradient-text"><i class="fas fa-history me-2"></i>Recent Scans</h5>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="live-indicator"></span>
+                            <small class="text-muted">Live updates</small>
+                            <a href="{{ url_for('scan') }}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-external-link-alt me-1"></i>View All
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        <div id="recentScansList">
+                            {% for scan in recent_scans %}
+                            <div class="scan-item {{ scan.status }} fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-2 fw-bold">
+                                            <a href="{{ url_for('detailed_findings', scan_id=scan.id) }}" class="text-decoration-none text-dark">
+                                                <i class="fab fa-github me-2 text-muted"></i>
+                                                {{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}
+                                            </a>
+                                        </h6>
+                                        <div class="d-flex align-items-center gap-3">
+                                            <small class="text-muted">
+                                                <i class="fas fa-calendar me-1"></i>
+                                                {{ scan.created_at.strftime('%b %d, %Y at %H:%M') if scan.created_at }}
+                                            </small>
+                                            <small class="text-muted">
+                                                <i class="fas fa-tools me-1"></i>
+                                                {{ scan.analysis_tool.title() }}
+                                            </small>
+                                        </div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="mb-2">
+                                            {% if scan.status == 'completed' %}
+                                                <span class="badge bg-success status-indicator">
+                                                    <i class="fas fa-check me-1"></i>Completed
+                                                </span>
+                                            {% elif scan.status == 'processing' %}
+                                                <span class="badge bg-warning status-indicator processing">
+                                                    <i class="fas fa-spinner fa-spin me-1"></i>Processing
+                                                </span>
+                                            {% elif scan.status == 'failed' %}
+                                                <span class="badge bg-danger status-indicator">
+                                                    <i class="fas fa-times me-1"></i>Failed
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary status-indicator">
+                                                    <i class="fas fa-clock me-1"></i>{{ scan.status.title() }}
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                        {% if scan.vulnerabilities_json %}
+                                        <div class="vulnerability-badge {% if scan.vulnerabilities_json|length > 10 %}critical{% elif scan.vulnerabilities_json|length > 5 %}high{% elif scan.vulnerabilities_json|length > 2 %}medium{% else %}low{% endif %}">
+                                            <i class="fas fa-bug me-1"></i>
+                                            {{ scan.vulnerabilities_json|length }} vulnerabilities
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if scan.status == 'processing' %}
+                                <div class="mt-2">
+                                    <div class="progress" style="height: 4px;">
+                                        <div class="progress-bar progress-bar-animated bg-warning" style="width: 60%"></div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            
+                            {% if not recent_scans %}
+                            <div class="empty-state fade-in">
+                                <i class="fas fa-search"></i>
+                                <h5>No scans yet</h5>
+                                <p class="text-muted mb-4">Start your first security scan to see results here</p>
+                                <button class="btn btn-primary quick-action-btn" onclick="showQuickScan()">
+                                    <i class="fas fa-plus me-2"></i>Start First Scan
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions & Status -->
+            <div class="col-lg-4">
+                <!-- Running Scans -->
+                {% if stats.running_scans > 0 %}
+                <div class="dashboard-card mb-4 slide-in-right">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="mb-0 gradient-text">
+                            <i class="fas fa-spinner fa-spin me-2"></i>Active Scans
+                            <span class="live-indicator"></span>
+                        </h5>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        <div id="runningScansList">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Quick Actions -->
+                <div class="dashboard-card mb-4 slide-in-right" style="animation-delay: 0.2s">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="mb-0 gradient-text">
+                            <i class="fas fa-bolt me-2"></i>Quick Actions
+                        </h5>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        <div class="d-grid gap-3">
+                            <button class="btn btn-primary quick-action-btn" onclick="showQuickScan()">
+                                <i class="fas fa-search me-2"></i>New Security Scan
+                            </button>
+                            <button class="btn btn-outline-secondary quick-action-btn" onclick="window.location.href='{{ url_for('scan') }}'">
+                                <i class="fas fa-upload me-2"></i>Upload ZIP File
+                            </button>
+                            <button class="btn btn-outline-info quick-action-btn" onclick="showFuzzingDashboard()">
+                                <i class="fas fa-bug me-2"></i>Fuzzing Dashboard
+                            </button>
+                            <button class="btn btn-outline-success quick-action-btn" onclick="window.location.href='{{ url_for('monitoring_dashboard') }}'">
+                                <i class="fas fa-chart-line me-2"></i>System Monitoring
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Vulnerability Trends -->
+                <div class="dashboard-card slide-in-right" style="animation-delay: 0.4s">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="mb-0 gradient-text">
+                            <i class="fas fa-chart-area me-2"></i>Vulnerability Trends
+                        </h5>
+                        <small class="text-muted">Last 30 days</small>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        <div class="chart-container">
+                            <canvas id="vulnerabilityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Scan Modal -->
+    <div class="modal fade" id="quickScanModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Quick Scan</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="quickScanForm">
+                        <div class="mb-3">
+                            <label for="repoUrl" class="form-label">GitHub Repository URL</label>
+                            <input type="url" class="form-control" id="repoUrl" placeholder="https://github.com/user/repo" required>
+                            <div class="form-text">Enter a public GitHub repository URL to scan</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="analysisToolQuick" class="form-label">Analysis Tool</label>
+                            <select class="form-select" id="analysisToolQuick">
+                                <option value="cppcheck" {% if user_settings.default_analysis_tool == 'cppcheck' %}selected{% endif %}>Cppcheck</option>
+                                <option value="clang-static-analyzer" {% if user_settings.default_analysis_tool == 'clang-static-analyzer' %}selected{% endif %}>Clang Static Analyzer</option>
+                                <option value="semgrep" {% if user_settings.default_analysis_tool == 'semgrep' %}selected{% endif %}>Semgrep</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="startQuickScan()">
+                        <i class="fas fa-search"></i> Start Scan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">User Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="settingsForm">
+                        <div class="mb-3">
+                            <label for="defaultTool" class="form-label">Default Analysis Tool</label>
+                            <select class="form-select" id="defaultTool">
+                                <option value="cppcheck">Cppcheck</option>
+                                <option value="clang-static-analyzer">Clang Static Analyzer</option>
+                                <option value="semgrep">Semgrep</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="emailNotifications">
+                                <label class="form-check-label" for="emailNotifications">
+                                    Email notifications for scan completion
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="autoPatch">
+                                <label class="form-check-label" for="autoPatch">
+                                    Automatically generate patches (when available)
+                                </label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Dashboard functionality
+        let refreshInterval;
+        let vulnerabilityChart;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeVulnerabilityChart();
+            loadUserSettings();
+            startAutoRefresh();
+            createParticles();
+            initializeAnimations();
+            
+            {% if stats.running_scans > 0 %}
+            loadRunningScans();
+            {% endif %}
+        });
+
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const particleCount = 15;
+            
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 6 + 's';
+                particle.style.animationDuration = (Math.random() * 3 + 3) + 's';
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        function initializeAnimations() {
+            // Add staggered animations to elements
+            const cards = document.querySelectorAll('.dashboard-card');
+            cards.forEach((card, index) => {
+                card.style.animationDelay = (index * 0.1) + 's';
+            });
+
+            // Add intersection observer for scroll animations
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('fade-in');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.scan-item').forEach(item => {
+                observer.observe(item);
+            });
+        }
+
+        function initializeVulnerabilityChart() {
+            const ctx = document.getElementById('vulnerabilityChart').getContext('2d');
+            const trends = {{ vulnerability_trends | tojson }};
+            
+            // Create gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(102, 126, 234, 0.8)');
+            gradient.addColorStop(0.5, 'rgba(102, 126, 234, 0.4)');
+            gradient.addColorStop(1, 'rgba(102, 126, 234, 0.1)');
+            
+            // Create border gradient
+            const borderGradient = ctx.createLinearGradient(0, 0, ctx.canvas.width, 0);
+            borderGradient.addColorStop(0, '#667eea');
+            borderGradient.addColorStop(0.5, '#764ba2');
+            borderGradient.addColorStop(1, '#667eea');
+            
+            vulnerabilityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: trends.map(t => {
+                        const date = new Date(t.date);
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }),
+                    datasets: [{
+                        label: 'Vulnerabilities Found',
+                        data: trends.map(t => t.vulnerabilities),
+                        borderColor: borderGradient,
+                        backgroundColor: gradient,
+                        borderWidth: 4,
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#667eea',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 3,
+                        pointRadius: 8,
+                        pointHoverRadius: 12,
+                        pointHoverBackgroundColor: '#764ba2',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: '#667eea',
+                            borderWidth: 2,
+                            cornerRadius: 12,
+                            displayColors: false,
+                            callbacks: {
+                                title: function(context) {
+                                    return 'Date: ' + context[0].label;
+                                },
+                                label: function(context) {
+                                    return 'Vulnerabilities: ' + context.parsed.y;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                color: '#6c757d',
+                                font: {
+                                    size: 12,
+                                    weight: '500'
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)',
+                                borderDash: [5, 5]
+                            },
+                            ticks: {
+                                stepSize: 1,
+                                color: '#6c757d',
+                                font: {
+                                    size: 12,
+                                    weight: '500'
+                                }
+                            }
+                        }
+                    },
+                    elements: {
+                        point: {
+                            hoverBackgroundColor: '#667eea'
+                        }
+                    },
+                    animation: {
+                        duration: 2000,
+                        easing: 'easeInOutQuart'
+                    }
+                }
+            });
+        }
+
+        function showQuickScan() {
+            const modal = new bootstrap.Modal(document.getElementById('quickScanModal'));
+            modal.show();
+        }
+
+        function startQuickScan() {
+            const repoUrl = document.getElementById('repoUrl').value;
+            const analysisTool = document.getElementById('analysisToolQuick').value;
+            
+            if (!repoUrl) {
+                alert('Please enter a repository URL');
+                return;
+            }
+
+            // Show loading state
+            const button = event.target;
+            const originalText = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+            button.disabled = true;
+
+            fetch('/api/dashboard/quick-scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    repo_url: repoUrl,
+                    analysis_tool: analysisTool
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    // Close modal and redirect
+                    bootstrap.Modal.getInstance(document.getElementById('quickScanModal')).hide();
+                    window.location.href = data.redirect_url;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error starting scan. Please try again.');
+            })
+            .finally(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            });
+        }
+
+        function showSettings() {
+            const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
+            modal.show();
+        }
+
+        function loadUserSettings() {
+            fetch('/api/user/settings')
+            .then(response => response.json())
+            .then(settings => {
+                document.getElementById('defaultTool').value = settings.default_analysis_tool || 'cppcheck';
+                document.getElementById('emailNotifications').checked = settings.email_notifications || false;
+                document.getElementById('autoPatch').checked = settings.auto_patch_generation || false;
+            })
+            .catch(error => console.error('Error loading settings:', error));
+        }
+
+        function saveSettings() {
+            const settings = {
+                default_analysis_tool: document.getElementById('defaultTool').value,
+                email_notifications: document.getElementById('emailNotifications').checked,
+                auto_patch_generation: document.getElementById('autoPatch').checked
+            };
+
+            fetch('/api/user/settings', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(settings)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
+                    // Show success message
+                    showNotification('Settings saved successfully!', 'success');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error saving settings. Please try again.');
+            });
+        }
+
+        function startAutoRefresh() {
+            refreshInterval = setInterval(refreshDashboard, 30000); // 30 seconds
+        }
+
+        function refreshDashboard() {
+            const indicator = document.getElementById('refreshIndicator');
+            indicator.classList.add('active');
+
+            fetch('/api/dashboard/stats')
+            .then(response => response.json())
+            .then(stats => {
+                // Update statistics
+                document.getElementById('totalScans').textContent = stats.total_scans;
+                document.getElementById('completedScans').textContent = stats.completed_scans;
+                document.getElementById('totalVulns').textContent = stats.total_vulnerabilities;
+                document.getElementById('runningScans').textContent = stats.running_scans;
+                
+                // Refresh running scans if any
+                if (stats.running_scans > 0) {
+                    loadRunningScans();
+                }
+            })
+            .catch(error => console.error('Error refreshing dashboard:', error))
+            .finally(() => {
+                indicator.classList.remove('active');
+            });
+        }
+
+        function loadRunningScans() {
+            fetch('/api/dashboard/running-scans')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('runningScansList');
+                if (container && data.scans) {
+                    container.innerHTML = data.scans.map((scan, index) => `
+                        <div class="scan-item processing mb-3 fade-in" style="animation-delay: ${index * 0.1}s">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1 fw-bold">
+                                        <i class="fab fa-github me-2 text-muted"></i>
+                                        ${scan.repo_url.split('/').pop()}
+                                    </h6>
+                                    <small class="text-muted">
+                                        <i class="fas fa-tools me-1"></i>${scan.analysis_tool}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-warning pulse status-indicator processing">
+                                        <i class="fas fa-spinner fa-spin me-1"></i>${scan.status}
+                                    </span>
+                                    <br><small class="text-muted">${Math.floor(scan.elapsed_time / 60)}m elapsed</small>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <div class="progress" style="height: 4px;">
+                                    <div class="progress-bar progress-bar-animated bg-warning" style="width: ${Math.min(90, (scan.elapsed_time / 300) * 100)}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            })
+            .catch(error => console.error('Error loading running scans:', error));
+        }
+
+        function showFuzzingDashboard() {
+            // Redirect to fuzzing dashboard
+            window.location.href = '/fuzzing-dashboard';
+        }
+
+        function showNotification(message, type = 'info') {
+            // Enhanced notification system with better styling
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show notification`;
+            notification.style.cssText = `
+                position: fixed;
+                top: 120px; 
+                right: 20px; 
+                z-index: 9999; 
+                min-width: 350px;
+                backdrop-filter: blur(20px);
+                background: rgba(255, 255, 255, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                margin-bottom: 10px;
+            `;
+            
+            let icon = 'fas fa-info-circle';
+            let iconColor = '#17a2b8';
+            if (type === 'success') {
+                icon = 'fas fa-check-circle';
+                iconColor = '#28a745';
+            } else if (type === 'warning') {
+                icon = 'fas fa-exclamation-triangle';
+                iconColor = '#ffc107';
+            } else if (type === 'danger') {
+                icon = 'fas fa-times-circle';
+                iconColor = '#dc3545';
+            }
+            
+            notification.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="${icon} me-2" style="color: ${iconColor}; font-size: 1.2rem;"></i>
+                    <span style="font-weight: 500;">${message}</span>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" style="font-size: 0.8rem;"></button>
+            `;
+            
+            // Add to notification container or body
+            let container = document.querySelector('.notification-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'notification-container';
+                document.body.appendChild(container);
+            }
+            container.appendChild(notification);
+            
+            // Auto-remove after 5 seconds with fade animation
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.style.opacity = '0';
+                    notification.style.transform = 'translateX(100%)';
+                    notification.style.transition = 'all 0.3s ease';
+                    setTimeout(() => {
+                        if (notification.parentNode) {
+                            notification.parentNode.removeChild(notification);
+                        }
+                    }, 300);
+                }
+            }, 5000);
+        }
+
+        // Add loading states for better UX
+        function showLoadingState(elementId, show = true) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                if (show) {
+                    element.classList.add('loading-shimmer');
+                } else {
+                    element.classList.remove('loading-shimmer');
+                }
+            }
+        }
+
+        // Enhanced refresh with loading states
+        function refreshDashboard() {
+            const indicator = document.getElementById('refreshIndicator');
+            indicator.classList.add('active');
+            
+            // Show loading states
+            showLoadingState('totalScans');
+            showLoadingState('completedScans');
+            showLoadingState('totalVulns');
+            showLoadingState('runningScans');
+
+            fetch('/api/dashboard/stats')
+            .then(response => response.json())
+            .then(stats => {
+                // Update statistics with animation
+                animateCounterUpdate('totalScans', stats.total_scans);
+                animateCounterUpdate('completedScans', stats.completed_scans);
+                animateCounterUpdate('totalVulns', stats.total_vulnerabilities);
+                animateCounterUpdate('runningScans', stats.running_scans);
+                
+                // Refresh running scans if any
+                if (stats.running_scans > 0) {
+                    loadRunningScans();
+                }
+                
+                // Show success notification
+                showNotification('Dashboard updated successfully!', 'success');
+            })
+            .catch(error => {
+                console.error('Error refreshing dashboard:', error);
+                showNotification('Failed to refresh dashboard', 'danger');
+            })
+            .finally(() => {
+                indicator.classList.remove('active');
+                // Remove loading states
+                showLoadingState('totalScans', false);
+                showLoadingState('completedScans', false);
+                showLoadingState('totalVulns', false);
+                showLoadingState('runningScans', false);
+            });
+        }
+
+        // Animate counter updates
+        function animateCounterUpdate(elementId, newValue) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                const currentValue = parseInt(element.textContent) || 0;
+                if (currentValue !== newValue) {
+                    // Simple counter animation
+                    let current = currentValue;
+                    const increment = newValue > current ? 1 : -1;
+                    const timer = setInterval(() => {
+                        current += increment;
+                        element.textContent = current;
+                        if (current === newValue) {
+                            clearInterval(timer);
+                        }
+                    }, 50);
+                }
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + K for quick scan
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                showQuickScan();
+            }
+            
+            // Ctrl/Cmd + R for refresh dashboard
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                e.preventDefault();
+                refreshDashboard();
+                showNotification('Dashboard refreshed manually', 'info');
+            }
+            
+            // Escape to close modals
+            if (e.key === 'Escape') {
+                const modals = document.querySelectorAll('.modal.show');
+                modals.forEach(modal => {
+                    const modalInstance = bootstrap.Modal.getInstance(modal);
+                    if (modalInstance) modalInstance.hide();
+                });
+            }
+        });
+
+        // Add real-time clock
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            // Update any clock elements if they exist
+            const clockElements = document.querySelectorAll('.live-clock');
+            clockElements.forEach(el => el.textContent = timeString);
+        }
+
+        // Update clock every second
+        setInterval(updateClock, 1000);
+        updateClock(); // Initial call
+
+        // Enhanced dashboard interactions
+        function addInteractiveFeatures() {
+            // Add hover effects to scan items
+            document.querySelectorAll('.scan-item').forEach(item => {
+                item.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateX(8px) scale(1.02)';
+                    this.style.transition = 'all 0.3s ease';
+                });
+                
+                item.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateX(0) scale(1)';
+                });
+            });
+
+            // Add click effects to buttons
+            document.querySelectorAll('.quick-action-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    // Create ripple effect
+                    const ripple = document.createElement('span');
+                    const rect = this.getBoundingClientRect();
+                    const size = Math.max(rect.width, rect.height);
+                    const x = e.clientX - rect.left - size / 2;
+                    const y = e.clientY - rect.top - size / 2;
+                    
+                    ripple.style.cssText = `
+                        position: absolute;
+                        width: ${size}px;
+                        height: ${size}px;
+                        left: ${x}px;
+                        top: ${y}px;
+                        background: rgba(255, 255, 255, 0.5);
+                        border-radius: 50%;
+                        transform: scale(0);
+                        animation: ripple 0.6s ease-out;
+                        pointer-events: none;
+                    `;
+                    
+                    this.style.position = 'relative';
+                    this.style.overflow = 'hidden';
+                    this.appendChild(ripple);
+                    
+                    setTimeout(() => ripple.remove(), 600);
+                });
+            });
+        }
+
+        // Add ripple animation CSS
+        const rippleStyle = document.createElement('style');
+        rippleStyle.textContent = `
+            @keyframes ripple {
+                to {
+                    transform: scale(2);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(rippleStyle);
+
+        // Initialize interactive features when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(addInteractiveFeatures, 1000); // Delay to ensure all elements are rendered
+        });
+
+        // Performance monitoring
+        function monitorPerformance() {
+            if ('performance' in window) {
+                const navigation = performance.getEntriesByType('navigation')[0];
+                if (navigation) {
+                    console.log(`Dashboard loaded in ${Math.round(navigation.loadEventEnd - navigation.loadEventStart)}ms`);
+                }
+            }
+        }
+
+        window.addEventListener('load', monitorPerformance);
+    </script>
+</body>
+</html>

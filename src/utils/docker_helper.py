@@ -16,27 +16,69 @@ class DockerToolRunner:
     
     def __init__(self):
         try:
-            self.client = docker.from_env()
-            self.client.ping()  # Test connection
-            self.available = True
-            
-            # Detect platform and isolation capabilities
+            # Detect platform first
             self.is_windows = platform.system() == 'Windows'
             self.is_linux = platform.system() == 'Linux'
             
-            # Check for Hyper-V on Windows
-            if self.is_windows:
-                self.hyperv_available = self._check_hyperv()
-                if self.hyperv_available:
-                    logger.info("[DOCKER] Hyper-V isolation available")
-                else:
-                    logger.info("[DOCKER] Using process isolation (Hyper-V not available)")
+            # Try different connection methods based on platform
+            self.client = None
+            self.available = False
             
-            # Check for gVisor on Linux
-            if self.is_linux:
-                self.gvisor_available = self._check_gvisor()
-                if self.gvisor_available:
-                    logger.info("[DOCKER] gVisor runtime available")
+            # Method 1: Try environment detection first (works best with Docker Desktop)
+            try:
+                self.client = docker.from_env()
+                self.client.ping()  # Test connection
+                self.available = True
+                logger.info("[DOCKER] Connected to Docker daemon via environment")
+            except Exception as env_error:
+                logger.debug(f"[DOCKER] Environment connection failed: {env_error}")
+                
+                # Method 2: Try socket directly (Linux/WSL)
+                if os.path.exists('/var/run/docker.sock'):
+                    try:
+                        self.client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+                        self.client.ping()  # Test connection
+                        self.available = True
+                        logger.info("[DOCKER] Connected to Docker daemon via socket")
+                    except Exception as socket_error:
+                        logger.debug(f"[DOCKER] Socket connection failed: {socket_error}")
+                
+                # Method 3: Try named pipe (Windows Docker Desktop)
+                if not self.available and self.is_windows:
+                    try:
+                        self.client = docker.DockerClient(base_url='npipe:////./pipe/docker_engine')
+                        self.client.ping()  # Test connection
+                        self.available = True
+                        logger.info("[DOCKER] Connected to Docker daemon via named pipe")
+                    except Exception as pipe_error:
+                        logger.debug(f"[DOCKER] Named pipe connection failed: {pipe_error}")
+                
+                # Method 4: Try TCP (if configured)
+                if not self.available:
+                    try:
+                        self.client = docker.DockerClient(base_url='tcp://localhost:2375')
+                        self.client.ping()  # Test connection
+                        self.available = True
+                        logger.info("[DOCKER] Connected to Docker daemon via TCP")
+                    except Exception as tcp_error:
+                        logger.debug(f"[DOCKER] TCP connection failed: {tcp_error}")
+            
+            if self.available:
+                # Check for Hyper-V on Windows
+                if self.is_windows:
+                    self.hyperv_available = self._check_hyperv()
+                    if self.hyperv_available:
+                        logger.info("[DOCKER] Hyper-V isolation available")
+                    else:
+                        logger.info("[DOCKER] Using process isolation (Hyper-V not available)")
+                
+                # Check for gVisor on Linux
+                if self.is_linux:
+                    self.gvisor_available = self._check_gvisor()
+                    if self.gvisor_available:
+                        logger.info("[DOCKER] gVisor runtime available")
+            else:
+                raise RuntimeError("Could not connect to Docker daemon using any method")
             
         except Exception as e:
             logger.warning(f"Docker not available: {e}")
@@ -306,19 +348,24 @@ class DockerToolRunner:
                 if has_makefile:
                     logger.info("[CODEQL_DOCKER] Makefile detected, using make with -C flag")
                     # Use make with -C to change to source directory
-                    cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src --command="cd /opt/src && make"'
+                    cmd = f'{codeql_path} database create --overwrite --language={language_str} /opt/results/source_db -s /opt/src --command="cd /opt/src && make"'
                     working_dir = '/opt'
                 elif has_cmake:
                     logger.info("[CODEQL_DOCKER] CMakeLists.txt detected, using cmake build")
-                    cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src --command="cd /opt/src && mkdir -p build && cd build && cmake .. && make"'
+                    cmd = f'{codeql_path} database create --overwrite --language={language_str} /opt/results/source_db -s /opt/src --command="cd /opt/src && mkdir -p build && cd build && cmake .. && make"'
                     working_dir = '/opt'
                 else:
                     logger.info("[CODEQL_DOCKER] No build system detected, using autobuild")
-                    cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src'
+                    cmd = f'{codeql_path} database create --overwrite --language={language_str} /opt/results/source_db -s /opt/src'
                     working_dir = '/opt'
+            elif 'python' in language_str:
+                # For Python, no build command needed (interpreted language)
+                logger.info("[CODEQL_DOCKER] Python detected, using no build command")
+                cmd = f'{codeql_path} database create --overwrite --language={language_str} /opt/results/source_db -s /opt/src'
+                working_dir = '/opt'
             else:
-                # For interpreted languages, no build command needed
-                cmd = f'{codeql_path} database create --language={language_str} /opt/results/source_db -s /opt/src'
+                # For other interpreted languages, no build command needed
+                cmd = f'{codeql_path} database create --overwrite --language={language_str} /opt/results/source_db -s /opt/src'
                 working_dir = '/opt'
             
             # Run as root to avoid permission issues on Windows volume mounts

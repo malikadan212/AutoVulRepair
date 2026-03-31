@@ -2,6 +2,39 @@
 
 {% block title %}Home{% endblock %}
 
+{% block extra_js %}
+<script>
+// Login tracking for home page
+console.log('🏠 Home page loaded');
+console.log('🔐 GitHub OAuth login available');
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Track login button clicks
+    const loginButtons = document.querySelectorAll('a[href*="login"]');
+    loginButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            console.log('🚀 GitHub OAuth login initiated from home page');
+            console.log('📍 Redirecting to: /login -> GitHub OAuth');
+            console.log('⏳ User will be redirected back after GitHub authentication');
+            console.log('💾 Upon successful login, user will be created/updated in database');
+        });
+    });
+    
+    // Track no-login option
+    const noLoginButtons = document.querySelectorAll('a[href*="no-login"]');
+    noLoginButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            console.log('🔓 No-login scan option selected');
+            console.log('⚠️  Scans will not be saved to user account');
+            console.log('📍 Redirecting to public scan interface');
+        });
+    });
+    
+    console.log('✅ Home page login tracking initialized');
+});
+</script>
+{% endblock %}
+
 {% block content %}
   <div class="text-center mt-5">
     <h1>Cloud-Native Automated Vulnerability Detection and Repair</h1>

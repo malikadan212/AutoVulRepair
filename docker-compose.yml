@@ -1,68 +1,277 @@
-services:
-  # Redis for Celery task queue
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# Docker Compose V2 - Enhanced Architecture
+# Includes Redis, Celery workers, and improved database setup
 
-  # Main application with clang bundled
+version: '3.8'
+
+services:
+  # Main application
   app:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: autovulrepair:latest  # Tag the built image for reuse
+    user: root  # Run as root to access Docker socket
     ports:
       - "5000:5000"
-    env_file:
-      - .env
     environment:
-      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
+      - REDIS_URL=redis://redis:6379/0
+      - MIGRATION_MODE=dual
+      - ENABLE_V2_API=true
+      - ENABLE_BACKGROUND_JOBS=true
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - REDIS_URL=redis://redis:6379/0
-      - SCANS_DIR=/app/scans
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
+      - SCANS_DIR=/app/scans
       - PYTHONUNBUFFERED=1
-    volumes:
-      - .:/app
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - ./scans:/app/scans  # Temporary during migration
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker-based analysis tools
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # Celery worker for background tasks
-  celery:
-    build: .
-    command: python celery_worker.py
-    env_file:
-      - .env
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - SCANS_DIR=/app/scans
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - POSTGRES_DB=autovulrepair
+      - POSTGRES_USER=autovulrepair
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    ports:
+      - "5432:5432"
     volumes:
-      - .:/app
-      - /var/run/docker.sock:/var/run/docker.sock
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autovulrepair -d autovulrepair"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+
+  # Redis for caching and job queue
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Celery worker for scan processing
+  celery-worker-scan:
+    image: autovulrepair:latest  # Reuse the built image
+    command: celery -A src.workers.job_worker worker --loglevel=info --queues=scan_queue --concurrency=4 --hostname=scan-worker@%h
+    environment:
+      - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_TYPE=scan
     depends_on:
+      app:  # Depend on app to ensure image is built first
+        condition: service_started
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      app:
+    volumes:
+      - ./scans:/app/scans  # Temporary during migration
+      - ./logs:/app/logs
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    healthcheck:
+      test: ["CMD", "celery", "-A", "src.workers.job_worker", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery worker for fuzzing
+  celery-worker-fuzz:
+    image: autovulrepair:latest  # Reuse the built image
+    command: celery -A src.workers.job_worker worker --loglevel=info --queues=fuzzing_queue --concurrency=2 --hostname=fuzz-worker@%h
+    environment:
+      - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_TYPE=fuzzing
+    depends_on:
+      app:  # Depend on app to ensure image is built first
+        condition: service_started
+      postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./scans:/app/scans  # Temporary during migration
+      - ./logs:/app/logs
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD", "celery", "-A", "src.workers.job_worker", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery beat scheduler
+  celery-beat:
+    image: autovulrepair:latest  # Reuse the built image
+    command: celery -A src.workers.job_worker beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    environment:
+      - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      app:  # Depend on app to ensure image is built first
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - celery_beat_data:/tmp
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/celerybeat-schedule"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # Celery flower for monitoring (optional)
+  celery-flower:
+    image: autovulrepair:latest  # Reuse the built image
+    command: celery -A src.workers.job_worker flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      app:  # Depend on app to ensure image is built first
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # Prometheus monitoring (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
 
 volumes:
-  redis-data:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  celery_beat_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  autovulrepair-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

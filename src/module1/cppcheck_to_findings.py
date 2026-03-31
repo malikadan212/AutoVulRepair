@@ -109,29 +109,37 @@ def infer_function_from_error_id(error_id: str, file_stem: str) -> str:
 
 def filter_relevant_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Filter findings to only include those relevant for fuzzing
-    Exclude style issues, unused functions, etc.
+    Filter findings to only include those relevant for security analysis
+    Keep all security-relevant findings, not just fuzzable ones
     """
-    # Error IDs that are fuzzable vulnerabilities
-    fuzzable_ids = {
-        'arrayIndexOutOfBounds', 'bufferAccessOutOfBounds', 'getsCalled',
-        'memleak', 'doubleFree', 'resourceLeak', 'nullPointer',
-        'integerOverflow', 'uninitvar', 'useAfterFree'
+    # Include all findings except pure style/cosmetic issues
+    excluded_ids = {
+        'unusedFunction',           # Unused functions (style issue)
+        'missingInclude',          # Missing includes (build issue)
+        'toomanyconfigs',          # Too many configurations (analysis issue)
+        'unmatchedSuppression',    # Suppression issues (analysis issue)
+        'checkersReport',          # Checker reports (meta issue)
+        'internalAstError',        # Internal AST errors (tool issue)
+        'syntaxError',             # Syntax errors (build issue)
+        'preprocessorErrorDirective'  # Preprocessor errors (build issue)
     }
     
-    # Severity levels to include
-    relevant_severities = {'error', 'warning'}
+    # Include all severity levels except 'information' which is usually noise
+    excluded_severities = {'information'}
     
     filtered = []
     for finding in findings:
-        if (finding['rule_id'] in fuzzable_ids or 
-            finding['severity'] in relevant_severities):
+        # Keep finding if it's not in excluded lists
+        if (finding['rule_id'] not in excluded_ids and 
+            finding['severity'] not in excluded_severities):
             # Infer function name
             finding['function'] = infer_function_from_error_id(
                 finding['rule_id'], 
                 finding['file_stem']
             )
             filtered.append(finding)
+        else:
+            print(f"[CONVERTER] Excluding {finding['rule_id']} ({finding['severity']}) - not security relevant")
     
     return filtered
 
@@ -145,9 +153,9 @@ def convert_cppcheck_to_findings(xml_path: str, output_path: str) -> Dict[str, A
     findings = parse_cppcheck_xml(xml_path)
     print(f"[CONVERTER] Found {len(findings)} total findings")
     
-    # Filter to relevant findings
+    # Filter to security-relevant findings
     relevant_findings = filter_relevant_findings(findings)
-    print(f"[CONVERTER] Filtered to {len(relevant_findings)} fuzzable findings")
+    print(f"[CONVERTER] Filtered to {len(relevant_findings)} security-relevant findings")
     
     # Create output structure
     output = {

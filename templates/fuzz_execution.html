@@ -340,6 +340,92 @@
             border-radius: 4px;
             font-size: 14px;
         }
+
+        .target-item.integration {
+            border-left-color: #28a745;
+            background: #f8fff9;
+            border: 2px solid #c8e6c9;
+        }
+
+        .target-item.integration .target-name::before {
+            content: "🔗 ";
+            color: #28a745;
+        }
+
+        .target-item.race_condition {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+            border: 2px solid #ffcdd2;
+        }
+
+        .target-item.race_condition .target-name::before {
+            content: "🏁 ";
+            color: #dc3545;
+        }
+
+        .integration-chain {
+            background: #ffffff;
+            border: 1px solid #c8e6c9;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        .race-condition-config {
+            background: #ffffff;
+            border: 1px solid #ffcdd2;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        .chain-flow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .chain-component {
+            background: #e8f5e9;
+            border: 1px solid #81c784;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #2e7d32;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+        }
+
+        .race-config-item {
+            background: #ffebee;
+            border: 1px solid #ef9a9a;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #d32f2f;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+        }
+
+        .chain-arrow {
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .filter-btn {
+            transition: all 0.3s;
+        }
+
+        .filter-btn.active {
+            background: #667eea !important;
+            color: white !important;
+            border-color: #667eea !important;
+        }
+
+        .filter-btn:hover {
+            opacity: 0.8;
+        }
     </style>
 </head>
 
@@ -424,11 +510,27 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value" id="totalTargets">0</div>
-                        <div class="stat-label">Targets Fuzzed</div>
+                        <div class="stat-label">Regular Targets</div>
+                    </div>
+                    <div class="stat-card" id="integrationStatsCard" style="display: none; border: 2px solid #28a745;">
+                        <div class="stat-value" style="color: #28a745;" id="integrationTargets">0</div>
+                        <div class="stat-label">🔗 Integration Targets</div>
+                    </div>
+                    <div class="stat-card" id="raceConditionStatsCard" style="display: none; border: 2px solid #dc3545;">
+                        <div class="stat-value" style="color: #dc3545;" id="raceConditionTargets">0</div>
+                        <div class="stat-label">🏁 Race Condition Targets</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value danger" id="totalCrashes">0</div>
-                        <div class="stat-label">Crashes Found</div>
+                        <div class="stat-label">Total Crashes</div>
+                    </div>
+                    <div class="stat-card" id="integrationCrashesCard" style="display: none; border: 2px solid #dc3545;">
+                        <div class="stat-value" style="color: #dc3545;" id="integrationCrashes">0</div>
+                        <div class="stat-label">🔗 Integration Crashes</div>
+                    </div>
+                    <div class="stat-card" id="raceConditionCrashesCard" style="display: none; border: 2px solid #ff5722;">
+                        <div class="stat-value" style="color: #ff5722;" id="raceConditionCrashes">0</div>
+                        <div class="stat-label">🏁 Race Condition Crashes</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value" id="totalTime">0s</div>
@@ -443,6 +545,28 @@
 
             <div id="targetsSection" style="display: none;">
                 <h3 style="margin-bottom: 15px;">Target Results</h3>
+                
+                <!-- Advanced Fuzzing Info Banner (shown when advanced targets are present) -->
+                <div id="advancedFuzzingBanner" style="display: none; background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #28a745;">
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+                        <div style="font-size: 24px;">🚀</div>
+                        <div>
+                            <h4 style="color: #2e7d32; margin: 0; font-size: 16px;" id="advancedFuzzingTitle">Advanced Fuzzing Active</h4>
+                            <p style="color: #388e3c; margin: 5px 0 0 0; font-size: 13px;" id="advancedFuzzingDesc">Testing advanced vulnerability patterns</p>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; font-size: 12px;" id="advancedFuzzingDetails">
+                    </div>
+                </div>
+                
+                <!-- Filter buttons for target types -->
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <button class="filter-btn active" onclick="filterTargetResults('all')" style="padding: 8px 16px; border: 2px solid #e9ecef; background: white; border-radius: 6px; font-size: 12px; cursor: pointer;">All Targets</button>
+                    <button class="filter-btn" id="integrationFilterBtn" onclick="filterTargetResults('integration')" style="display: none; padding: 8px 16px; border: 2px solid #28a745; background: #e8f5e9; color: #2e7d32; border-radius: 6px; font-size: 12px; cursor: pointer;">🔗 Integration Only</button>
+                    <button class="filter-btn" id="raceConditionFilterBtn" onclick="filterTargetResults('race_condition')" style="display: none; padding: 8px 16px; border: 2px solid #dc3545; background: #ffebee; color: #d32f2f; border-radius: 6px; font-size: 12px; cursor: pointer;">🏁 Race Condition Only</button>
+                    <button class="filter-btn" onclick="filterTargetResults('regular')" style="padding: 8px 16px; border: 2px solid #e9ecef; background: white; border-radius: 6px; font-size: 12px; cursor: pointer;">Regular Only</button>
+                </div>
+                
                 <div class="target-list" id="targetList"></div>
             </div>
 
@@ -515,7 +639,94 @@
             document.getElementById('statsSection').style.display = 'block';
             document.getElementById('targetsSection').style.display = 'block';
             
-            document.getElementById('totalTargets').textContent = data.total_targets || 0;
+            // Count regular vs integration vs race condition targets
+            const regularTargets = data.results.filter(r => !r.is_integration && !r.is_race_condition).length;
+            const integrationTargets = data.results.filter(r => r.is_integration).length;
+            const raceConditionTargets = data.results.filter(r => r.is_race_condition).length;
+            
+            document.getElementById('totalTargets').textContent = regularTargets;
+            
+            // Show integration stats if integration targets exist
+            if (integrationTargets > 0) {
+                document.getElementById('integrationStatsCard').style.display = 'block';
+                document.getElementById('integrationTargets').textContent = integrationTargets;
+                document.getElementById('integrationFilterBtn').style.display = 'inline-block';
+                
+                // Count integration crashes
+                const integrationCrashes = data.results
+                    .filter(r => r.is_integration)
+                    .reduce((sum, r) => sum + (r.crashes_found || 0), 0);
+                
+                if (integrationCrashes > 0) {
+                    document.getElementById('integrationCrashesCard').style.display = 'block';
+                    document.getElementById('integrationCrashes').textContent = integrationCrashes;
+                }
+            }
+            
+            // Show race condition stats if race condition targets exist
+            if (raceConditionTargets > 0) {
+                document.getElementById('raceConditionStatsCard').style.display = 'block';
+                document.getElementById('raceConditionTargets').textContent = raceConditionTargets;
+                document.getElementById('raceConditionFilterBtn').style.display = 'inline-block';
+                
+                // Count race condition crashes
+                const raceConditionCrashes = data.results
+                    .filter(r => r.is_race_condition)
+                    .reduce((sum, r) => sum + (r.crashes_found || 0), 0);
+                
+                if (raceConditionCrashes > 0) {
+                    document.getElementById('raceConditionCrashesCard').style.display = 'block';
+                    document.getElementById('raceConditionCrashes').textContent = raceConditionCrashes;
+                }
+            }
+            
+            // Show advanced fuzzing banner if any advanced targets exist
+            if (integrationTargets > 0 || raceConditionTargets > 0) {
+                const banner = document.getElementById('advancedFuzzingBanner');
+                const title = document.getElementById('advancedFuzzingTitle');
+                const desc = document.getElementById('advancedFuzzingDesc');
+                const details = document.getElementById('advancedFuzzingDetails');
+                
+                banner.style.display = 'block';
+                
+                // Update title and description
+                if (integrationTargets > 0 && raceConditionTargets > 0) {
+                    title.textContent = 'Advanced Fuzzing Active: Integration + Race Conditions';
+                    desc.textContent = 'Testing component interactions AND concurrency vulnerabilities';
+                } else if (integrationTargets > 0) {
+                    title.textContent = 'Integration Fuzzing Active';
+                    desc.textContent = 'Testing component interactions for real-world vulnerabilities';
+                } else if (raceConditionTargets > 0) {
+                    title.textContent = 'Race Condition Fuzzing Active';
+                    desc.textContent = 'Testing concurrency vulnerabilities under multi-threaded execution';
+                }
+                
+                // Update details
+                let detailsHTML = '';
+                if (integrationTargets > 0) {
+                    detailsHTML += `
+                        <div>
+                            <strong style="color: #2e7d32;">🔗 Integration Targeting:</strong>
+                            <div style="color: #388e3c; margin-top: 5px;">Authentication flows, API chains, business logic paths</div>
+                        </div>
+                    `;
+                }
+                if (raceConditionTargets > 0) {
+                    detailsHTML += `
+                        <div>
+                            <strong style="color: #2e7d32;">🏁 Race Condition Targeting:</strong>
+                            <div style="color: #388e3c; margin-top: 5px;">Concurrent execution, timing vulnerabilities, thread safety</div>
+                        </div>
+                    `;
+                }
+                detailsHTML += `
+                    <div>
+                        <strong style="color: #2e7d32;">⚡ Advantage:</strong>
+                        <div style="color: #388e3c; margin-top: 5px;">Finds production-only bugs that static analysis and individual function fuzzing miss</div>
+                    </div>
+                `;
+                details.innerHTML = detailsHTML;
+            }
             
             const totalCrashes = data.results.reduce((sum, r) => sum + (r.crashes_found || 0), 0);
             document.getElementById('totalCrashes').textContent = totalCrashes;
@@ -530,6 +741,13 @@
                 const statusClass = r.crashes_found > 0 ? 'crashed' : 
                                    r.status === 'completed' ? 'completed' : 'running';
                 
+                let integrationClass = '';
+                if (r.is_integration) {
+                    integrationClass = ' integration';
+                } else if (r.is_race_condition) {
+                    integrationClass = ' race_condition';
+                }
+                
                 const statusBadge = r.status === 'completed' ? 
                     '<span class="badge badge-success">Completed</span>' :
                     r.status === 'error' ?
@@ -540,11 +758,139 @@
                     `<span class="badge badge-danger">${r.crashes_found} Crash${r.crashes_found > 1 ? 'es' : ''}</span>` :
                     '<span class="badge badge-success">No Crashes</span>';
                 
+                // Add type badge
+                let typeBadge = '';
+                if (r.is_integration) {
+                    typeBadge = '<span class="badge" style="background: #28a745; color: white; margin-right: 10px;">INTEGRATION</span>';
+                } else if (r.is_race_condition) {
+                    typeBadge = '<span class="badge" style="background: #dc3545; color: white; margin-right: 10px;">RACE CONDITION</span>';
+                }
+                
+                // Add integration chain visualization for integration targets
+                let integrationChain = '';
+                if (r.is_integration && r.integration_chain) {
+                    const components = r.integration_chain.components || [];
+                    integrationChain = `
+                        <div class="integration-chain">
+                            <div style="font-weight: 600; color: #2e7d32; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                <span>🔄</span> Component Chain Flow
+                            </div>
+                            <div class="chain-flow">
+                                ${components.slice(0, 4).map((comp, idx) => `
+                                    <span class="chain-component">${comp.name}</span>
+                                    ${idx < Math.min(components.length - 1, 3) ? '<span class="chain-arrow">→</span>' : ''}
+                                `).join('')}
+                                ${components.length > 4 ? '<span style="color: #666; font-size: 11px;">... +' + (components.length - 4) + ' more</span>' : ''}
+                            </div>
+                            ${r.integration_chain.vulnerability_surface && r.integration_chain.vulnerability_surface.length > 0 ? `
+                                <div style="margin-top: 8px;">
+                                    <div style="font-weight: 600; color: #d32f2f; font-size: 11px; margin-bottom: 4px;">⚠️ Vulnerability Surface:</div>
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                        ${r.integration_chain.vulnerability_surface.slice(0, 3).map(vuln => `
+                                            <span style="background: #ffebee; color: #d32f2f; padding: 2px 6px; border-radius: 3px; font-size: 10px;">
+                                                ${vuln.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+                
+                // Add race condition configuration for race condition targets
+                let raceConditionConfig = '';
+                if (r.is_race_condition && r.race_condition_config) {
+                    raceConditionConfig = `
+                        <div class="race-condition-config">
+                            <div style="font-weight: 600; color: #d32f2f; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                <span>🏁</span> Race Condition Configuration
+                            </div>
+                            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                                <span class="race-config-item">Threads: ${r.race_condition_config.thread_count}</span>
+                                <span class="race-config-item">Executions: ${r.race_condition_config.execution_count}</span>
+                                <span class="race-config-item">Timing: ${r.race_condition_config.timing_variation}s</span>
+                            </div>
+                            ${r.race_condition_config.vulnerability_types && r.race_condition_config.vulnerability_types.length > 0 ? `
+                                <div style="margin-top: 8px;">
+                                    <div style="font-weight: 600; color: #d32f2f; font-size: 11px; margin-bottom: 4px;">⚠️ Vulnerability Types:</div>
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                        ${r.race_condition_config.vulnerability_types.map(vuln => `
+                                            <span style="background: #ffebee; color: #d32f2f; padding: 2px 6px; border-radius: 3px; font-size: 10px;">
+                                                ${vuln.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+                
+                // Add crash details if crashes were found
+                let crashDetails = '';
+                if (r.crashes_found > 0 && r.crashes) {
+                    let crashType, crashIcon;
+                    if (r.is_integration) {
+                        crashType = 'Integration Vulnerability';
+                        crashIcon = '🔗💥';
+                    } else if (r.is_race_condition) {
+                        crashType = 'Race Condition Vulnerability';
+                        crashIcon = '🏁💥';
+                    } else {
+                        crashType = 'Function Crash';
+                        crashIcon = '🔥';
+                    }
+                    
+                    let crashDescription;
+                    if (r.is_integration) {
+                        crashDescription = 'trigger component interaction bugs';
+                    } else if (r.is_race_condition) {
+                        crashDescription = 'expose race conditions under concurrent execution';
+                    } else {
+                        crashDescription = 'crash this function';
+                    }
+                    
+                    crashDetails = `
+                        <div class="crash-details" style="margin-top: 10px; padding: 10px; background: ${r.is_integration ? '#fff3cd' : r.is_race_condition ? '#ffebee' : '#f8d7da'}; border-radius: 6px;">
+                            <div style="font-weight: 600; color: ${r.is_integration ? '#856404' : r.is_race_condition ? '#d32f2f' : '#721c24'}; margin-bottom: 8px;">${crashIcon} ${crashType} Evidence:</div>
+                            <div style="font-size: 13px; color: ${r.is_integration ? '#856404' : r.is_race_condition ? '#d32f2f' : '#721c24'};">
+                                Found ${r.crashes_found} exploitable input${r.crashes_found > 1 ? 's' : ''} that ${crashDescription}:
+                            </div>
+                            <div style="margin-top: 8px;">
+                                ${r.crashes.slice(0, 3).map(crash => `
+                                    <div style="font-family: monospace; font-size: 12px; background: white; padding: 4px 8px; margin: 2px 0; border-radius: 3px;">
+                                        📁 ${crash.filename} (${crash.size} bytes)
+                                    </div>
+                                `).join('')}
+                                ${r.crashes.length > 3 ? `<div style="font-size: 12px; color: #666;">... and ${r.crashes.length - 3} more</div>` : ''}
+                            </div>
+                            <div style="margin-top: 8px;">
+                                <button class="btn btn-secondary btn-small" onclick="downloadCrashInputs('${r.target}')">
+                                    📥 Download Attack Inputs
+                                </button>
+                                <button class="btn btn-secondary btn-small" onclick="showCrashAnalysis('${r.target}')">
+                                    🔍 Analyze ${r.is_integration ? 'Integration Bug' : r.is_race_condition ? 'Race Condition' : 'Crashes'}
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Determine target type for filtering
+                let targetType = 'regular';
+                if (r.is_integration) {
+                    targetType = 'integration';
+                } else if (r.is_race_condition) {
+                    targetType = 'race_condition';
+                }
+                
                 html += `
-                    <div class="target-item ${statusClass}">
+                    <div class="target-item ${statusClass}${integrationClass}" data-target-type="${targetType}">
                         <div class="target-header">
                             <span class="target-name">${r.target}</span>
-                            <div style="display: flex; gap: 10px;">
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                ${typeBadge}
                                 ${statusBadge}
                                 ${crashBadge}
                             </div>
@@ -555,6 +901,9 @@
                             ${r.stats?.corpus ? `<span>🔢 Corpus: ${r.stats.corpus}</span>` : ''}
                             ${r.stats?.exec_per_sec ? `<span>⚡ Exec/s: ${r.stats.exec_per_sec}</span>` : ''}
                         </div>
+                        ${integrationChain}
+                        ${raceConditionConfig}
+                        ${crashDetails}
                     </div>
                 `;
             });
@@ -565,6 +914,53 @@
             if (totalCrashes > 0) {
                 document.getElementById('nextStepSection').style.display = 'block';
             }
+        }
+
+        function downloadCrashInputs(targetName) {
+            window.location.href = `/api/fuzz/crashes/${scanId}/${targetName}/download`;
+        }
+
+        function showCrashAnalysis(targetName) {
+            // Open crash analysis in a modal or new page
+            fetch(`/api/fuzz/crashes/${scanId}/${targetName}/analyze`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.analysis) {
+                        alert(`Crash Analysis for ${targetName}:\n\n${data.analysis}`);
+                    } else {
+                        alert('No detailed analysis available for this crash.');
+                    }
+                })
+                .catch(err => {
+                    alert('Error loading crash analysis: ' + err);
+                });
+        }
+
+        function filterTargetResults(filterType) {
+            const targetItems = document.querySelectorAll('.target-item');
+            const filterButtons = document.querySelectorAll('.filter-btn');
+            
+            // Update active button
+            filterButtons.forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Filter targets
+            targetItems.forEach(item => {
+                const targetType = item.dataset.targetType;
+                let shouldShow = false;
+                
+                if (filterType === 'all') {
+                    shouldShow = true;
+                } else if (filterType === 'integration') {
+                    shouldShow = targetType === 'integration';
+                } else if (filterType === 'race_condition') {
+                    shouldShow = targetType === 'race_condition';
+                } else if (filterType === 'regular') {
+                    shouldShow = targetType === 'regular';
+                }
+                
+                item.style.display = shouldShow ? 'block' : 'none';
+            });
         }
 
         // Load existing results on page load

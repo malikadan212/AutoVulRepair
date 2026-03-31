@@ -298,6 +298,13 @@ class RepairOrchestrator:
         Returns:
             Metrics dict
         """
+        if self.metrics is None:
+            return {
+                'status': 'no_repairs_run',
+                'total_repairs': 0,
+                'successful_repairs': 0,
+                'failed_repairs': 0
+            }
         return self.metrics.get_summary()
     
     def check_health(self) -> bool:

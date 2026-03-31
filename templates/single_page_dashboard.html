@@ -1,0 +1,510 @@
+{% extends 'layout.html' %}
+
+{% block title %}Security Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="height: 100vh; overflow: hidden;">
+  <!-- Compact Header -->
+  <div class="d-flex justify-content-between align-items-center py-2 mb-2">
+    <div class="d-flex align-items-center">
+      <h4 class="mb-0 mr-3">
+        <i class="fas fa-shield-alt text-primary mr-2"></i>Security Dashboard
+      </h4>
+      {% if user.avatar_url %}
+      <img src="{{ user.avatar_url }}" alt="Avatar" class="rounded-circle mr-2" width="20" height="20">
+      {% endif %}
+      <span class="font-weight-bold mr-2">{{ user.username }}</span>
+      <small class="text-muted">{{ user.created_at.strftime('%b %Y') if user.created_at else 'New' }}</small>
+    </div>
+    <div>
+      <button class="btn btn-primary btn-sm mr-1" onclick="showQuickScan()">
+        <i class="fas fa-plus"></i> Scan
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="refreshDashboard()">
+        <i class="fas fa-sync-alt" id="refreshIcon"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Inline Statistics -->
+  <div class="row mb-2">
+    <div class="col-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-2">
+          <h5 class="mb-0 text-primary" id="totalScans">{{ stats.total_scans }}</h5>
+          <small class="text-muted">Total Scans</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-2">
+          <h5 class="mb-0 text-success" id="completedScans">{{ stats.completed_scans }}</h5>
+          <small class="text-muted">Completed ({{ stats.success_rate }}%)</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-2">
+          <h5 class="mb-0 text-warning" id="totalVulns">{{ stats.total_vulnerabilities }}</h5>
+          <small class="text-muted">Vulnerabilities</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-2">
+          <h5 class="mb-0 {% if stats.running_scans > 0 %}text-info{% else %}text-secondary{% endif %}" id="runningScans">{{ stats.running_scans }}</h5>
+          <small class="text-muted">{% if stats.running_scans > 0 %}Running{% else %}Idle{% endif %}</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content - Fixed Height -->
+  <div class="row" style="height: calc(100vh - 140px);">
+    <!-- Recent Scans - Scrollable -->
+    <div class="col-8">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-0 py-2">
+          <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 font-weight-bold">Recent Scans</h6>
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary active btn-sm" onclick="filterScans('all')" id="filter-all">All</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="filterScans('completed')" id="filter-completed">Done</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="filterScans('failed')" id="filter-failed">Failed</button>
+            </div>
+          </div>
+        </div>
+        <div class="card-body p-0" style="overflow-y: auto; max-height: calc(100vh - 200px);">
+          <div id="recentScansList">
+            {% for scan in recent_scans %}
+            <div class="scan-item d-flex justify-content-between align-items-center px-3 py-2 border-bottom" data-status="{{ scan.status }}">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center">
+                  <i class="fab fa-github text-muted mr-2"></i>
+                  <strong class="mr-2">{{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}</strong>
+                  {% if scan.vulnerabilities_json and scan.vulnerabilities_json|length > 10 %}
+                  <span class="badge badge-danger badge-sm">High</span>
+                  {% elif scan.vulnerabilities_json and scan.vulnerabilities_json|length > 5 %}
+                  <span class="badge badge-warning badge-sm">Med</span>
+                  {% elif scan.vulnerabilities_json and scan.vulnerabilities_json|length > 0 %}
+                  <span class="badge badge-info badge-sm">Low</span>
+                  {% elif scan.status == 'completed' %}
+                  <span class="badge badge-success badge-sm">Clean</span>
+                  {% endif %}
+                </div>
+                <small class="text-muted">
+                  {{ scan.created_at.strftime('%b %d, %H:%M') if scan.created_at }} • 
+                  {{ scan.analysis_tool.title() }}
+                  {% if scan.vulnerabilities_json %} • {{ scan.vulnerabilities_json|length }} issues{% endif %}
+                </small>
+              </div>
+              <div class="text-right">
+                {% if scan.status == 'completed' %}
+                <span class="badge badge-success badge-sm">Done</span>
+                {% elif scan.status == 'processing' %}
+                <span class="badge badge-warning badge-sm">Running</span>
+                {% elif scan.status == 'failed' %}
+                <span class="badge badge-danger badge-sm">Failed</span>
+                {% else %}
+                <span class="badge badge-secondary badge-sm">{{ scan.status.title() }}</span>
+                {% endif %}
+                <div class="mt-1">
+                  <a href="{{ url_for('detailed_findings', scan_id=scan.id) }}" class="btn btn-outline-primary btn-sm mr-1">
+                    <i class="fas fa-eye"></i>
+                  </a>
+                  {% if scan.status == 'completed' %}
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                      <i class="fas fa-download"></i>
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-right">
+                      <a class="dropdown-item" href="/api/scan/{{ scan.id }}/export/json">
+                        <i class="fas fa-file-code mr-1"></i> JSON
+                      </a>
+                      <a class="dropdown-item" href="/api/scan/{{ scan.id }}/export/csv">
+                        <i class="fas fa-file-csv mr-1"></i> CSV
+                      </a>
+                      <a class="dropdown-item" href="/api/scan/{{ scan.id }}/export/sarif">
+                        <i class="fas fa-file-alt mr-1"></i> SARIF
+                      </a>
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+            
+            {% if not recent_scans %}
+            <div class="text-center py-4">
+              <i class="fas fa-search fa-2x text-muted mb-2"></i>
+              <p class="text-muted">No scans yet</p>
+              <a href="{{ url_for('scan') }}" class="btn btn-primary btn-sm">Start First Scan</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compact Sidebar -->
+    <div class="col-4">
+      <div class="row h-100">
+        <!-- Status Card -->
+        <div class="col-12 mb-2">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body py-2">
+              {% if stats.critical_vulnerabilities > 5 %}
+              <div class="alert alert-danger py-1 mb-1">
+                <small><strong>High Risk:</strong> {{ stats.critical_vulnerabilities }} critical vulnerabilities</small>
+              </div>
+              {% elif stats.critical_vulnerabilities > 0 %}
+              <div class="alert alert-warning py-1 mb-1">
+                <small><strong>Notice:</strong> {{ stats.critical_vulnerabilities }} critical vulnerabilities</small>
+              </div>
+              {% else %}
+              <div class="alert alert-success py-1 mb-1">
+                <small><strong>All Clear:</strong> No critical vulnerabilities</small>
+              </div>
+              {% endif %}
+              <div class="row text-center">
+                <div class="col-6">
+                  <small class="text-muted d-block">Scanner</small>
+                  <span class="badge badge-success badge-sm">Online</span>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Queue</small>
+                  <span class="badge badge-info badge-sm" id="queueStatus">{{ stats.running_scans }} active</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="col-12 mb-2">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body py-2">
+              <h6 class="mb-2 font-weight-bold">Quick Actions</h6>
+              <div class="btn-group-vertical btn-group-sm w-100">
+                <a href="{{ url_for('scan') }}" class="btn btn-primary btn-sm mb-1">
+                  <i class="fas fa-search mr-1"></i>New Scan
+                </a>
+                <a href="{{ url_for('scan') }}" class="btn btn-outline-secondary btn-sm mb-1">
+                  <i class="fas fa-upload mr-1"></i>Upload ZIP
+                </a>
+                <button class="btn btn-outline-info btn-sm mb-1" onclick="exportDashboardReport()">
+                  <i class="fas fa-file-export mr-1"></i>Export Report
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="showSettings()">
+                  <i class="fas fa-cog mr-1"></i>Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="col-12">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body py-2">
+              <h6 class="mb-2 font-weight-bold">Recent Activity</h6>
+              <div style="max-height: 200px; overflow-y: auto;">
+                {% for scan in recent_scans[:5] %}
+                <div class="d-flex align-items-center mb-2">
+                  <div class="mr-2">
+                    {% if scan.status == 'completed' %}
+                    <i class="fas fa-check-circle text-success"></i>
+                    {% elif scan.status == 'failed' %}
+                    <i class="fas fa-times-circle text-danger"></i>
+                    {% else %}
+                    <i class="fas fa-clock text-warning"></i>
+                    {% endif %}
+                  </div>
+                  <div class="flex-grow-1">
+                    <small class="d-block">
+                      <strong>{{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}</strong>
+                    </small>
+                    <small class="text-muted">
+                      {{ scan.created_at.strftime('%H:%M') if scan.created_at }} • {{ scan.status }}
+                      {% if scan.vulnerabilities_json %} • {{ scan.vulnerabilities_json|length }} issues{% endif %}
+                    </small>
+                  </div>
+                </div>
+                {% endfor %}
+                {% if not recent_scans %}
+                <small class="text-muted">No recent activity</small>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Quick Scan Modal -->
+<div class="modal fade" id="quickScanModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Quick Scan</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="quickScanForm">
+          <div class="form-group">
+            <label for="repoUrl">GitHub Repository URL</label>
+            <input type="url" class="form-control" id="repoUrl" placeholder="https://github.com/user/repo" required>
+          </div>
+          <div class="form-group">
+            <label for="analysisToolQuick">Analysis Tool</label>
+            <select class="form-control" id="analysisToolQuick">
+              <option value="cppcheck">Cppcheck</option>
+              <option value="codeql">CodeQL</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="startQuickScan()">
+          <i class="fas fa-search"></i> Start Scan
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal fade" id="settingsModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Settings</h5>
+        <button type="button" class="close" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="settingsForm">
+          <div class="form-group">
+            <label for="defaultTool">Default Analysis Tool</label>
+            <select class="form-control" id="defaultTool">
+              <option value="cppcheck">Cppcheck</option>
+              <option value="codeql">CodeQL</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="emailNotifications">
+              <label class="form-check-label" for="emailNotifications">
+                Email notifications
+              </label>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Compact dashboard functionality
+let refreshInterval;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initializeDashboard();
+});
+
+function initializeDashboard() {
+    loadUserSettings();
+    startAutoRefresh();
+    initializeFilterButtons();
+}
+
+function initializeFilterButtons() {
+    const allFilterBtn = document.getElementById('filter-all');
+    if (allFilterBtn) {
+        allFilterBtn.classList.add('active');
+    }
+}
+
+function showQuickScan() {
+    $('#quickScanModal').modal('show');
+}
+
+function startQuickScan() {
+    const repoUrl = document.getElementById('repoUrl').value;
+    const analysisTool = document.getElementById('analysisToolQuick').value;
+    
+    if (!repoUrl) {
+        alert('Please enter a repository URL');
+        return;
+    }
+
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    button.disabled = true;
+
+    fetch('/api/dashboard/quick-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo_url: repoUrl, analysis_tool: analysisTool })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            $('#quickScanModal').modal('hide');
+            window.location.href = data.redirect_url;
+        }
+    })
+    .catch(error => {
+        alert('Error starting scan. Please try again.');
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
+
+function showSettings() {
+    $('#settingsModal').modal('show');
+}
+
+function loadUserSettings() {
+    fetch('/api/user/settings')
+    .then(response => response.json())
+    .then(settings => {
+        document.getElementById('defaultTool').value = settings.default_analysis_tool || 'cppcheck';
+        document.getElementById('emailNotifications').checked = settings.email_notifications || false;
+    })
+    .catch(error => console.error('Error loading settings:', error));
+}
+
+function saveSettings() {
+    const settings = {
+        default_analysis_tool: document.getElementById('defaultTool').value,
+        email_notifications: document.getElementById('emailNotifications').checked
+    };
+
+    fetch('/api/user/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            $('#settingsModal').modal('hide');
+            alert('Settings saved successfully!');
+        }
+    })
+    .catch(error => {
+        alert('Error saving settings. Please try again.');
+    });
+}
+
+function startAutoRefresh() {
+    refreshInterval = setInterval(() => {
+        updateSystemHealth();
+    }, 30000);
+}
+
+function refreshDashboard() {
+    const icon = document.getElementById('refreshIcon');
+    icon.classList.add('fa-spin');
+
+    fetch('/api/dashboard/stats')
+    .then(response => response.json())
+    .then(stats => {
+        document.getElementById('totalScans').textContent = stats.total_scans;
+        document.getElementById('completedScans').textContent = stats.completed_scans;
+        document.getElementById('totalVulns').textContent = stats.total_vulnerabilities;
+        document.getElementById('runningScans').textContent = stats.running_scans;
+        updateSystemHealth();
+    })
+    .catch(error => console.error('Error refreshing dashboard:', error))
+    .finally(() => {
+        icon.classList.remove('fa-spin');
+    });
+}
+
+function updateSystemHealth() {
+    fetch('/api/dashboard/stats')
+    .then(response => response.json())
+    .then(stats => {
+        const queueStatus = document.getElementById('queueStatus');
+        if (queueStatus) {
+            queueStatus.textContent = `${stats.running_scans} active`;
+        }
+    })
+    .catch(error => console.error('Error updating system health:', error));
+}
+
+function filterScans(status) {
+    const scanItems = document.querySelectorAll('.scan-item');
+    const filterButtons = document.querySelectorAll('[id^="filter-"]');
+    
+    filterButtons.forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(`filter-${status}`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    }
+    
+    scanItems.forEach(item => {
+        if (status === 'all' || item.dataset.status === status) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+function exportDashboardReport() {
+    const reportText = `
+AutoVulRepair Security Dashboard Report
+Generated: ${new Date().toLocaleString()}
+User: {{ user.username }}
+
+=== SUMMARY STATISTICS ===
+Total Scans: ${document.getElementById('totalScans')?.textContent || '0'}
+Completed Scans: ${document.getElementById('completedScans')?.textContent || '0'}
+Total Vulnerabilities: ${document.getElementById('totalVulns')?.textContent || '0'}
+Running Scans: ${document.getElementById('runningScans')?.textContent || '0'}
+
+Report generated by AutoVulRepair DevSecOps Platform
+    `.trim();
+    
+    const blob = new Blob([reportText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dashboard-report-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

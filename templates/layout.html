@@ -41,10 +41,41 @@
           </ul>
           <ul class="navbar-nav ms-auto">
             {% if current_user.is_authenticated %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                {% if current_user.avatar_url %}
+                <img src="{{ current_user.avatar_url }}" alt="Avatar" class="rounded-circle me-2" width="24" height="24">
+                {% else %}
+                <i class="fas fa-user-circle me-2"></i>
+                {% endif %}
+                {{ current_user.username }}
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><h6 class="dropdown-header">
+                  <i class="fas fa-user"></i> {{ current_user.username }}
+                  {% if current_user.email %}
+                  <br><small class="text-muted">{{ current_user.email }}</small>
+                  {% endif %}
+                </h6></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">
+                  <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a></li>
+                <li><a class="dropdown-item" href="{{ url_for('scan') }}">
+                  <i class="fas fa-shield-alt"></i> Security Scanner
+                </a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                  <i class="fas fa-sign-out-alt"></i> Logout
+                </a></li>
+              </ul>
+            </li>
             {% else %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
+            <li class="nav-item">
+              <a class="nav-link btn btn-outline-primary ms-2" href="{{ url_for('login') }}">
+                <i class="fab fa-github"></i> Login with GitHub
+              </a>
+            </li>
             {% endif %}
           </ul>
         </div>
@@ -73,6 +104,48 @@
     <!-- Core JavaScript -->
     <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    
+    <!-- User System Logging -->
+    <script>
+    // User system console logging
+    console.log('🔧 AutoVulRepair User System Debug Logs Enabled');
+    
+    {% if current_user.is_authenticated %}
+    console.log('👤 User Authentication Status: AUTHENTICATED');
+    console.log('📊 User Details:', {
+        id: '{{ current_user.id }}',
+        username: '{{ current_user.username }}',
+        email: '{{ current_user.email or "Not provided" }}',
+        avatar_url: '{{ current_user.avatar_url or "Not provided" }}',
+        created_at: '{{ current_user.created_at.strftime("%Y-%m-%d %H:%M:%S") if current_user.created_at else "Unknown" }}',
+        last_login: '{{ current_user.last_login.strftime("%Y-%m-%d %H:%M:%S") if current_user.last_login else "Unknown" }}'
+    });
+    console.log('✅ User successfully loaded from database');
+    {% else %}
+    console.log('👤 User Authentication Status: NOT AUTHENTICATED');
+    console.log('ℹ️  User needs to login via GitHub OAuth');
+    {% endif %}
+    
+    // Login button click tracking
+    document.addEventListener('DOMContentLoaded', function() {
+        const loginButtons = document.querySelectorAll('a[href*="login"]');
+        loginButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                console.log('🔐 GitHub Login initiated by user');
+                console.log('📍 Redirecting to GitHub OAuth...');
+            });
+        });
+        
+        const logoutButtons = document.querySelectorAll('a[href*="logout"]');
+        logoutButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                console.log('🚪 User logout initiated');
+                console.log('🧹 Clearing user session...');
+            });
+        });
+    });
+    </script>
+    
     {% block extra_js %}{% endblock %}
   </body>
 </html>

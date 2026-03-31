@@ -8,6 +8,37 @@ import zipfile
 import logging
 import json
 from functools import wraps
+from collections import defaultdict
+import time
+
+# Simple rate limiting storage
+rate_limit_storage = defaultdict(list)
+
+def rate_limit(max_requests=10, window_seconds=60):
+    """Rate limiting decorator"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Get client identifier (IP address)
+            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+            current_time = time.time()
+            
+            # Clean old requests
+            rate_limit_storage[client_ip] = [
+                req_time for req_time in rate_limit_storage[client_ip] 
+                if current_time - req_time < window_seconds
+            ]
+            
+            # Check rate limit
+            if len(rate_limit_storage[client_ip]) >= max_requests:
+                return jsonify({'error': 'Rate limit exceeded. Please try again later.'}), 429
+            
+            # Add current request
+            rate_limit_storage[client_ip].append(current_time)
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 from pathlib import Path
 from datetime import datetime
 
@@ -17,8 +48,9 @@ from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 import requests
 
-# Import new components
-from src.models.scan import get_session, Scan, create_database
+# Import legacy components (for backward compatibility)
+from src.models.scan import Scan
+from src.database.connection import get_session, create_database
 from src.queue.tasks import celery_app, analyze_code, analyze_code_sync
 from src.utils.validation import (
     is_valid_github_url, validate_zip_file, validate_code_snippet, 
@@ -26,11 +58,31 @@ from src.utils.validation import (
 )
 # validate_zip_file and safe_extract_zip are used for secure ZIP processing
 
+# Import new database components
+from src.models.scan_v2 import DatabaseManager
+from src.repositories.scan_repository import ScanRepository
+from src.services.scan_service import ScanService
+
+# Import new GitHub service
+from src.services.github_service import GitHubService
+from src.services.differential_scan_service import DifferentialScanService
+
+# Import user service for database-backed user management
+from src.services.user_service import user_service
+from src.models.user import User
+
 # Import Module 2 components
 from src.fuzz_plan.generator import FuzzPlanGenerator
 from src.harness.generator import HarnessGenerator
 from src.build.orchestrator import BuildOrchestrator
 from src.fuzz_exec.executor import FuzzExecutor
+from src.fuzz_exec.repair_integration import FuzzingRepairIntegration
+
+# Import health checks for Kubernetes
+from src.health.checks import register_health_routes
+
+# Import advanced scanning endpoints
+from src.api.advanced_scan_endpoints import advanced_scan_bp
 
 load_dotenv()
 
@@ -54,17 +106,72 @@ logging.getLogger('src.utils.docker_helper').setLevel(logging.DEBUG)
 app_logger = logging.getLogger('werkzeug')
 app_logger.setLevel(logging.INFO)
 
-# Initialize database
+# Initialize database and services
 logger.info("=" * 60)
 logger.info(f"Starting application at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 logger.info("=" * 60)
+
+# Initialize legacy database for backward compatibility
 create_database()
-logger.info("Database initialized")
+logger.info("Legacy database initialized")
+
+# Initialize new database system
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    try:
+        db_manager = DatabaseManager(DATABASE_URL)
+        db_manager.create_tables()
+        
+        # Test connection
+        if db_manager.health_check():
+            logger.info("New database system initialized and connected")
+            USE_DATABASE = True
+        else:
+            logger.warning("Database connection failed, using legacy file system")
+            USE_DATABASE = False
+    except Exception as e:
+        logger.warning(f"Database initialization failed: {e}, using legacy file system")
+        USE_DATABASE = False
+        db_manager = None
+else:
+    logger.info("No DATABASE_URL configured, using legacy file system")
+    USE_DATABASE = False
+    db_manager = None
+
+# Initialize repository and service layers
+if USE_DATABASE and db_manager:
+    scan_repository = ScanRepository(db_manager, use_database=True)
+    scan_service = ScanService(scan_repository)
+    logger.info("Using database-backed scan service")
+else:
+    scan_repository = ScanRepository(None, use_database=False)
+    scan_service = ScanService(scan_repository)
+    logger.info("Using file system-backed scan service")
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')
+
+# Session configuration for better persistence
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+app.config['SESSION_COOKIE_NAME'] = 'autovulrepair_session'
+
 # Set maximum upload size to 100MB to prevent resource exhaustion
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
+
+# Add custom JSON filter for templates
+import json
+@app.template_filter('tojson')
+def to_json_filter(obj):
+    return json.dumps(obj)
+
+# Register health check routes for Kubernetes
+register_health_routes(app)
+
+# Register advanced scanning endpoints
+app.register_blueprint(advanced_scan_bp)
 
 # Add request logging middleware
 @app.before_request
@@ -83,23 +190,17 @@ login_manager = LoginManager()
 login_manager.login_view = 'home'
 login_manager.init_app(app)
 
-# Simple in-memory user store
-USERS = {}
+# Database-backed user management (no more in-memory storage)
+# Users are now stored in the database via user_service
 
 
-class User(UserMixin):
-    def __init__(self, id_, username, token=None):
-        self.id = id_
-        self.username = username
-        self.token = token
-
-    def get_id(self):
-        return str(self.id)
-
+# User class is now imported from src.models.user
+# No need for in-app User class definition
 
 @login_manager.user_loader
 def load_user(user_id):
-    return USERS.get(user_id)
+    """Load user from database"""
+    return user_service.get_user_by_id(user_id)
 
 
 # OAuth (GitHub) setup
@@ -143,12 +244,70 @@ def home():
 
 @app.route('/api/health')
 def api_health():
-    """Health check endpoint for VS Code extension"""
-    return jsonify({
-        'status': 'ok',
-        'message': 'Backend is running',
-        'version': '1.0.0'
-    })
+    """Health check endpoint for VS Code extension - now includes database status"""
+    try:
+        health_status = {
+            'status': 'ok',
+            'message': 'Backend is running',
+            'version': '2.0.0',
+            'database': {
+                'enabled': USE_DATABASE,
+                'connected': False,
+                'type': 'postgresql' if USE_DATABASE else 'legacy_sqlite'
+            },
+            'storage': {
+                'type': 'database' if USE_DATABASE else 'filesystem',
+                'stats': {}
+            }
+        }
+        
+        # Check database connectivity
+        if USE_DATABASE and db_manager:
+            health_status['database']['connected'] = db_manager.health_check()
+            if health_status['database']['connected']:
+                # Get storage stats
+                stats = scan_service.get_system_stats()
+                health_status['storage']['stats'] = stats['storage']
+        
+        return jsonify(health_status)
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Health check failed: {str(e)}',
+            'version': '2.0.0',
+            'database': {'enabled': False, 'connected': False},
+            'storage': {'type': 'error'}
+        }), 500
+
+
+@app.route('/api/system/stats')
+def api_system_stats():
+    """Get system statistics - new endpoint for monitoring"""
+    try:
+        stats = scan_service.get_system_stats()
+        return jsonify(stats)
+    except Exception as e:
+        logger.error(f"Error getting system stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/system/migrate', methods=['POST'])
+def api_migrate_to_database():
+    """Migrate existing file-based scans to database - admin endpoint"""
+    if not USE_DATABASE:
+        return jsonify({'error': 'Database not enabled'}), 400
+    
+    try:
+        # This would implement migration logic
+        # For now, return placeholder
+        return jsonify({
+            'status': 'not_implemented',
+            'message': 'Migration functionality not yet implemented'
+        })
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/no-login')
@@ -171,31 +330,55 @@ def login():
 @app.route('/auth')
 def authorized():
     try:
+        logger.info("[AUTH] GitHub OAuth callback initiated")
+        
         token = github.authorize_access_token()
         if not token:
+            logger.warning("[AUTH] GitHub OAuth token not received")
             flash('Authentication failed.')
             return redirect(url_for('home'))
 
+        logger.info("[AUTH] GitHub OAuth token received successfully")
         session['github_token'] = token['access_token']
+        session.permanent = True  # Make session permanent
         
         # Fetch user info
+        logger.info("[AUTH] Fetching user info from GitHub API")
         resp = requests.get('https://api.github.com/user', 
                           headers={'Authorization': f'token {token["access_token"]}'})
         
         if resp.status_code != 200:
+            logger.error(f"[AUTH] Failed to fetch user info from GitHub: {resp.status_code}")
             flash('Failed to fetch user info from GitHub.')
             return redirect(url_for('home'))
 
         data = resp.json()
         user_id = str(data.get('id'))
         username = data.get('login')
+        email = data.get('email')
+        avatar_url = data.get('avatar_url')
 
-        user = User(user_id, username, token=token['access_token'])
-        USERS[user_id] = user
-        login_user(user)
+        logger.info(f"[AUTH] GitHub user info received: {username} (ID: {user_id})")
+
+        # Create or update user in database
+        logger.info(f"[AUTH] Creating/updating user in database: {username}")
+        user = user_service.create_or_update_user(
+            user_id=user_id,
+            username=username,
+            email=email,
+            avatar_url=avatar_url,
+            token=token['access_token']
+        )
+        
+        logger.info(f"[AUTH] User successfully saved to database: {username} (ID: {user_id})")
+        
+        login_user(user, remember=True)  # Remember the user
+        logger.info(f"[AUTH] User logged in successfully: {username}")
+        
         flash('Logged in successfully.')
         return redirect(url_for('dashboard'))
     except Exception as e:
+        logger.error(f"[AUTH] Authentication error: {e}", exc_info=True)
         flash(f'Authentication error: {str(e)}')
         return redirect(url_for('home'))
 
@@ -206,52 +389,624 @@ def authorized():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    """Dashboard with real statistics from database"""
-    session_db = get_session()
+    """Enhanced user dashboard with personalized scan management"""
     try:
-        from sqlalchemy import func
+        # Get user's scans from NEW database system
+        logger.info(f"[DASHBOARD] Loading dashboard for user {current_user.username} (ID: {current_user.id})")
+        user_scans_data = scan_service.get_user_scans(current_user.id)
         
-        # Get user's scans (or all scans if user_id is None for demo)
-        user_scans = session_db.query(Scan).filter(
-            (Scan.user_id == current_user.id) | (Scan.user_id == None)
-        ).all()
+        logger.info(f"[DASHBOARD] Found {len(user_scans_data)} scans for user {current_user.username}")
         
-        # Calculate real statistics
-        total_scans = len(user_scans)
+        # Convert scan data to format expected by template
+        recent_scans = []
+        for scan_data in user_scans_data[:10]:
+            # Convert ISO string to datetime object for template
+            created_at = None
+            if scan_data.get('created_at'):
+                try:
+                    from datetime import datetime
+                    created_at = datetime.fromisoformat(scan_data['created_at'].replace('Z', '+00:00'))
+                    created_at = created_at.replace(tzinfo=None)  # Remove timezone for template
+                except:
+                    created_at = None
+            
+            # Create scan object that matches template expectations
+            scan_obj = type('Scan', (), {
+                'id': scan_data['scan_id'],
+                'repo_url': scan_data.get('repo_url', 'Code snippet/ZIP'),
+                'status': scan_data['status'],
+                'analysis_tool': scan_data['analysis_tool'],
+                'created_at': created_at,
+                'source_type': scan_data.get('source_type', 'repository')
+            })()
+            
+            recent_scans.append(scan_obj)
         
-        total_vulnerabilities = 0
-        total_patches = 0
-        completed_scans = 0
+        # Calculate user-specific statistics from new data format
+        stats = calculate_user_stats_v2(user_scans_data)
         
-        for scan in user_scans:
-            if scan.vulnerabilities_json:
-                total_vulnerabilities += len(scan.vulnerabilities_json)
-            if scan.patches_json:
-                total_patches += len(scan.patches_json)
-            if scan.status == 'completed':
-                completed_scans += 1
+        # Get scan status breakdown
+        status_breakdown = get_status_breakdown_v2(user_scans_data)
         
-        # Calculate success rate
-        success_rate = (completed_scans / total_scans * 100) if total_scans > 0 else 0
+        # Get vulnerability trends (last 30 days)
+        vulnerability_trends = get_vulnerability_trends_v2(user_scans_data)
         
-        # Get recent scans (last 5)
-        recent_scans = session_db.query(Scan).filter(
-            (Scan.user_id == current_user.id) | (Scan.user_id == None)
-        ).order_by(Scan.created_at.desc()).limit(5).all()
+        # Ensure vulnerability_trends is not None
+        if vulnerability_trends is None:
+            vulnerability_trends = []
         
+        # Get user preferences/settings
+        user_settings = get_user_settings(current_user.id)
+        
+        logger.info(f"[DASHBOARD] Rendering dashboard with {len(recent_scans)} recent scans")
+        
+        return render_template('single_page_dashboard.html',
+                             user=current_user,
+                             stats=stats,
+                             recent_scans=recent_scans,
+                             status_breakdown=status_breakdown,
+                             vulnerability_trends=vulnerability_trends,
+                             user_settings=user_settings)
+            
+    except Exception as e:
+        logger.error(f"Error loading enhanced dashboard: {e}", exc_info=True)
+        # Fallback to basic stats
         stats = {
-            'total_scans': total_scans,
-            'total_vulnerabilities': total_vulnerabilities,
-            'total_patches': total_patches,
-            'success_rate': round(success_rate, 1)
+            'total_scans': 0,
+            'completed_scans': 0,
+            'failed_scans': 0,
+            'running_scans': 0,
+            'success_rate': 0,
+            'total_vulnerabilities': 0,
+            'critical_vulnerabilities': 0,
+            'high_vulnerabilities': 0,
+            'avg_scan_time': 0
         }
-        
-        return render_template('dashboard.html', 
+        return render_template('single_page_dashboard.html', 
                              user=current_user, 
                              stats=stats,
-                             recent_scans=recent_scans)
-    finally:
-        session_db.close()
+                             recent_scans=[],
+                             status_breakdown={},
+                             vulnerability_trends=[],
+                             user_settings=get_user_settings(current_user.id))
+
+
+def calculate_user_stats_v2(user_scans_data):
+    """Calculate personalized statistics for user using new data format"""
+    total_scans = len(user_scans_data)
+    
+    # Count by status
+    completed_scans = sum(1 for scan in user_scans_data if scan.get('status') == 'completed')
+    failed_scans = sum(1 for scan in user_scans_data if scan.get('status') == 'failed')
+    running_scans = sum(1 for scan in user_scans_data if scan.get('status') in ['queued', 'processing'])
+    
+    # Count vulnerabilities by getting findings for each completed scan
+    total_vulnerabilities = 0
+    critical_vulnerabilities = 0
+    high_vulnerabilities = 0
+    
+    # Use the global scan_service that's already initialized
+    global scan_service
+    
+    logger.info(f"[DASHBOARD] Calculating stats for {len(user_scans_data)} scans ({completed_scans} completed)")
+    
+    # Count vulnerabilities from completed scans
+    for scan_data in user_scans_data:
+        if scan_data.get('status') == 'completed':
+            scan_id = scan_data['scan_id']
+            try:
+                logger.debug(f"[DASHBOARD] Getting results for scan {scan_id[:8]}...")
+                results = scan_service.get_scan_results(scan_id)
+                if 'error' not in results:
+                    findings = results['findings']
+                    scan_vuln_count = len(findings)
+                    total_vulnerabilities += scan_vuln_count
+                    
+                    logger.debug(f"[DASHBOARD] Scan {scan_id[:8]}: {scan_vuln_count} vulnerabilities")
+                    
+                    # Count by severity (using Cppcheck severity mapping)
+                    for finding in findings:
+                        severity = finding.get('severity', '').lower()
+                        if severity == 'error':  # Cppcheck 'error' = high severity
+                            high_vulnerabilities += 1
+                        # Note: Cppcheck doesn't have 'critical', so we don't count those
+                else:
+                    logger.warning(f"[DASHBOARD] Error getting results for scan {scan_id[:8]}: {results.get('error', 'Unknown error')}")
+            except Exception as e:
+                logger.error(f"[DASHBOARD] Exception getting results for scan {scan_id[:8]}: {e}")
+                continue
+    
+    logger.info(f"[DASHBOARD] Final vulnerability counts: {total_vulnerabilities} total, {high_vulnerabilities} high")
+    
+    # Calculate success rate
+    success_rate = (completed_scans / total_scans * 100) if total_scans > 0 else 0
+    
+    # Calculate average scan time (simplified for now)
+    avg_scan_time = 0  # TODO: Implement based on new timestamp fields
+    
+    return {
+        'total_scans': total_scans,
+        'completed_scans': completed_scans,
+        'failed_scans': failed_scans,
+        'running_scans': running_scans,
+        'success_rate': round(success_rate, 1),
+        'total_vulnerabilities': total_vulnerabilities,
+        'critical_vulnerabilities': critical_vulnerabilities,
+        'high_vulnerabilities': high_vulnerabilities,
+        'avg_scan_time': avg_scan_time
+    }
+
+def get_status_breakdown_v2(user_scans_data):
+    """Get scan status breakdown for charts using new data format"""
+    status_counts = {}
+    for scan in user_scans_data:
+        status = scan.get('status', 'unknown')
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    return status_counts
+
+def get_vulnerability_trends_v2(user_scans_data):
+    """Get vulnerability trends over last 30 days using new data format"""
+    from datetime import timedelta, datetime
+    thirty_days_ago = datetime.now() - timedelta(days=30)
+    
+    # Filter recent scans
+    recent_scans = []
+    for scan in user_scans_data:
+        created_at_str = scan.get('created_at')
+        if created_at_str:
+            try:
+                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                if created_at.replace(tzinfo=None) >= thirty_days_ago:
+                    recent_scans.append(scan)
+            except:
+                continue
+    
+    # For now, return empty trends since we need to implement vulnerability counting
+    trends = []
+    for i in range(30):
+        date = (datetime.now() - timedelta(days=29-i)).date()
+        trends.append({
+            'date': date.strftime('%Y-%m-%d'),
+            'vulnerabilities': 0  # TODO: Implement vulnerability counting from findings
+        })
+    
+    return trends
+
+def calculate_user_stats(user_scans):
+    """Calculate personalized statistics for user"""
+    total_scans = len(user_scans)
+    
+    # Count by status
+    completed_scans = sum(1 for scan in user_scans if scan.status == 'completed')
+    failed_scans = sum(1 for scan in user_scans if scan.status == 'failed')
+    running_scans = sum(1 for scan in user_scans if scan.status in ['queued', 'processing'])
+    
+    # Count vulnerabilities
+    total_vulnerabilities = 0
+    critical_vulnerabilities = 0
+    high_vulnerabilities = 0
+    
+    for scan in user_scans:
+        if scan.vulnerabilities_json:
+            vulns = scan.vulnerabilities_json
+            total_vulnerabilities += len(vulns)
+            
+            for vuln in vulns:
+                severity = vuln.get('severity', '').lower()
+                if severity == 'critical':
+                    critical_vulnerabilities += 1
+                elif severity == 'high':
+                    high_vulnerabilities += 1
+    
+    # Calculate success rate
+    success_rate = (completed_scans / total_scans * 100) if total_scans > 0 else 0
+    
+    # Calculate average scan time
+    avg_scan_time = calculate_average_scan_time(user_scans)
+    
+    return {
+        'total_scans': total_scans,
+        'completed_scans': completed_scans,
+        'failed_scans': failed_scans,
+        'running_scans': running_scans,
+        'success_rate': round(success_rate, 1),
+        'total_vulnerabilities': total_vulnerabilities,
+        'critical_vulnerabilities': critical_vulnerabilities,
+        'high_vulnerabilities': high_vulnerabilities,
+        'avg_scan_time': avg_scan_time
+    }
+
+def get_status_breakdown(user_scans):
+    """Get scan status breakdown for charts"""
+    status_counts = {}
+    for scan in user_scans:
+        status = scan.status
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    return status_counts
+
+def get_vulnerability_trends(user_scans):
+    """Get vulnerability trends over last 30 days"""
+    from datetime import timedelta
+    thirty_days_ago = datetime.now() - timedelta(days=30)
+    recent_scans = [scan for scan in user_scans if scan.created_at and scan.created_at >= thirty_days_ago]
+    
+    # Group by day
+    daily_vulns = {}
+    for scan in recent_scans:
+        day = scan.created_at.date()
+        if scan.vulnerabilities_json:
+            vuln_count = len(scan.vulnerabilities_json)
+            daily_vulns[day] = daily_vulns.get(day, 0) + vuln_count
+    
+    # Convert to chart format
+    trends = []
+    for i in range(30):
+        date = (datetime.now() - timedelta(days=29-i)).date()
+        trends.append({
+            'date': date.strftime('%Y-%m-%d'),
+            'vulnerabilities': daily_vulns.get(date, 0)
+        })
+    
+    return trends
+
+def get_user_settings(user_id):
+    """Get user preferences and settings"""
+    # For now, return default settings
+    # Later this will come from a user_settings table
+    return {
+        'default_analysis_tool': 'cppcheck',
+        'email_notifications': True,
+        'auto_patch_generation': False,
+        'preferred_severity_filter': 'all',
+        'dashboard_refresh_interval': 30  # seconds
+    }
+
+def calculate_average_scan_time(user_scans):
+    """Calculate average scan completion time"""
+    completed_scans = [scan for scan in user_scans if scan.status == 'completed' and hasattr(scan, 'completed_at') and scan.completed_at]
+    
+    if not completed_scans:
+        return 0
+    
+    total_time = 0
+    for scan in completed_scans:
+        if scan.created_at and scan.completed_at:
+            duration = (scan.completed_at - scan.created_at).total_seconds()
+            total_time += duration
+    
+    if len(completed_scans) == 0:
+        return 0
+        
+    avg_seconds = total_time / len(completed_scans)
+    return round(avg_seconds / 60, 1)  # Return in minutes
+
+
+# API endpoints for enhanced dashboard
+@app.route('/api/dashboard/stats')
+@login_required
+def api_dashboard_stats():
+    """Get real-time dashboard statistics"""
+    try:
+        session_db = get_session()
+        try:
+            user_scans = session_db.query(Scan).filter(
+                Scan.user_id == current_user.id
+            ).all()
+            
+            stats = calculate_user_stats(user_scans)
+            return jsonify(stats)
+        finally:
+            session_db.close()
+    except Exception as e:
+        logger.error(f"Error getting dashboard stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dashboard/recent-scans')
+@login_required
+def api_recent_scans():
+    """Get recent scans for dashboard"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        
+        session_db = get_session()
+        try:
+            recent_scans = session_db.query(Scan).filter(
+                Scan.user_id == current_user.id
+            ).order_by(Scan.created_at.desc()).limit(limit).all()
+            
+            scans_data = []
+            for scan in recent_scans:
+                scans_data.append({
+                    'id': scan.id,
+                    'repo_url': scan.repo_url or 'ZIP Upload',
+                    'status': scan.status,
+                    'created_at': scan.created_at.isoformat() if scan.created_at else None,
+                    'analysis_tool': scan.analysis_tool,
+                    'vulnerability_count': len(scan.vulnerabilities_json) if scan.vulnerabilities_json else 0
+                })
+            
+            return jsonify({'scans': scans_data})
+        finally:
+            session_db.close()
+    except Exception as e:
+        logger.error(f"Error getting recent scans: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/dashboard/running-scans')
+@login_required
+def api_running_scans():
+    """Get currently running scans"""
+    try:
+        session_db = get_session()
+        try:
+            running_scans = session_db.query(Scan).filter(
+                Scan.user_id == current_user.id,
+                Scan.status.in_(['queued', 'processing'])
+            ).order_by(Scan.created_at.desc()).all()
+            
+            scans_data = []
+            for scan in running_scans:
+                # Calculate estimated completion time
+                elapsed_time = (datetime.now() - scan.created_at).total_seconds() if scan.created_at else 0
+                estimated_remaining = max(0, 300 - elapsed_time)  # Assume 5 min average
+                
+                scans_data.append({
+                    'id': scan.id,
+                    'repo_url': scan.repo_url or 'ZIP Upload',
+                    'status': scan.status,
+                    'created_at': scan.created_at.isoformat() if scan.created_at else None,
+                    'elapsed_time': elapsed_time,
+                    'estimated_remaining': estimated_remaining,
+                    'analysis_tool': scan.analysis_tool
+                })
+            
+            return jsonify({'scans': scans_data})
+        finally:
+            session_db.close()
+    except Exception as e:
+        logger.error(f"Error getting running scans: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# User settings management
+@app.route('/api/user/settings', methods=['GET'])
+@login_required
+def api_get_user_settings():
+    """Get user settings"""
+    try:
+        settings = get_user_settings(current_user.id)
+        return jsonify(settings)
+    except Exception as e:
+        logger.error(f"Error getting user settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/user/settings', methods=['PUT'])
+@login_required
+def api_update_user_settings():
+    """Update user settings"""
+    try:
+        try:
+            data = request.get_json()
+        except Exception as e:
+            return jsonify({'error': 'Invalid JSON format'}), 400
+        
+        # Validate settings
+        valid_tools = ['cppcheck', 'clang-static-analyzer', 'semgrep']
+        if data.get('default_analysis_tool') not in valid_tools:
+            return jsonify({'error': 'Invalid analysis tool'}), 400
+        
+        # For now, store in session (later move to database)
+        session['user_settings'] = data
+        
+        logger.info(f"Updated settings for user {current_user.username}")
+        return jsonify({'message': 'Settings updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating user settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# GitHub Integration API Endpoints
+@app.route('/api/github/repositories')
+@login_required
+def api_get_user_repositories():
+    """Get user's GitHub repositories"""
+    try:
+        # Check if user has GitHub token
+        github_token = session.get('github_token')
+        if not github_token:
+            return jsonify({'error': 'GitHub authentication required'}), 401
+        
+        # Initialize GitHub service
+        github_service = GitHubService(github_token)
+        
+        # Get repositories
+        repositories = github_service.get_user_repositories(limit=50)
+        
+        # Get rate limit status
+        rate_limit = github_service.get_rate_limit_status()
+        
+        return jsonify({
+            'repositories': repositories,
+            'rate_limit': rate_limit,
+            'count': len(repositories)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting user repositories: {e}")
+        return jsonify({'error': 'Failed to fetch repositories'}), 500
+
+
+@app.route('/api/github/repository/<path:repo_full_name>/pulls')
+@login_required
+def api_get_repository_pulls(repo_full_name):
+    """Get pull requests for a specific repository"""
+    try:
+        # Validate repository name
+        if not repo_full_name or '/' not in repo_full_name:
+            return jsonify({'error': 'Invalid repository name'}), 400
+        
+        # Check GitHub token
+        github_token = session.get('github_token')
+        if not github_token:
+            return jsonify({'error': 'GitHub authentication required'}), 401
+        
+        # Initialize GitHub service
+        github_service = GitHubService(github_token)
+        
+        # Validate user has access to repository
+        if not github_service.validate_repository_access(repo_full_name):
+            return jsonify({'error': 'Repository not found or access denied'}), 403
+        
+        # Get pull requests
+        pulls = github_service.get_repository_pulls(repo_full_name, limit=20)
+        
+        return jsonify({
+            'pulls': pulls,
+            'repository': repo_full_name,
+            'count': len(pulls)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting repository pulls: {e}")
+        return jsonify({'error': 'Failed to fetch pull requests'}), 500
+
+
+@app.route('/api/github/repository/<path:repo_full_name>/pulls/<int:pr_number>/files')
+@login_required
+def api_get_pull_request_files(repo_full_name, pr_number):
+    """Get files changed in a pull request"""
+    try:
+        # Validate inputs
+        if not repo_full_name or '/' not in repo_full_name:
+            return jsonify({'error': 'Invalid repository name'}), 400
+        
+        if pr_number <= 0:
+            return jsonify({'error': 'Invalid pull request number'}), 400
+        
+        # Check GitHub token
+        github_token = session.get('github_token')
+        if not github_token:
+            return jsonify({'error': 'GitHub authentication required'}), 401
+        
+        # Initialize GitHub service
+        github_service = GitHubService(github_token)
+        
+        # Validate repository access
+        if not github_service.validate_repository_access(repo_full_name):
+            return jsonify({'error': 'Repository not found or access denied'}), 403
+        
+        # Get PR files
+        files = github_service.get_pull_request_files(repo_full_name, pr_number)
+        
+        return jsonify({
+            'files': files,
+            'repository': repo_full_name,
+            'pr_number': pr_number,
+            'count': len(files)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting PR files: {e}")
+        return jsonify({'error': 'Failed to fetch pull request files'}), 500
+
+# Quick actions for dashboard
+@app.route('/api/dashboard/quick-scan', methods=['POST'])
+@login_required
+def api_quick_scan():
+    """Start a quick scan from dashboard"""
+    try:
+        try:
+            data = request.get_json()
+        except Exception as e:
+            return jsonify({'error': 'Invalid JSON format'}), 400
+        repo_url = data.get('repo_url', '').strip()
+        
+        if not repo_url:
+            return jsonify({'error': 'Repository URL required'}), 400
+        
+        if not is_valid_github_url(repo_url):
+            return jsonify({'error': 'Invalid GitHub URL'}), 400
+        
+        # Get user's default settings
+        user_settings = get_user_settings(current_user.id)
+        analysis_tool = user_settings.get('default_analysis_tool', 'cppcheck')
+        
+        # Generate scan ID
+        scan_id = str(uuid.uuid4())
+        
+        # Create scan record in database
+        session_db = get_session()
+        try:
+            new_scan = Scan(
+                id=scan_id,
+                user_id=current_user.id,
+                source_type='repo_url',
+                repo_url=repo_url,
+                analysis_tool=analysis_tool,
+                status='processing'
+            )
+            session_db.add(new_scan)
+            session_db.commit()
+            logger.info(f"Created quick scan {scan_id} for user {current_user.username}")
+        finally:
+            session_db.close()
+        
+        # Start scan processing
+        result = process_github_repo(repo_url, scan_id, analysis_tool)
+        
+        if result['success']:
+            # Update scan record with results
+            session_db = get_session()
+            try:
+                scan = session_db.query(Scan).filter_by(id=scan_id).first()
+                if scan:
+                    scan.status = 'completed'
+                    scan.vulnerabilities_json = result['data'].get('vulnerabilities', [])
+                    scan.patches_json = result['data'].get('patches', [])
+                    session_db.commit()
+            finally:
+                session_db.close()
+            
+            return jsonify({
+                'scan_id': scan_id,
+                'message': 'Scan completed successfully',
+                'redirect_url': url_for('detailed_findings', scan_id=scan_id)
+            })
+        else:
+            # Update scan record with failure
+            session_db = get_session()
+            try:
+                scan = session_db.query(Scan).filter_by(id=scan_id).first()
+                if scan:
+                    scan.status = 'failed'
+                    session_db.commit()
+            finally:
+                session_db.close()
+            
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        logger.error(f"Error starting quick scan: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/debug/session')
+def debug_session():
+    """Debug endpoint to check session state"""
+    if not app.debug and os.getenv('FLASK_ENV') != 'development':
+        return "Debug endpoint disabled", 404
+    
+    session_info = {
+        'session_keys': list(session.keys()),
+        'has_github_token': 'github_token' in session,
+        'current_user_authenticated': current_user.is_authenticated if hasattr(current_user, 'is_authenticated') else False,
+        'current_user_id': getattr(current_user, 'id', None),
+        'session_permanent': session.permanent
+    }
+    
+    return jsonify(session_info)
 
 
 @app.route('/logout')
@@ -269,37 +1024,95 @@ def scan():
     if request.method == 'POST':
         repo_url = request.form.get('repo_url', '').strip()
         zip_file = request.files.get('zip_file')
+        code_snippet = request.form.get('code_snippet', '').strip()
         analysis_tool = request.form.get('analysis_tool', 'cppcheck')
+        
+        # New PR scanning parameters
+        scan_type = request.form.get('scan_type', 'full')  # 'full' or 'pr'
+        pr_number = request.form.get('pr_number')
 
-        scan_id = str(uuid.uuid4())
+        logger.info(f"[SCAN] New authenticated scan initiated by user {current_user.username} (ID: {current_user.id})")
+        logger.info(f"[SCAN] Source types - repo_url: {bool(repo_url)}, zip_file: {bool(zip_file and zip_file.filename)}, code_snippet: {bool(code_snippet)}")
+        logger.info(f"[SCAN] Analysis tool: {analysis_tool}")
 
         try:
-            if repo_url:
-                # Validate it's a GitHub URL
-                if not is_valid_github_url(repo_url):
-                    flash('Please provide a valid GitHub repository URL.')
-                    return render_template('scan.html')
-                
-                result = process_github_repo(repo_url, scan_id, analysis_tool)
-            elif zip_file:
-                result = process_zip_upload(zip_file, scan_id, analysis_tool)
-            else:
-                flash('Please provide a GitHub URL or upload a ZIP file.')
-                return render_template('scan.html')
+            # Validate that only one source type is provided
+            has_code_snippet = code_snippet and str(code_snippet).strip()
+            source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, has_code_snippet])
+            if source_count != 1:
+                logger.warning(f"[SCAN] Validation failed: Exactly one source type must be provided (found {source_count})")
+                flash('Please provide exactly one source: GitHub URL, ZIP file, or code snippet.', 'error')
+                return render_template('unified_scan.html')
             
-            if result['success']:
-                # Store scan results in session
-                session.setdefault('scans', {})[scan_id] = result['data']
-                return redirect(url_for('results', scan_id=scan_id))
-            else:
-                flash(f'Scan failed: {result["error"]}')
-                return render_template('scan.html')
+            # Validate analysis tool
+            if analysis_tool not in ['cppcheck', 'codeql']:
+                logger.warning(f"[SCAN] Invalid analysis tool: {analysis_tool}")
+                flash('Invalid analysis tool. Must be "cppcheck" or "codeql"', 'error')
+                return render_template('unified_scan.html')
+            
+            # Use the new scan service (same as no-login but with user_id)
+            if repo_url:
+                if not is_valid_github_url(repo_url):
+                    logger.warning(f"[SCAN] Invalid GitHub URL format: {repo_url}")
+                    flash('Invalid GitHub URL format. Please use: https://github.com/username/repository', 'error')
+                    return render_template('unified_scan.html')
+                
+                logger.info(f"[SCAN] Processing GitHub repository: {repo_url}")
+                result = scan_service.create_scan(
+                    source_type='repository',
+                    repo_url=repo_url,
+                    analysis_tool=analysis_tool,
+                    user_id=current_user.id  # Associate with logged-in user
+                )
+                
+            elif zip_file:
+                # Validate ZIP file
+                is_valid, error_msg = validate_zip_file(zip_file)
+                if not is_valid:
+                    logger.warning(f"[SCAN] ZIP validation failed: {error_msg}")
+                    flash(f'ZIP file error: {error_msg}', 'error')
+                    return render_template('unified_scan.html')
+                
+                logger.info(f"[SCAN] Processing ZIP file: {zip_file.filename}")
+                result = scan_service.create_scan(
+                    source_type='file_upload',
+                    file_upload=zip_file,
+                    analysis_tool=analysis_tool,
+                    user_id=current_user.id  # Associate with logged-in user
+                )
+                
+            else:  # code_snippet
+                # Validate code snippet
+                is_valid, error_msg = validate_code_snippet(code_snippet)
+                if not is_valid:
+                    logger.warning(f"[SCAN] Code snippet validation failed: {error_msg}")
+                    flash(f'Code snippet error: {error_msg}', 'error')
+                    return render_template('unified_scan.html')
+                
+                logger.info(f"[SCAN] Processing code snippet (length: {len(code_snippet)} chars)")
+                result = scan_service.create_scan(
+                    source_type='snippet',
+                    code_snippet=code_snippet,
+                    analysis_tool=analysis_tool,
+                    user_id=current_user.id  # Associate with logged-in user
+                )
+            
+            scan_id = result['scan_id']
+            logger.info(f"[SCAN] ✅ Authenticated scan created successfully: {scan_id} for user {current_user.username}")
+            logger.info(f"[SCAN] 💾 Scan saved to NEW database system with user association")
+            
+            # Redirect to detailed findings page
+            return redirect(url_for('detailed_findings', scan_id=scan_id))
                 
         except Exception as e:
+            logger.error(f"[SCAN] Error creating authenticated scan: {e}", exc_info=True)
             flash(f'An error occurred: {str(e)}')
-            return render_template('scan.html')
+            return render_template('unified_scan.html')
 
-    return render_template('scan.html')
+    return render_template('unified_scan.html')
+
+
+# Advanced scan functionality is now integrated into the main /scan route
 
 
 @app.route('/results/<scan_id>')
@@ -344,24 +1157,31 @@ def results(scan_id):
 @app.route('/scan-progress/<scan_id>')
 def scan_progress(scan_id):
     """Show scan progress page - accessible without login"""
-    session_db = get_session()
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
+        # Use the global scan_service that was initialized with the correct database configuration
+        global scan_service
+        logger.info(f"[SCAN_PROGRESS] Request for scan: {scan_id}")
+        
+        # Use the database service to get scan results
+        results = scan_service.get_scan_results(scan_id)
+        
+        if 'error' in results:
+            logger.warning(f"[SCAN_PROGRESS] Scan not found: {scan_id}")
             flash('Scan not found.', 'error')
             return redirect(url_for('no_login_scan'))
         
+        scan = results['scan']
+        logger.info(f"[SCAN_PROGRESS] Scan {scan_id} found, status: {scan.get('status', 'unknown')}")
+        
         return render_template('scan_progress.html', 
                              scan_id=scan_id, 
-                             analysis_tool=scan.analysis_tool or 'cppcheck',
-                             source_type=scan.source_type or 'Repository',
-                             repo_url=scan.repo_url)
+                             analysis_tool=scan.get('analysis_tool', 'cppcheck'),
+                             source_type=scan.get('source_type', 'Repository'),
+                             repo_url=scan.get('repo_url', ''))
     except Exception as e:
         logger.error(f"Error loading scan progress for {scan_id}: {e}")
         flash('Error loading scan details.', 'error')
         return redirect(url_for('no_login_scan'))
-    finally:
-        session_db.close()
 
 
 def extract_code_context(scan_id, file_path, line_number, context_lines=5):
@@ -409,72 +1229,505 @@ def extract_code_context(scan_id, file_path, line_number, context_lines=5):
         return None
 
 
+@app.route('/api/debug-scan/<scan_id>')
+def debug_scan_retrieval(scan_id):
+    """Debug endpoint to test scan retrieval"""
+    try:
+        logger.info(f"[DEBUG] Testing scan retrieval for: {scan_id}")
+        
+        # Test the same approach as my working test script
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        logger.info(f"[DEBUG] DATABASE_URL: {DATABASE_URL[:50] if DATABASE_URL else 'None'}...")
+        
+        if DATABASE_URL:
+            from src.models.scan_v2 import DatabaseManager
+            from src.repositories.scan_repository import ScanRepository
+            from src.services.scan_service import ScanService
+            
+            db_manager = DatabaseManager(DATABASE_URL)
+            logger.info(f"[DEBUG] DatabaseManager created")
+            
+            # Test health check
+            health = db_manager.health_check()
+            logger.info(f"[DEBUG] Database health check: {health}")
+            
+            scan_repository = ScanRepository(db_manager, use_database=True)
+            service = ScanService(scan_repository)
+            logger.info(f"[DEBUG] Service created")
+            
+            # Test repository method
+            repo_result = scan_repository.get_scan(scan_id)
+            logger.info(f"[DEBUG] Repository result: {repo_result is not None}")
+            
+            # Test service method
+            service_result = service.get_scan_results(scan_id)
+            logger.info(f"[DEBUG] Service result: {'error' not in service_result}")
+            
+            return jsonify({
+                'scan_id': scan_id,
+                'database_url_configured': bool(DATABASE_URL),
+                'health_check': health,
+                'repository_found': repo_result is not None,
+                'service_found': 'error' not in service_result,
+                'repository_result': repo_result,
+                'service_result': service_result if 'error' not in service_result else service_result
+            })
+        else:
+            return jsonify({'error': 'No DATABASE_URL configured'}), 500
+            
+    except Exception as e:
+        logger.error(f"[DEBUG] Error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+def get_fuzzing_status(scan_id):
+    """Get fuzzing status and results for integration with detailed findings"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    # Check if fuzzing results exist
+    executor = FuzzExecutor(scan_dir)
+    fuzz_results = executor.get_campaign_results()
+    
+    if not fuzz_results:
+        return {
+            'available': False,
+            'status': 'not_run',
+            'message': 'Fuzzing has not been run for this scan'
+        }
+    
+    # Calculate fuzzing summary
+    total_crashes = sum(r.get('crashes_found', 0) for r in fuzz_results.get('results', []))
+    total_targets = fuzz_results.get('total_targets', 0)
+    
+    # Determine vulnerability confirmation status
+    confirmed_vulns = []
+    if total_crashes > 0:
+        for result in fuzz_results.get('results', []):
+            if result.get('crashes_found', 0) > 0:
+                vuln_type = result.get('target', '').replace('fuzz_test_', '').replace('_', ' ').title()
+                confirmed_vulns.append({
+                    'type': vuln_type,
+                    'crashes': result.get('crashes_found', 0),
+                    'target': result.get('target', '')
+                })
+    
+    return {
+        'available': True,
+        'status': 'completed',
+        'total_targets': total_targets,
+        'total_crashes': total_crashes,
+        'confirmed_vulnerabilities': confirmed_vulns,
+        'runtime': fuzz_results.get('total_time', 0),
+        'timestamp': fuzz_results.get('timestamp', ''),
+        'message': f'Fuzzing confirmed {len(confirmed_vulns)} vulnerability types with {total_crashes} crashes'
+    }
+
+
+def determine_vulnerability_type(rule_id, message, severity):
+    """
+    Determine vulnerability type, CWE, risk score, and recommendations based on rule_id and message
+    """
+    rule_id = rule_id.lower()
+    message = message.lower() if message else ''
+    
+    # Analyze context to determine actual severity
+    # Some "error" level findings should be downgraded based on context
+    actual_severity = severity
+    
+    # Buffer overflow vulnerabilities
+    if ('buffer' in rule_id or 'overflow' in rule_id or 
+        'strcpy' in message or 'sprintf' in message or 'strcat' in message or 'gets' in message):
+        
+        # Downgrade some buffer overflows based on context
+        if ('printf(' in message and ('buffer overflows' in message or 'gets' in message)):
+            # This is just a printf statement, not an actual buffer overflow
+            actual_severity = 'low'
+            risk_score = 2.5
+        elif ('test_' in message and '()' in message):
+            # Function calls to test functions - medium risk
+            actual_severity = 'medium'
+            risk_score = 5.2
+        elif ('function' in message and '()' in message):
+            # General function calls - medium risk unless clearly dangerous
+            actual_severity = 'medium'
+            risk_score = 6.2
+        elif ('void ' in message and '()' in message):
+            # Function declarations - medium risk
+            actual_severity = 'medium'
+            risk_score = 5.8
+        elif 'strcpy(' in message and ('user_input' in message or 'buffer' in message):
+            # Direct dangerous strcpy calls - keep high
+            risk_score = 8.8 if actual_severity == 'high' else 6.5
+        elif 'sprintf(' in message and ('user_input' in message or '%' in message):
+            # Direct dangerous sprintf calls - keep high  
+            risk_score = 8.5 if actual_severity == 'high' else 6.2
+        else:
+            # Other buffer overflow patterns - medium risk by default
+            actual_severity = 'medium'
+            risk_score = 6.0
+            
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-787',
+            'cwe_description': 'Buffer Overflow',
+            'risk_score': risk_score,
+            'description': 'Buffer overflow vulnerability detected',
+            'impact': 'This vulnerability could allow an attacker to execute arbitrary code, cause denial of service, or corrupt memory.',
+            'recommendation': 'Use safe string functions (strncpy, snprintf) or implement proper bounds checking. Consider using memory-safe languages or libraries.'
+        }
+    
+    # Null pointer dereference
+    elif ('null' in rule_id or 'pointer' in rule_id or 
+          'null pointer' in message or 'nullptr' in message):
+        
+        # Analyze context for null pointer issues
+        if ('= nullptr' in message or '= null' in message):
+            # Variable declaration - lower risk
+            actual_severity = 'medium'
+            risk_score = 4.2
+        elif 'dereference' in message:
+            # Actual dereference - higher risk
+            risk_score = 6.8 if actual_severity == 'high' else 4.5
+        else:
+            # General null pointer issue
+            actual_severity = 'medium'
+            risk_score = 5.1
+            
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-476',
+            'cwe_description': 'NULL Pointer Dereference',
+            'risk_score': risk_score,
+            'description': 'Null pointer dereference vulnerability',
+            'impact': 'This issue may lead to application crashes, denial of service, or unexpected behavior.',
+            'recommendation': 'Add null pointer checks before dereferencing. Initialize pointers properly and validate input parameters.'
+        }
+    
+    # Memory leak
+    elif ('leak' in rule_id or 'memory' in rule_id or 
+          'malloc' in message or 'new' in message or 'leak' in message):
+        actual_severity = 'medium'
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-401',
+            'cwe_description': 'Memory Leak',
+            'risk_score': 4.8 if actual_severity == 'high' else 3.2,
+            'description': 'Memory leak detected',
+            'impact': 'This issue can lead to resource exhaustion, performance degradation, and potential denial of service.',
+            'recommendation': 'Ensure all allocated memory is properly freed. Use RAII patterns or smart pointers in C++.'
+        }
+    
+    # Use after free
+    elif ('use' in rule_id and 'free' in rule_id or 
+          'use after free' in message or 'freed' in message):
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-416',
+            'cwe_description': 'Use After Free',
+            'risk_score': 8.2 if actual_severity == 'high' else 6.1,
+            'description': 'Use-after-free vulnerability detected',
+            'impact': 'This vulnerability could allow an attacker to execute arbitrary code or cause memory corruption.',
+            'recommendation': 'Set pointers to NULL after freeing. Use memory-safe programming practices and consider static analysis tools.'
+        }
+    
+    # Format string vulnerability
+    elif ('format' in rule_id or 'string' in rule_id or 
+          'printf' in message or '%n' in message or 'format string' in message):
+        
+        # Check if it's actually a format string vuln or just a printf call
+        if '%n' in message:
+            # Actual format string attack
+            risk_score = 7.8
+        elif 'printf(' in message and not any(x in message for x in ['%s', '%d', '%n']):
+            # Simple printf call - lower risk
+            actual_severity = 'low'
+            risk_score = 2.8
+        else:
+            risk_score = 6.5
+            
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-134',
+            'cwe_description': 'Format String Vulnerability',
+            'risk_score': risk_score,
+            'description': 'Format string vulnerability detected',
+            'impact': 'This vulnerability could allow an attacker to read/write arbitrary memory locations or execute code.',
+            'recommendation': 'Use format strings with proper format specifiers. Never use user input directly as format strings.'
+        }
+    
+    # Integer overflow
+    elif ('integer' in rule_id or 'overflow' in rule_id or 
+          'int overflow' in message or 'integer overflow' in message):
+        actual_severity = 'medium'
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-190',
+            'cwe_description': 'Integer Overflow',
+            'risk_score': 5.5 if actual_severity == 'high' else 3.8,
+            'description': 'Integer overflow vulnerability detected',
+            'impact': 'This issue can lead to unexpected behavior, buffer overflows, or security bypasses.',
+            'recommendation': 'Validate input ranges and use safe integer arithmetic. Consider using libraries that detect overflow.'
+        }
+    
+    # Uninitialized variable
+    elif ('uninitialized' in rule_id or 'variable' in rule_id or 
+          'uninitialized' in message):
+        actual_severity = 'medium'
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-457',
+            'cwe_description': 'Uninitialized Variable',
+            'risk_score': 4.1 if actual_severity == 'high' else 2.6,
+            'description': 'Uninitialized variable detected',
+            'impact': 'This issue can lead to unpredictable behavior, information disclosure, or security vulnerabilities.',
+            'recommendation': 'Initialize all variables before use. Use compiler warnings to detect uninitialized variables.'
+        }
+    
+    # Unused variable (code quality)
+    elif ('unused' in rule_id or 'variable' in rule_id or 
+          'unused variable' in message):
+        actual_severity = 'low'
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-563',
+            'cwe_description': 'Unused Variable',
+            'risk_score': 1.8,
+            'description': 'Unused variable detected',
+            'impact': 'This is a code quality issue that should be addressed to improve maintainability and reduce confusion.',
+            'recommendation': 'Remove unused variables or add appropriate comments if they are intentionally unused for future use.'
+        }
+    
+    # Resource leak (file handles, etc.)
+    elif ('resource' in rule_id or 'leak' in rule_id or 
+          'file' in message or 'handle' in message):
+        actual_severity = 'medium'
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-404',
+            'cwe_description': 'Resource Leak',
+            'risk_score': 4.7 if actual_severity == 'high' else 3.1,
+            'description': 'Resource leak detected',
+            'impact': 'This issue can lead to resource exhaustion and potential denial of service.',
+            'recommendation': 'Ensure all opened resources (files, handles) are properly closed. Use RAII patterns.'
+        }
+    
+    # Default case for unknown vulnerabilities
+    else:
+        # Analyze message content to determine severity
+        if any(dangerous in message for dangerous in ['overflow', 'crash', 'exploit', 'attack']):
+            actual_severity = 'high'
+            risk_score = 7.2
+        elif any(medium_risk in message for medium_risk in ['leak', 'null', 'uninitialized']):
+            actual_severity = 'medium'
+            risk_score = 4.5
+        else:
+            actual_severity = 'low'
+            risk_score = 2.9
+            
+        return {
+            'actual_severity': actual_severity,
+            'cwe': 'CWE-693',
+            'cwe_description': 'Protection Mechanism Failure',
+            'risk_score': risk_score,
+            'description': f'Security issue detected: {rule_id}',
+            'impact': 'This issue may lead to security vulnerabilities or unexpected behavior.',
+            'recommendation': 'Review the code and apply appropriate security measures based on the specific vulnerability type.'
+        }
+
+
 @app.route('/detailed-findings/<scan_id>')
 def detailed_findings(scan_id):
     """Show detailed vulnerability findings - accessible without login"""
     logger.info(f"[DETAILED_FINDINGS] Request for scan: {scan_id}")
-    # Get scan data from database
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        # Use ONLY the new scan_service (no more legacy fallback)
+        logger.info(f"[DETAILED_FINDINGS] Using new scan_service for scan lookup")
         
-        if not scan:
+        # Get scan results from the new database system
+        results = scan_service.get_scan_results(scan_id)
+        
+        if 'error' in results:
             logger.warning(f"[DETAILED_FINDINGS] Scan not found: {scan_id}")
+            logger.warning(f"[DETAILED_FINDINGS] Error details: {results}")
             flash('Scan not found.', 'error')
             return redirect(url_for('no_login_scan'))
         
-        logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} found, status: {scan.status}")
+        scan = results['scan']
+        findings = results['findings']
         
-        # Get vulnerabilities and patches from database
-        vulnerabilities = scan.vulnerabilities_json or []
-        patches = scan.patches_json or []
+        logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} found in NEW database system, status: {scan.get('status', 'unknown')}")
         
-        # Add code context to each vulnerability
-        for vuln in vulnerabilities:
+        # Convert findings to the format expected by the template
+        vulnerabilities = []
+        for i, finding in enumerate(findings):
+            logger.debug(f"[DETAILED_FINDINGS] Processing finding {i}: {finding}")
+            
+            # Map severity from cppcheck format to template format
+            severity_mapping = {
+                'error': 'high',
+                'warning': 'medium', 
+                'style': 'low',
+                'performance': 'medium',
+                'portability': 'medium',
+                'information': 'low',
+                'info': 'low',
+                'unknown': 'low'
+            }
+            
+            # Get severity from finding, default to 'low' if not found
+            raw_severity = finding.get('severity', 'info').lower()
+            logger.debug(f"[DETAILED_FINDINGS] Raw severity for finding {i}: '{raw_severity}'")
+            severity = severity_mapping.get(raw_severity, 'low')
+            logger.debug(f"[DETAILED_FINDINGS] Mapped severity for finding {i}: '{severity}'")
+            
+            # Get message and description - prioritize description if available
+            message = finding.get('message', '')
+            description = finding.get('description')
+            rule_id = finding.get('rule_id', '').lower()
+            
+            # Use actual Cppcheck CWE code if available, otherwise determine from rule
+            actual_cwe = finding.get('cwe', '')
+            if actual_cwe:
+                # Use the real Cppcheck CWE code
+                cwe_code = f"CWE-{actual_cwe}"
+                # Get CWE description from a mapping
+                cwe_descriptions = {
+                    '788': 'Access of Memory Location After End of Buffer',
+                    '787': 'Out-of-bounds Write', 
+                    '401': 'Missing Release of Memory after Effective Lifetime',
+                    '415': 'Double Free',
+                    '775': 'Missing Release of File Descriptor or Handle after Effective Lifetime',
+                    '476': 'NULL Pointer Dereference',
+                    '571': 'Expression is Always True',
+                    '570': 'Expression is Always False',
+                    '398': 'Indicator of Poor Code Quality',
+                    '190': 'Integer Overflow or Wraparound',
+                    '457': 'Use of Uninitialized Variable',
+                    '477': 'Use of Obsolete Function'
+                }
+                cwe_description = cwe_descriptions.get(actual_cwe, 'Security Vulnerability')
+                
+                # Use actual Cppcheck priority score if available
+                risk_score = finding.get('priority_score', 5.0)
+                
+            else:
+                # Fallback to determine_vulnerability_type for findings without CWE
+                vuln_type_info = determine_vulnerability_type(rule_id, message, severity)
+                cwe_code = vuln_type_info['cwe']
+                cwe_description = vuln_type_info['cwe_description']
+                risk_score = vuln_type_info['risk_score']
+                severity = vuln_type_info.get('actual_severity', severity)
+            
+            # If no description, use message; if no message either, create a meaningful description
+            if not description:
+                if message:
+                    description = message
+                else:
+                    description = f"Static analysis finding: {rule_id}"
+            
+            # Clean up the description to remove technical details for display
+            if description and ' - CVE-' in description:
+                description = description.split(' - CVE-')[0]
+            
+            # Ensure we have a meaningful description
+            if not description or description.lower() in ['none', 'null', '']:
+                description = f"Static analysis finding in {finding.get('file_path', 'unknown file')}"
+            
+            vuln = {
+                'id': str(i),  # Template needs string ID for toggles
+                'rule': finding.get('rule_id', 'Unknown'),
+                'severity': severity,
+                'confidence': finding.get('confidence', 'medium'),
+                'file': finding.get('file_path', finding.get('file', '')),
+                'line': finding.get('line_number', finding.get('line', 0)),
+                'column': finding.get('column_number', finding.get('column', 0)),
+                'function': finding.get('function_name', finding.get('function', '')),
+                'message': message,
+                'description': description,
+                'cwe': cwe_code,
+                'cwe_description': cwe_description,
+                'cvss_score': risk_score,
+                'exploitability_score': finding.get('exploitability_score'),
+                'tool': scan.get('analysis_tool', 'cppcheck').title(),  # Template expects tool name
+                'impact': f'This {severity}-severity vulnerability may impact system security and stability.',
+                'recommendation': f'Review and address this {rule_id} issue in the code.'
+            }
+            
+            # Add code context if available
             if vuln.get('file') and vuln.get('line'):
                 vuln['code_context'] = extract_code_context(
                     scan_id, 
                     vuln['file'], 
                     vuln['line']
                 )
+            
+            vulnerabilities.append(vuln)
+            logger.debug(f"[DETAILED_FINDINGS] Mapped vulnerability {i}: severity={severity}, description='{description[:50]}...'")
+        
+        logger.info(f"[DETAILED_FINDINGS] Mapped {len(vulnerabilities)} vulnerabilities")
+        
+        # Check if fuzzing results are available for this scan
+        fuzzing_status = get_fuzzing_status(scan_id)
+        
+        # Get patches (for now, empty - will be implemented later)
+        patches = []
         
         logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} has {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
         
         # If scan is still running, show progress
-        if scan.status == 'queued' or scan.status == 'running':
+        status = scan.get('status', 'unknown')
+        if status in ['queued', 'processing']:
             logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} still in progress, showing progress view")
             return render_template('detailed_findings.html',
                                  scan_id=scan_id,
                                  vulnerabilities=[],
                                  patches=[],
-                                 status=scan.status,
-                                 analysis_tool=scan.analysis_tool)
+                                 status=status,
+                                 analysis_tool=scan.get('analysis_tool', 'cppcheck'))
         
         # If scan failed, show error
-        if scan.status == 'failed':
+        if status == 'failed':
             logger.warning(f"[DETAILED_FINDINGS] Scan {scan_id} failed")
             return render_template('detailed_findings.html',
                                  scan_id=scan_id,
                                  vulnerabilities=[],
                                  patches=[],
                                  status='failed',
-                                 error='Scan failed. Please try again.')
+                                 error=scan.get('error_message', 'Scan failed. Please try again.'))
         
         logger.info(f"[DETAILED_FINDINGS] Rendering results for scan {scan_id}")
-        return render_template('detailed_findings.html', 
-                             scan_id=scan_id,
-                             vulnerabilities=vulnerabilities,
-                             patches=patches,
-                             status=scan.status,
-                             analysis_tool=scan.analysis_tool,
-                             repo_url=scan.repo_url,
-                             source_type=scan.source_type)
-    finally:
-        session_db.close()
+        logger.info(f"[DETAILED_FINDINGS] About to render template with status: {status}")
+        try:
+            return render_template('detailed_findings.html', 
+                                 scan_id=scan_id,
+                                 vulnerabilities=vulnerabilities,
+                                 patches=patches,
+                                 status=status,
+                                 analysis_tool=scan.get('analysis_tool', 'cppcheck'),
+                                 repo_url=scan.get('repo_url', ''),
+                                 source_type=scan.get('source_type', ''),
+                                 fuzzing_status=fuzzing_status)
+        except Exception as template_error:
+            logger.error(f"[DETAILED_FINDINGS] Template error: {template_error}")
+            raise
+                             
+    except Exception as e:
+        logger.error(f"[DETAILED_FINDINGS] Error retrieving scan {scan_id}: {e}", exc_info=True)
+        flash('Error retrieving scan results.', 'error')
+        return redirect(url_for('no_login_scan'))
 
 
 @app.route('/patch-review/<scan_id>')
 def patch_review(scan_id):
+    """Show patch review interface with Stage 1 repairs - accessible without login"""
+    session_db = get_session()
+
+# Temporary redirect for patch_dashboard to repair_dashboard
+@app.route('/patch/<scan_id>')
+def patch_dashboard(scan_id):
+    """Temporary redirect to repair_dashboard"""
+    return redirect(url_for('repair_dashboard', scan_id=scan_id))
     """Show patch review interface with Stage 1 repairs - accessible without login"""
     session_db = get_session()
     try:
@@ -585,104 +1838,199 @@ def monitoring_dashboard():
 
 @app.route('/api/scan-status/<scan_id>')
 def api_scan_status(scan_id):
-    """API endpoint for checking scan status - accessible without login"""
+    """API endpoint for checking scan status - now using database service"""
     logger.debug(f"[API] Status check requested for scan: {scan_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            logger.warning(f"[API] Scan not found: {scan_id}")
-            return jsonify({'error': 'Scan not found'}), 404
+        # Try new service first
+        scan_data = scan_service.get_scan_status(scan_id)
+        if scan_data:
+            # Get additional data for response
+            results = scan_service.get_scan_results(scan_id)
+            vuln_count = len(results.get('findings', []))
+            
+            # Calculate elapsed time
+            elapsed_time = None
+            if scan_data.get('created_at'):
+                from datetime import datetime
+                try:
+                    if isinstance(scan_data['created_at'], str):
+                        created_at = datetime.fromisoformat(scan_data['created_at'].replace('Z', '+00:00'))
+                    else:
+                        created_at = scan_data['created_at']
+                    elapsed_time = (datetime.now() - created_at.replace(tzinfo=None)).total_seconds()
+                except Exception:
+                    pass
+            
+            logger.debug(f"[API] Scan {scan_id} status: {scan_data['status']}, vulnerabilities: {vuln_count}")
+            return jsonify({
+                'status': scan_data['status'],
+                'analysis_tool': scan_data.get('analysis_tool', 'cppcheck'),
+                'vulnerabilities_count': vuln_count,
+                'patches_count': 0,  # TODO: Implement patch counting in service
+                'elapsed_time': elapsed_time,
+                'error': scan_data.get('error_message')
+            })
         
-        vuln_count = len(scan.vulnerabilities_json) if scan.vulnerabilities_json else 0
-        patch_count = len(scan.patches_json) if scan.patches_json else 0
-        
-        # Calculate elapsed time
-        elapsed_time = None
-        if scan.created_at:
-            from datetime import datetime
-            elapsed_time = (datetime.now() - scan.created_at).total_seconds()
-        
-        logger.debug(f"[API] Scan {scan_id} status: {scan.status}, vulnerabilities: {vuln_count}")
-        return jsonify({
-            'status': scan.status,
-            'analysis_tool': scan.analysis_tool,
-            'vulnerabilities_count': vuln_count,
-            'patches_count': patch_count,
-            'elapsed_time': elapsed_time,
-            'error': None
-        })
+        # Fallback to legacy system
+        session_db = get_session()
+        try:
+            scan = session_db.query(Scan).filter_by(id=scan_id).first()
+            if not scan:
+                logger.warning(f"[API] Scan not found: {scan_id}")
+                return jsonify({'error': 'Scan not found'}), 404
+            
+            vuln_count = len(scan.vulnerabilities_json) if scan.vulnerabilities_json else 0
+            patch_count = len(scan.patches_json) if scan.patches_json else 0
+            
+            # Calculate elapsed time
+            elapsed_time = None
+            if scan.created_at:
+                elapsed_time = (datetime.now() - scan.created_at).total_seconds()
+            
+            logger.debug(f"[API] Legacy scan {scan_id} status: {scan.status}, vulnerabilities: {vuln_count}")
+            return jsonify({
+                'status': scan.status,
+                'analysis_tool': scan.analysis_tool,
+                'vulnerabilities_count': vuln_count,
+                'patches_count': patch_count,
+                'elapsed_time': elapsed_time,
+                'error': None
+            })
+        finally:
+            session_db.close()
+            
     except Exception as e:
         logger.error(f"[API] Error checking scan status: {e}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        session_db.close()
 
 
 @app.route('/api/scan/<scan_id>/results')
+@login_required
 def api_scan_results(scan_id):
-    """Get scan results in JSON format for VS Code extension"""
+    """Get scan results in JSON format for VS Code extension - now using database service"""
     logger.debug(f"[API] Results requested for scan: {scan_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            logger.warning(f"[API] Scan not found: {scan_id}")
-            return jsonify({'error': 'Scan not found'}), 404
-        
-        vulnerabilities = scan.vulnerabilities_json or []
-        patches = scan.patches_json or []
-        
-        # Format vulnerabilities for VS Code extension
-        formatted_vulns = []
-        for vuln in vulnerabilities:
-            # Find matching patch
-            patch_content = None
-            for p in patches:
-                if p.get('vuln_id') == vuln.get('id'):
-                    patch_content = p.get('content')
-                    break
+        # Verify user owns this scan
+        current_user_id = session.get('user_id')
+        if not current_user_id:
+            return jsonify({'error': 'Authentication required'}), 401
+        # Try new service first
+        results = scan_service.get_scan_results(scan_id)
+        if results and not results.get('error'):
+            scan_data = results['scan']
             
-            formatted_vulns.append({
-                'id': vuln.get('id', str(uuid.uuid4())),
-                'type': vuln.get('type', 'Unknown'),
-                'severity': vuln.get('severity', 'Medium'),
-                'file': vuln.get('file', ''),
-                'line': int(vuln.get('line', 0)),
-                'column': int(vuln.get('column', 0)),
-                'endLine': int(vuln.get('endLine', vuln.get('line', 0))),
-                'endColumn': int(vuln.get('endColumn', vuln.get('column', 0) + 10)),
-                'description': vuln.get('description', ''),
-                'cwe': vuln.get('cwe', ''),
-                'exploitability': float(vuln.get('exploitability', 0.5)),
-                'impact': vuln.get('impact', ''),
-                'recommendation': vuln.get('recommendation', ''),
-                'patch': patch_content
+            # Verify ownership
+            if scan_data.get('user_id') != current_user_id:
+                return jsonify({'error': 'Access denied'}), 403
+            findings = results['findings']
+            
+            # Format vulnerabilities for VS Code extension
+            formatted_vulns = []
+            for finding in findings:
+                formatted_vulns.append({
+                    'id': finding.get('id', str(uuid.uuid4())),
+                    'type': finding.get('rule_id', 'Unknown'),
+                    'severity': finding.get('severity', 'Medium').title(),
+                    'file': finding.get('file_path', ''),
+                    'line': int(finding.get('line_number', 0)),
+                    'column': int(finding.get('column_number', 0)),
+                    'endLine': int(finding.get('line_number', 0)),
+                    'endColumn': int(finding.get('column_number', 0) + 10),
+                    'description': finding.get('message', ''),
+                    'cwe': finding.get('cwe', ''),
+                    'exploitability': float(finding.get('exploitability_score', 0.5) or 0.5),
+                    'impact': finding.get('description', ''),
+                    'recommendation': 'Review and fix this issue',
+                    'patch': None  # TODO: Link patches to findings
+                })
+            
+            # Calculate summary
+            summary = {
+                'total': len(formatted_vulns),
+                'critical': sum(1 for v in formatted_vulns if v['severity'].lower() == 'critical'),
+                'high': sum(1 for v in formatted_vulns if v['severity'].lower() == 'high'),
+                'medium': sum(1 for v in formatted_vulns if v['severity'].lower() == 'medium'),
+                'low': sum(1 for v in formatted_vulns if v['severity'].lower() == 'low')
+            }
+            
+            logger.debug(f"[API] Returning {len(formatted_vulns)} vulnerabilities for scan {scan_id}")
+            return jsonify({
+                'scanId': scan_id,
+                'status': scan_data['status'],
+                'progress': 100 if scan_data['status'] == 'completed' else 50,
+                'stage': 'Analysis Complete' if scan_data['status'] == 'completed' else 'In Progress',
+                'vulnerabilities': formatted_vulns,
+                'summary': summary
             })
         
-        # Calculate summary
-        summary = {
-            'total': len(formatted_vulns),
-            'critical': sum(1 for v in formatted_vulns if v['severity'].lower() == 'critical'),
-            'high': sum(1 for v in formatted_vulns if v['severity'].lower() == 'high'),
-            'medium': sum(1 for v in formatted_vulns if v['severity'].lower() == 'medium'),
-            'low': sum(1 for v in formatted_vulns if v['severity'].lower() == 'low')
-        }
-        
-        logger.debug(f"[API] Returning {len(formatted_vulns)} vulnerabilities for scan {scan_id}")
-        return jsonify({
-            'scanId': scan_id,
-            'status': scan.status,
-            'progress': 100 if scan.status == 'completed' else 50,
-            'stage': 'Analysis Complete' if scan.status == 'completed' else 'In Progress',
-            'vulnerabilities': formatted_vulns,
-            'summary': summary
-        })
+        # Fallback to legacy system
+        session_db = get_session()
+        try:
+            scan = session_db.query(Scan).filter_by(id=scan_id).first()
+            if not scan:
+                logger.warning(f"[API] Scan not found: {scan_id}")
+                return jsonify({'error': 'Scan not found'}), 404
+            
+            # Verify ownership for legacy scans
+            if scan.user_id != current_user_id:
+                return jsonify({'error': 'Access denied'}), 403
+            
+            vulnerabilities = scan.vulnerabilities_json or []
+            patches = scan.patches_json or []
+            
+            # Format vulnerabilities for VS Code extension
+            formatted_vulns = []
+            for vuln in vulnerabilities:
+                # Find matching patch
+                patch_content = None
+                for p in patches:
+                    if p.get('vuln_id') == vuln.get('id'):
+                        patch_content = p.get('content')
+                        break
+                
+                formatted_vulns.append({
+                    'id': vuln.get('id', str(uuid.uuid4())),
+                    'type': vuln.get('type', 'Unknown'),
+                    'severity': vuln.get('severity', 'Medium'),
+                    'file': vuln.get('file', ''),
+                    'line': int(vuln.get('line', 0)),
+                    'column': int(vuln.get('column', 0)),
+                    'endLine': int(vuln.get('endLine', vuln.get('line', 0))),
+                    'endColumn': int(vuln.get('endColumn', vuln.get('column', 0) + 10)),
+                    'description': vuln.get('description', ''),
+                    'cwe': vuln.get('cwe', ''),
+                    'exploitability': float(vuln.get('exploitability', 0.5)),
+                    'impact': vuln.get('impact', ''),
+                    'recommendation': vuln.get('recommendation', ''),
+                    'patch': patch_content
+                })
+            
+            # Calculate summary
+            summary = {
+                'total': len(formatted_vulns),
+                'critical': sum(1 for v in formatted_vulns if v['severity'].lower() == 'critical'),
+                'high': sum(1 for v in formatted_vulns if v['severity'].lower() == 'high'),
+                'medium': sum(1 for v in formatted_vulns if v['severity'].lower() == 'medium'),
+                'low': sum(1 for v in formatted_vulns if v['severity'].lower() == 'low')
+            }
+            
+            logger.debug(f"[API] Legacy returning {len(formatted_vulns)} vulnerabilities for scan {scan_id}")
+            return jsonify({
+                'scanId': scan_id,
+                'status': scan.status,
+                'progress': 100 if scan.status == 'completed' else 50,
+                'stage': 'Analysis Complete' if scan.status == 'completed' else 'In Progress',
+                'vulnerabilities': formatted_vulns,
+                'summary': summary
+            })
+        finally:
+            session_db.close()
+            
     except Exception as e:
         logger.error(f"[API] Error getting scan results: {e}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        session_db.close()
 
 
 @app.route('/api/scan/<scan_id>', methods=['DELETE'])
@@ -950,10 +2298,15 @@ def scan_status(scan_id):
 def fuzz_plan_view(scan_id):
     """Display fuzz plan for a scan - accessible without login"""
     logger.info(f"[FUZZ_PLAN] View requested for scan: {scan_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
+        # Use the global scan_service that was initialized with the correct database configuration
+        global scan_service
+        
+        # Check if scan exists using the new database service
+        scan_status = scan_service.get_scan_status(scan_id)
+        if not scan_status or 'error' in scan_status:
+            logger.warning(f"[FUZZ_PLAN] Scan not found: {scan_id}")
             flash('Scan not found.', 'error')
             return redirect(url_for('no_login_scan'))
         
@@ -966,7 +2319,7 @@ def fuzz_plan_view(scan_id):
             return render_template('fuzz_plan.html',
                                  scan_id=scan_id,
                                  fuzz_plan=None,
-                                 scan=scan)
+                                 scan=scan_status)
         
         # Load fuzz plan
         with open(fuzz_plan_path, 'r', encoding='utf-8') as f:
@@ -975,9 +2328,12 @@ def fuzz_plan_view(scan_id):
         return render_template('fuzz_plan.html',
                              scan_id=scan_id,
                              fuzz_plan=fuzz_plan,
-                             scan=scan)
-    finally:
-        session_db.close()
+                             scan=scan_status)
+                             
+    except Exception as e:
+        logger.error(f"[FUZZ_PLAN] Error loading fuzz plan view: {e}")
+        flash('Error loading fuzz plan.', 'error')
+        return redirect(url_for('no_login_scan'))
 
 
 @app.route('/api/fuzz-plan/generate/<scan_id>', methods=['POST'])
@@ -1018,7 +2374,19 @@ def generate_fuzz_plan(scan_id):
         # Generate fuzz plan with source directory for signature extraction
         fuzz_plan_path = os.path.join(fuzz_dir, 'fuzzplan.json')
         source_dir = os.path.join(scan_dir, 'source')
-        generator = FuzzPlanGenerator(static_findings_path, source_dir=source_dir)
+        
+        # Check if integration fuzzing should be enabled
+        enable_integration = request.json.get('enable_integration', False) if request.is_json else False
+        
+        # Check if race condition fuzzing should be enabled
+        enable_race_condition = request.json.get('enable_race_condition', False) if request.is_json else False
+        
+        generator = FuzzPlanGenerator(
+            static_findings_path, 
+            source_dir=source_dir,
+            enable_integration=enable_integration,  # New parameter
+            enable_race_condition=enable_race_condition  # New parameter
+        )
         
         try:
             generator.save_fuzz_plan(fuzz_plan_path)
@@ -1039,6 +2407,8 @@ def generate_fuzz_plan(scan_id):
         return jsonify({
             'success': True,
             'targets_count': targets_count,
+            'integration_enabled': fuzz_plan['metadata'].get('integration_enabled', False),
+            'integration_targets': fuzz_plan['metadata'].get('integration_targets', 0),
             'fuzz_plan': fuzz_plan
         })
         
@@ -1069,8 +2439,156 @@ def get_fuzz_plan(scan_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/fuzz-plan/<scan_id>/export/<format>')
-def export_fuzz_plan(scan_id, format):
+@app.route('/api/scan/<scan_id>/export/<format>')
+@login_required
+def export_scan_results(scan_id, format):
+    """Export scan results in different formats for authenticated users"""
+    try:
+        # Validate scan ID format (should be UUID)
+        import re
+        if not re.match(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', scan_id):
+            return jsonify({'error': 'Invalid scan ID format'}), 400
+        
+        # Validate format
+        if format not in ['json', 'csv', 'sarif']:
+            return jsonify({'error': 'Unsupported format. Use json, csv, or sarif'}), 400
+        # Get scan and verify ownership
+        scan = scan_service.get_scan_status(scan_id)
+        if not scan:
+            return jsonify({'error': 'Scan not found'}), 404
+        
+        # Verify user owns this scan
+        if scan.get('user_id') != session.get('user_id'):
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Get complete scan results
+        results = scan_service.get_scan_results(scan_id)
+        findings = results.get('findings', [])
+        
+        if format == 'json':
+            # Export as JSON
+            export_data = {
+                'scan_id': scan_id,
+                'scan_info': {
+                    'created_at': scan.get('created_at'),
+                    'status': scan.get('status'),
+                    'analysis_tool': scan.get('analysis_tool'),
+                    'source_type': scan.get('source_type')
+                },
+                'summary': {
+                    'total_findings': len(findings),
+                    'severity_breakdown': {},
+                    'rule_breakdown': {}
+                },
+                'findings': findings
+            }
+            
+            # Calculate summaries
+            for finding in findings:
+                severity = finding.get('severity', 'unknown')
+                rule_id = finding.get('rule_id', 'unknown')
+                export_data['summary']['severity_breakdown'][severity] = \
+                    export_data['summary']['severity_breakdown'].get(severity, 0) + 1
+                export_data['summary']['rule_breakdown'][rule_id] = \
+                    export_data['summary']['rule_breakdown'].get(rule_id, 0) + 1
+            
+            response = make_response(json.dumps(export_data, indent=2))
+            response.headers['Content-Type'] = 'application/json'
+            response.headers['Content-Disposition'] = f'attachment; filename=scan_results_{scan_id[:8]}.json'
+            return response
+            
+        elif format == 'csv':
+            # Export as CSV
+            import csv
+            import io
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow([
+                'Finding ID', 'Rule ID', 'Severity', 'Confidence', 'Message',
+                'File', 'Line', 'Column', 'Function', 'CWE', 'Priority Score'
+            ])
+            
+            # Write findings
+            for finding in findings:
+                writer.writerow([
+                    finding.get('finding_id', ''),
+                    finding.get('rule_id', ''),
+                    finding.get('severity', ''),
+                    finding.get('confidence', ''),
+                    finding.get('message', ''),
+                    finding.get('file', ''),
+                    finding.get('line', ''),
+                    finding.get('column', ''),
+                    finding.get('function', ''),
+                    finding.get('cwe', ''),
+                    finding.get('priority_score', '')
+                ])
+            
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=scan_results_{scan_id[:8]}.csv'
+            return response
+            
+        elif format == 'sarif':
+            # Export as SARIF (Static Analysis Results Interchange Format)
+            sarif_data = {
+                "version": "2.1.0",
+                "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+                "runs": [{
+                    "tool": {
+                        "driver": {
+                            "name": "AutoVulRepair",
+                            "version": "1.0.0",
+                            "informationUri": "https://github.com/your-org/autovulrepair"
+                        }
+                    },
+                    "results": []
+                }]
+            }
+            
+            # Convert findings to SARIF format
+            for finding in findings:
+                sarif_result = {
+                    "ruleId": finding.get('rule_id', ''),
+                    "level": "error" if finding.get('severity') == 'error' else "warning",
+                    "message": {
+                        "text": finding.get('message', '')
+                    },
+                    "locations": [{
+                        "physicalLocation": {
+                            "artifactLocation": {
+                                "uri": finding.get('file', '')
+                            },
+                            "region": {
+                                "startLine": finding.get('line', 1),
+                                "startColumn": finding.get('column', 1)
+                            }
+                        }
+                    }]
+                }
+                
+                if finding.get('cwe'):
+                    sarif_result["properties"] = {
+                        "cwe": finding.get('cwe'),
+                        "priority_score": finding.get('priority_score', 0)
+                    }
+                
+                sarif_data["runs"][0]["results"].append(sarif_result)
+            
+            response = make_response(json.dumps(sarif_data, indent=2))
+            response.headers['Content-Type'] = 'application/json'
+            response.headers['Content-Disposition'] = f'attachment; filename=scan_results_{scan_id[:8]}.sarif'
+            return response
+            
+        else:
+            return jsonify({'error': 'Unsupported format. Use json, csv, or sarif'}), 400
+            
+    except Exception as e:
+        logger.error(f"Export error: {e}")
+        return jsonify({'error': 'Export failed'}), 500
     """Export fuzz plan in different formats - accessible without login"""
     logger.info(f"[FUZZ_PLAN] Export requested for scan {scan_id} in format {format}")
     
@@ -1127,10 +2645,15 @@ def export_fuzz_plan(scan_id, format):
 def harness_generation_view(scan_id):
     """Display harness generation page - accessible without login"""
     logger.info(f"[HARNESS_GEN] View requested for scan: {scan_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
+        # Use the global scan_service that was initialized with the correct database configuration
+        global scan_service
+        
+        # Check if scan exists using the new database service
+        scan_status = scan_service.get_scan_status(scan_id)
+        if not scan_status or 'error' in scan_status:
+            logger.warning(f"[HARNESS_GEN] Scan not found: {scan_id}")
             flash('Scan not found.', 'error')
             return redirect(url_for('no_login_scan'))
         
@@ -1202,9 +2725,12 @@ def harness_generation_view(scan_id):
                              scan_id=scan_id,
                              harnesses=harnesses,
                              harness_stats=harness_stats,
-                             scan=scan)
-    finally:
-        session_db.close()
+                             scan=scan_status)
+                             
+    except Exception as e:
+        logger.error(f"[HARNESS_GEN] Error loading harness generation view: {e}")
+        flash('Error loading harness generation page.', 'error')
+        return redirect(url_for('no_login_scan'))
 
 
 @app.route('/api/harness/generate/<scan_id>', methods=['POST'])
@@ -1315,10 +2841,15 @@ def view_harness(scan_id):
 def build_orchestration_view(scan_id):
     """Display build orchestration page - accessible without login"""
     logger.info(f"[BUILD] View requested for scan: {scan_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
+        # Use the global scan_service that was initialized with the correct database configuration
+        global scan_service
+        
+        # Check if scan exists using the new database service
+        scan_status = scan_service.get_scan_status(scan_id)
+        if not scan_status or 'error' in scan_status:
+            logger.warning(f"[BUILD] Scan not found: {scan_id}")
             flash('Scan not found.', 'error')
             return redirect(url_for('no_login_scan'))
         
@@ -1353,9 +2884,12 @@ def build_orchestration_view(scan_id):
                              scan_id=scan_id,
                              builds=builds,
                              build_stats=build_stats,
-                             scan=scan)
-    finally:
-        session_db.close()
+                             scan=scan_status)
+                             
+    except Exception as e:
+        logger.error(f"[BUILD] Error loading build orchestration view: {e}")
+        flash('Error loading build orchestration page.', 'error')
+        return redirect(url_for('no_login_scan'))
 
 
 @app.route('/api/build/start/<scan_id>', methods=['POST'])
@@ -1501,6 +3035,88 @@ def start_fuzzing(scan_id):
 @app.route('/api/fuzz/results/<scan_id>')
 def fuzz_results(scan_id):
     """Get fuzzing campaign results - accessible without login"""
+    # Special handling for integration demo
+    if scan_id == '169a84b7-demo-integration':
+        demo_results_file = 'demo_fuzz_execution_results.json'
+        if os.path.exists(demo_results_file):
+            try:
+                with open(demo_results_file, 'r') as f:
+                    demo_results = json.load(f)
+                return jsonify(demo_results)
+            except Exception as e:
+                logger.error(f"Failed to load demo results: {e}")
+        
+        # Fallback demo data if file doesn't exist
+        return jsonify({
+            "scan_id": "169a84b7-demo-integration",
+            "timestamp": "2024-03-30T10:30:45.123Z",
+            "total_time": 324.44,
+            "total_targets": 12,
+            "status": "completed",
+            "results": [
+                {
+                    "target": "integration_auth_login_chain_0",
+                    "status": "completed",
+                    "runtime": 15.67,
+                    "crashes_found": 3,
+                    "is_integration": True,
+                    "integration_chain": {
+                        "components": [
+                            {"name": "handle_login_request", "is_auth": True},
+                            {"name": "validate_credentials", "is_auth": True, "is_validation": True},
+                            {"name": "check_user_permissions", "is_auth": True, "is_database": True}
+                        ],
+                        "vulnerability_surface": ["authentication_bypass", "component_interaction_bug"],
+                        "endpoint_type": "http"
+                    },
+                    "crashes": [
+                        {"filename": "auth-bypass-a1b2c3d4e5f6789012345678", "size": 64},
+                        {"filename": "auth-bypass-f6e5d4c3b2a1987654321098", "size": 128}
+                    ]
+                }
+            ]
+        })
+    
+    
+    # Special handling for race condition demo
+    if scan_id == '169a84b7-race-condition-demo':
+        demo_results_file = 'demo_race_condition_execution_results.json'
+        if os.path.exists(demo_results_file):
+            try:
+                with open(demo_results_file, 'r') as f:
+                    demo_results = json.load(f)
+                return jsonify(demo_results)
+            except Exception as e:
+                logger.error(f"Failed to load race condition demo results: {e}")
+        
+        # Fallback race condition demo data
+        return jsonify({
+            "scan_id": "169a84b7-race-condition-demo",
+            "timestamp": "2024-03-30T14:30:45.123Z",
+            "total_time": 456.78,
+            "total_targets": 15,
+            "status": "completed",
+            "results": [
+                {
+                    "target": "race_unsafe_memory_management_9096",
+                    "status": "completed",
+                    "runtime": 23.45,
+                    "crashes_found": 4,
+                    "is_race_condition": True,
+                    "race_condition_config": {
+                        "thread_count": 8,
+                        "execution_count": 200,
+                        "timing_variation": 0.02,
+                        "vulnerability_types": ["double_free", "use_after_free"]
+                    },
+                    "crashes": [
+                        {"filename": "race-double-free-abc123def456789", "size": 32}
+                    ]
+                }
+            ]
+        })
+    
+    # Regular handling for other scans
     scans_dir = os.getenv('SCANS_DIR', './scans')
     scan_dir = os.path.join(scans_dir, scan_id)
     
@@ -1513,10 +3129,163 @@ def fuzz_results(scan_id):
         return jsonify({'error': 'No results found'}), 404
 
 
+@app.route('/api/fuzz/crashes/<scan_id>/<target_name>/analyze')
+def analyze_crashes(scan_id, target_name):
+    """Analyze crashes for a specific target - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    crashes_dir = os.path.join(scan_dir, 'fuzz', 'crashes', target_name)
+    
+    if not os.path.exists(crashes_dir):
+        return jsonify({'error': 'No crashes found for this target'}), 404
+    
+    # Analyze crash files
+    crash_files = [f for f in os.listdir(crashes_dir) 
+                  if f.startswith('crash-') or f.startswith('leak-')]
+    
+    if not crash_files:
+        return jsonify({'error': 'No crash files found'}), 404
+    
+    # Extract vulnerability type from target name
+    vuln_type = target_name.replace('fuzz_test_', '').replace('_', ' ').title()
+    
+    analysis = f"""Crash Analysis for {vuln_type}:
+
+🔥 Found {len(crash_files)} crash-inducing inputs
+📍 Vulnerability Type: {vuln_type}
+⚠️ Security Impact: These inputs can crash your program and potentially be exploited
+
+Crash Files:
+"""
+    
+    for crash_file in crash_files[:5]:  # Show first 5
+        crash_path = os.path.join(crashes_dir, crash_file)
+        size = os.path.getsize(crash_path)
+        analysis += f"• {crash_file} ({size} bytes)\n"
+    
+    if len(crash_files) > 5:
+        analysis += f"... and {len(crash_files) - 5} more crash files\n"
+    
+    analysis += f"""
+🛡️ Next Steps:
+1. Use these inputs to reproduce the vulnerability
+2. Develop and test a patch
+3. Validate the patch using these exact inputs
+4. Add regression tests to prevent this bug from returning
+
+💡 These crash inputs are proof-of-concept exploits that demonstrate the vulnerability is real and exploitable."""
+    
+    return jsonify({
+        'analysis': analysis,
+        'crash_count': len(crash_files),
+        'vulnerability_type': vuln_type,
+        'crash_files': crash_files
+    })
+
+
+@app.route('/api/fuzz/crashes/<scan_id>/<target_name>/download')
+def download_crash_inputs(scan_id, target_name):
+    """Download crash inputs as a zip file - accessible without login"""
+    import zipfile
+    import io
+    from flask import send_file
+    
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    crashes_dir = os.path.join(scans_dir, scan_id, 'fuzz', 'crashes', target_name)
+    
+    if not os.path.exists(crashes_dir):
+        return jsonify({'error': 'No crashes found for this target'}), 404
+    
+    # Create zip file in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for crash_file in os.listdir(crashes_dir):
+            if crash_file.startswith('crash-') or crash_file.startswith('leak-'):
+                crash_path = os.path.join(crashes_dir, crash_file)
+                zip_file.write(crash_path, crash_file)
+    
+    zip_buffer.seek(0)
+    
+    return send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f'{target_name}_crash_inputs.zip'
+    )
+
+
+@app.route('/api/fuzz/advanced/<scan_id>', methods=['POST'])
+def start_advanced_fuzzing(scan_id):
+    """Start advanced fuzzing campaign to find vulnerabilities static analysis misses - accessible without login"""
+    logger.info(f"[ADVANCED_FUZZ] Campaign start requested for scan: {scan_id}")
+    
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    # Get parameters
+    runtime_minutes = int(request.json.get('runtime_minutes', 10))
+    
+    try:
+        from src.fuzz_exec.advanced_fuzzer import AdvancedFuzzExecutor
+        
+        executor = AdvancedFuzzExecutor(scan_dir)
+        results = executor.run_advanced_campaign(runtime_minutes=runtime_minutes)
+        
+        logger.info(f"[ADVANCED_FUZZ] Campaign completed for scan: {scan_id}")
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"[ADVANCED_FUZZ] Campaign failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fuzz/advanced/<scan_id>/results')
+def advanced_fuzz_results(scan_id):
+    """Get advanced fuzzing campaign results - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    advanced_results_dir = os.path.join(scan_dir, 'fuzz', 'advanced_results')
+    results_file = os.path.join(advanced_results_dir, 'advanced_campaign_results.json')
+    
+    if os.path.exists(results_file):
+        try:
+            with open(results_file, 'r') as f:
+                results = json.load(f)
+            return jsonify(results)
+        except Exception as e:
+            return jsonify({'error': f'Failed to load results: {str(e)}'}), 500
+    else:
+        return jsonify({'error': 'No advanced fuzzing results found'}), 404
+
+
+@app.route('/api/repair/validate-patch/<scan_id>', methods=['POST'])
+def validate_patch_with_fuzzing(scan_id):
+    """Validate a patch using fuzzing crash inputs - accessible without login"""
+    scans_dir = os.getenv('SCANS_DIR', './scans')
+    scan_dir = os.path.join(scans_dir, scan_id)
+    
+    try:
+        data = request.get_json()
+    except Exception as e:
+        return jsonify({'error': 'Invalid JSON format'}), 400
+    vulnerability_id = data.get('vulnerability_id')
+    patched_code_path = data.get('patched_code_path')
+    
+    if not vulnerability_id or not patched_code_path:
+        return jsonify({'error': 'Missing vulnerability_id or patched_code_path'}), 400
+    
+    # Use fuzzing integration to validate patch
+    integration = FuzzingRepairIntegration(scan_dir)
+    validation_result = integration.validate_patch(vulnerability_id, patched_code_path)
+    
+    return jsonify(validation_result)
+
+
 @app.route('/api/scan', methods=['POST'])
 @app.route('/scan-public', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=60)  # 5 scans per minute
 def scan_public():
-    """New ingestion API endpoint for public scanning"""
+    """New ingestion API endpoint for public scanning - now using database service"""
     try:
         # Check if this is a JSON request or form submission
         is_json_request = request.content_type and 'application/json' in request.content_type
@@ -1527,16 +3296,20 @@ def scan_public():
         
         # Get data from appropriate source
         if is_json_request:
-            data = request.get_json() or {}
-            repo_url = data.get('repo_url', '').strip()
+            try:
+                data = request.get_json() or {}
+            except Exception as e:
+                logger.warning(f"[SCAN_SUBMISSION] Malformed JSON: {e}")
+                return jsonify({'error': 'Invalid JSON format'}), 400
+            repo_url = (data.get('repo_url') or '').strip()
             zip_file = None  # JSON requests don't support file uploads
-            code_snippet = data.get('code_snippet', '').strip()
+            code_snippet = (data.get('code_snippet') or '').strip()
             analysis_tool = data.get('analysis_tool', 'cppcheck')
         else:
             # Form data
-            repo_url = request.form.get('repo_url', '').strip()
+            repo_url = (request.form.get('repo_url') or '').strip()
             zip_file = request.files.get('zip_file')
-            code_snippet = request.form.get('code_snippet', '').strip()
+            code_snippet = (request.form.get('code_snippet') or '').strip()
             analysis_tool = request.form.get('analysis_tool', 'cppcheck')
         
         logger.info(f"[SCAN_SUBMISSION] New scan request received")
@@ -1547,8 +3320,7 @@ def scan_public():
         logger.info(f"[SCAN_SUBMISSION] Analysis tool: {analysis_tool}")
         
         # Validate that only one source type is provided
-        # For code snippets, check if it's not just whitespace
-        has_code_snippet = code_snippet and code_snippet.strip()
+        has_code_snippet = code_snippet and str(code_snippet).strip()
         source_count = sum(bool(x) for x in [repo_url, zip_file and zip_file.filename, has_code_snippet])
         if source_count != 1:
             logger.warning(f"[SCAN_SUBMISSION] Validation failed: Exactly one source type must be provided (found {source_count})")
@@ -1565,271 +3337,94 @@ def scan_public():
                 return redirect(url_for('no_login_scan'))
             return jsonify({'error': 'Invalid analysis tool. Must be "cppcheck" or "codeql"'}), 400
         
-        # Generate scan ID and create directories
-        scan_id = str(uuid.uuid4())
-        scans_dir = os.getenv('SCANS_DIR', './scans')
-        scan_dir = os.path.join(scans_dir, scan_id)
-        source_dir = os.path.join(scan_dir, 'source')
-        artifacts_dir = os.path.join(scan_dir, 'artifacts')
-        
-        logger.info(f"[SCAN_SUBMISSION] Generated scan_id: {scan_id}")
-        logger.info(f"[SCAN_SUBMISSION] Creating directories - scan_dir: {scan_dir}")
-        os.makedirs(source_dir, exist_ok=True)
-        os.makedirs(artifacts_dir, exist_ok=True)
-        logger.info(f"[SCAN_SUBMISSION] Directories created successfully")
-        
-        # Process different source types
-        session_db = get_session()
-        try:
-            if repo_url:
-                logger.info(f"[SCAN_SUBMISSION] Processing GitHub repository: {repo_url}")
-                # Validate GitHub URL
-                if not is_valid_github_url(repo_url):
-                    logger.warning(f"[SCAN_SUBMISSION] Invalid GitHub URL format: {repo_url}")
-                    if is_form_submission:
-                        flash('Invalid GitHub URL format. Please use: https://github.com/username/repository', 'error')
-                        return redirect(url_for('no_login_scan'))
-                    return jsonify({'error': 'Invalid GitHub URL format'}), 400
-                
-                logger.info(f"[SCAN_SUBMISSION] GitHub URL validated successfully")
-                # Create scan record
-                scan = Scan(
-                    id=scan_id,
-                    user_id=None,  # Public scan
-                    source_type='repo_url',
-                    repo_url=repo_url,
-                    analysis_tool=analysis_tool,
-                    status='queued'
-                )
-                logger.info(f"[SCAN_SUBMISSION] Scan record created for repo_url: {scan_id}")
-                
-            elif zip_file:
-                logger.info(f"[SCAN_SUBMISSION] Processing ZIP file: {zip_file.filename}")
-                # Validate ZIP file
-                is_valid, error_msg = validate_zip_file(zip_file)
-                if not is_valid:
-                    logger.warning(f"[SCAN_SUBMISSION] ZIP validation failed: {error_msg}")
-                    if is_form_submission:
-                        flash(f'ZIP file error: {error_msg}', 'error')
-                        return redirect(url_for('no_login_scan'))
-                    return jsonify({'error': error_msg}), 400
-                
-                logger.info(f"[SCAN_SUBMISSION] ZIP file validated successfully, size: {zip_file.content_length} bytes")
-                # Save and extract ZIP safely
-                zip_path = os.path.join(source_dir, 'source.zip')
-                logger.info(f"[SCAN_SUBMISSION] Saving ZIP to: {zip_path}")
-                zip_file.save(zip_path)
-                
-                try:
-                    logger.info(f"[SCAN_SUBMISSION] Extracting ZIP file...")
-                    safe_extract_zip(zip_path, source_dir, timeout=120)
-                    os.remove(zip_path)  # Remove ZIP after extraction
-                    logger.info(f"[SCAN_SUBMISSION] ZIP extracted and removed successfully")
-                except ValueError as e:
-                    logger.error(f"[SCAN_SUBMISSION] Unsafe ZIP file detected: {str(e)}")
-                    shutil.rmtree(scan_dir, ignore_errors=True)
-                    if is_form_submission:
-                        flash(f'Unsafe ZIP file: {str(e)}', 'error')
-                        return redirect(url_for('no_login_scan'))
-                    return jsonify({'error': f'Unsafe ZIP file: {str(e)}'}), 400
-                except TimeoutError as e:
-                    logger.error(f"[SCAN_SUBMISSION] ZIP extraction timed out: {str(e)}")
-                    shutil.rmtree(scan_dir, ignore_errors=True)
-                    if is_form_submission:
-                        flash(f'ZIP extraction timed out: {str(e)}', 'error')
-                        return redirect(url_for('no_login_scan'))
-                    return jsonify({'error': f'ZIP extraction timed out: {str(e)}'}), 400
-                except RuntimeError as e:
-                    logger.error(f"[SCAN_SUBMISSION] ZIP extraction failed: {str(e)}")
-                    shutil.rmtree(scan_dir, ignore_errors=True)
-                    if is_form_submission:
-                        flash(f'ZIP extraction failed: {str(e)}', 'error')
-                        return redirect(url_for('no_login_scan'))
-                    return jsonify({'error': f'ZIP extraction failed: {str(e)}'}), 400
-                
-                logger.info(f"[SCAN_SUBMISSION] ZIP processing completed successfully")
-                # Create scan record
-                scan = Scan(
-                    id=scan_id,
-                    user_id=None,
-                    source_type='zip',
-                    source_path=source_dir,
-                    analysis_tool=analysis_tool,
-                    status='queued'
-                )
-                logger.info(f"[SCAN_SUBMISSION] Scan record created for zip: {scan_id}")
-                
-            else:  # code_snippet
-                logger.info(f"[SCAN_SUBMISSION] Processing code snippet (length: {len(code_snippet)} chars)")
-                # Validate code snippet
-                is_valid, error_msg = validate_code_snippet(code_snippet)
-                if not is_valid:
-                    logger.warning(f"[SCAN_SUBMISSION] Code snippet validation failed: {error_msg}")
-                    if is_form_submission:
-                        flash(f'Code snippet error: {error_msg}', 'error')
-                        return redirect(url_for('no_login_scan'))
-                    return jsonify({'error': error_msg}), 400
-                
-                # Determine file extension based on content
-                if 'def ' in code_snippet or 'import ' in code_snippet:
-                    file_ext = '.py'
-                elif any(keyword in code_snippet for keyword in ['#include', 'int main', 'void ']):
-                    file_ext = '.cpp'
-                elif 'function' in code_snippet or 'const ' in code_snippet:
-                    file_ext = '.js'
-                else:
-                    file_ext = '.txt'
-                
-                logger.info(f"[SCAN_SUBMISSION] Detected file type: {file_ext}")
-                # Save code snippet
-                snippet_path = os.path.join(source_dir, f'snippet{file_ext}')
-                logger.info(f"[SCAN_SUBMISSION] Saving code snippet to: {snippet_path}")
-                with open(snippet_path, 'w', encoding='utf-8') as f:
-                    f.write(code_snippet)
-                logger.info(f"[SCAN_SUBMISSION] Code snippet saved successfully")
-                
-                # Create scan record
-                scan = Scan(
-                    id=scan_id,
-                    user_id=None,
-                    source_type='code_snippet',
-                    source_path=snippet_path,
-                    analysis_tool=analysis_tool, 
-                    status='queued'
-                )
-                logger.info(f"[SCAN_SUBMISSION] Scan record created for code_snippet: {scan_id}")
-            
-            # Save scan to database
-            logger.info(f"[SCAN_SUBMISSION] Saving scan record to database: {scan_id}")
-            session_db.add(scan)
-            session_db.commit()
-            logger.info(f"[SCAN_SUBMISSION] Scan record saved successfully")
-
-            # Flags to control Module 1 execution
-            skip_static = bool(request.form.get('skip_static'))
-            use_cached_static = bool(request.form.get('use_cached_static', '1'))
-            if not (request.form.get('skip_static') or request.form.get('use_cached_static')):
-                skip_static = os.getenv('ANALYSIS_DEFAULT', '').lower() == 'dynamic_only'
-
-            # Try cached artifacts if requested
-            if use_cached_static:
-                artifacts_dir_abs = os.path.abspath(artifacts_dir)
-                cached_xml = os.path.join(artifacts_dir_abs, 'cppcheck-report.xml')
-                cached_sarif = os.path.join(artifacts_dir_abs, 'codeql-results.sarif')
-                try:
-                    cached_vulns = None
-                    cached_patches = None
-                    if analysis_tool == 'cppcheck' and os.path.exists(cached_xml):
-                        logger.info(f"[SCAN_SUBMISSION] Using cached Cppcheck XML: {cached_xml}")
-                        cached_vulns, cached_patches = parse_cppcheck_xml(cached_xml)
-                    elif analysis_tool == 'codeql' and os.path.exists(cached_sarif):
-                        logger.info(f"[SCAN_SUBMISSION] Using cached CodeQL SARIF: {cached_sarif}")
-                        cached_vulns, cached_patches = parse_sarif_results(cached_sarif)
-
-                    if cached_vulns is not None and cached_patches is not None:
-                        scan.status = 'completed'
-                        scan.vulnerabilities_json = cached_vulns
-                        scan.patches_json = cached_patches
-                        session_db.commit()
-                        logger.info(f"[SCAN_SUBMISSION] Loaded {len(cached_vulns)} cached vulnerabilities; skipping static execution")
-
-                        if is_form_submission:
-                            return redirect(url_for('detailed_findings', scan_id=scan_id))
-                        return jsonify({'scan_id': scan_id, 'status': 'completed'}), 200
-                except Exception as cache_err:
-                    logger.warning(f"[SCAN_SUBMISSION] Failed to use cached artifacts: {cache_err}")
-                    session_db.rollback()
-
-            # If skipping static, bypass Module 1 (intended for Module 2 work)
-            if skip_static:
-                logger.info(f"[SCAN_SUBMISSION] Skip static enabled - not enqueuing static analysis for scan {scan_id}")
-                scan.status = 'queued'
-                session_db.commit()
+        # Determine source type and create scan using service layer
+        if repo_url:
+            if not is_valid_github_url(repo_url):
+                logger.warning(f"[SCAN_SUBMISSION] Invalid GitHub URL format: {repo_url}")
                 if is_form_submission:
-                    return redirect(url_for('scan_progress', scan_id=scan_id))
-                return jsonify({'scan_id': scan_id, 'status': 'queued'}), 202
-
-            # Enqueue Celery task (with fallback to sync if Redis unavailable)
-            # Run analysis in background thread immediately to avoid any blocking
-            import threading
-            import traceback
-            
-            def run_analysis_background():
-                """Run analysis - try Celery first, fallback to sync"""
-                start_time = time.time()
-                logger.info(f"[ANALYSIS] Starting analysis for scan {scan_id} using {analysis_tool}")
-                try:
-                    # Try Celery first (will fail fast if Redis unavailable due to our config)
-                    logger.info(f"[ANALYSIS] Attempting to enqueue Celery task for scan {scan_id}...")
-                    analyze_code.delay(scan_id, analysis_tool)
-                    logger.info(f"[ANALYSIS] Celery task enqueued successfully for scan {scan_id}")
-                except Exception as e:
-                    # Celery failed, run synchronously
-                    logger.warning(f"[ANALYSIS] Celery unavailable ({e}), running synchronously...")
-                    logger.info(f"[ANALYSIS] For production, ensure Redis is running and Celery worker is active")
-                    try:
-                        logger.info(f"[ANALYSIS] Starting synchronous analysis for scan {scan_id} at {datetime.now().strftime('%H:%M:%S')}")
-                        analyze_code_sync(scan_id, analysis_tool)
-                        elapsed = time.time() - start_time
-                        logger.info(f"[ANALYSIS] Completed synchronous analysis for scan {scan_id} in {elapsed:.2f} seconds")
-                    except Exception as task_error:
-                        logger.error(f"[ANALYSIS] Error in background analysis for scan {scan_id}: {task_error}")
-                        traceback.print_exc()
-            
-            # Start analysis in background thread immediately (non-blocking)
-            logger.info(f"[SCAN_SUBMISSION] Starting analysis thread for scan {scan_id}")
-            analysis_thread = threading.Thread(target=run_analysis_background, daemon=True)
-            analysis_thread.start()
-            logger.info(f"[SCAN_SUBMISSION] Analysis thread started successfully")
-            
-            
-            # For form submissions, normally redirect to detailed findings page
-            if is_form_submission:
-                try:
-                    findings_url = url_for('detailed_findings', scan_id=scan_id)
-                    logger.info(f"[SCAN_SUBMISSION] Redirecting to detailed findings: {findings_url}")
-                    return redirect(findings_url)
-                except Exception as redirect_error:
-                    logger.error(f"[SCAN_SUBMISSION] Error generating redirect URL: {redirect_error}")
-                    import traceback
-                    traceback.print_exc()
-                    flash(f'Scan submitted successfully (ID: {scan_id})', 'success')
+                    flash('Invalid GitHub URL format. Please use: https://github.com/username/repository', 'error')
                     return redirect(url_for('no_login_scan'))
+                return jsonify({'error': 'Invalid GitHub URL format'}), 400
             
-            # For API calls (JSON), return JSON response for VS Code extension
-            logger.info(f"[SCAN_SUBMISSION] Returning JSON response for scan {scan_id}")
-            return jsonify({
-                'scanId': scan_id,  # Changed from 'scan_id' to 'scanId' for extension compatibility
-                'status': 'queued',
-                'message': 'Scan initiated successfully'
-            }), 202
+            logger.info(f"[SCAN_SUBMISSION] Processing GitHub repository: {repo_url}")
+            result = scan_service.create_scan(
+                source_type='repository',
+                repo_url=repo_url,
+                analysis_tool=analysis_tool,
+                user_id=None  # Public scan
+            )
             
-        finally:
-            session_db.close()
-            logger.info(f"[SCAN_SUBMISSION] Database session closed for scan {scan_id}")
+        elif zip_file:
+            # Validate ZIP file
+            is_valid, error_msg = validate_zip_file(zip_file)
+            if not is_valid:
+                logger.warning(f"[SCAN_SUBMISSION] ZIP validation failed: {error_msg}")
+                if is_form_submission:
+                    flash(f'ZIP file error: {error_msg}', 'error')
+                    return redirect(url_for('no_login_scan'))
+                return jsonify({'error': error_msg}), 400
+            
+            logger.info(f"[SCAN_SUBMISSION] Processing ZIP file: {zip_file.filename}")
+            result = scan_service.create_scan(
+                source_type='file_upload',
+                file_upload=zip_file,
+                analysis_tool=analysis_tool,
+                user_id=None  # Public scan
+            )
+            
+        else:  # code_snippet
+            # Validate code snippet
+            is_valid, error_msg = validate_code_snippet(code_snippet)
+            if not is_valid:
+                logger.warning(f"[SCAN_SUBMISSION] Code snippet validation failed: {error_msg}")
+                if is_form_submission:
+                    flash(f'Code snippet error: {error_msg}', 'error')
+                    return redirect(url_for('no_login_scan'))
+                return jsonify({'error': error_msg}), 400
+            
+            logger.info(f"[SCAN_SUBMISSION] Processing code snippet (length: {len(code_snippet)} chars)")
+            result = scan_service.create_scan(
+                source_type='snippet',
+                code_snippet=code_snippet,
+                analysis_tool=analysis_tool,
+                user_id=None  # Public scan
+            )
+        
+        scan_id = result['scan_id']
+        logger.info(f"[SCAN_SUBMISSION] Scan created successfully: {scan_id}")
+        
+        # For form submissions, redirect to detailed findings page
+        if is_form_submission:
+            try:
+                findings_url = url_for('detailed_findings', scan_id=scan_id)
+                logger.info(f"[SCAN_SUBMISSION] Redirecting to detailed findings: {findings_url}")
+                return redirect(findings_url)
+            except Exception as redirect_error:
+                logger.error(f"[SCAN_SUBMISSION] Error generating redirect URL: {redirect_error}")
+                flash(f'Scan submitted successfully (ID: {scan_id})', 'success')
+                return redirect(url_for('no_login_scan'))
+        
+        # For API calls (JSON), return JSON response for VS Code extension
+        logger.info(f"[SCAN_SUBMISSION] Returning JSON response for scan {scan_id}")
+        return jsonify({
+            'scanId': scan_id,  # Changed from 'scan_id' to 'scanId' for extension compatibility
+            'status': result['status'],
+            'message': 'Scan initiated successfully'
+        }), 202
             
     except Exception as e:
         logger.error(f"[SCAN_SUBMISSION] Exception during scan submission: {e}", exc_info=True)
-        # Clean up on error
-        if 'scan_dir' in locals() and os.path.exists(scan_dir):
-            shutil.rmtree(scan_dir, ignore_errors=True)
+        
         # Check if form submission for proper error handling
         is_json_request = request.content_type and 'application/json' in request.content_type
         is_form_submission = request.content_type and ('multipart/form-data' in request.content_type or 'application/x-www-form-urlencoded' in request.content_type)
-        
-        import traceback
-        print(f"ERROR in /scan-public: {e}")
-        print(f"Content-Type: {request.content_type}, Is JSON: {is_json_request}, Is Form: {is_form_submission}")
-        traceback.print_exc()
         
         if is_form_submission:
             flash(f'An error occurred: {str(e)}', 'error')
             try:
                 return redirect(url_for('no_login_scan'))
             except Exception as redirect_err:
-                print(f"ERROR in redirect: {redirect_err}")
-                traceback.print_exc()
-                # Fallback: return error page directly
+                logger.error(f"ERROR in redirect: {redirect_err}")
                 return f"<html><body><h1>Error</h1><p>{str(e)}</p><a href='/no-login'>Go Back</a></body></html>", 500
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
@@ -1930,6 +3525,250 @@ def is_valid_github_url(url):
     import re
     pattern = r'^https://github\.com/[\w\-\.]+/[\w\-\.]+/?$'
     return bool(re.match(pattern, url))
+
+
+def process_github_pr_scan(repo_url, scan_id, analysis_tool, pr_number):
+    """Process a GitHub pull request with differential scanning"""
+    temp_dir = None
+    try:
+        logger.info(f"Starting PR scan for {repo_url} PR #{pr_number} with {analysis_tool}")
+        
+        # Check if user has GitHub token
+        github_token = session.get('github_token')
+        if not github_token:
+            return {
+                'success': False,
+                'error': 'GitHub authentication required for PR scanning'
+            }
+        
+        # Initialize GitHub service
+        github_service = GitHubService(github_token)
+        
+        # Extract repository name from URL
+        repo_full_name = repo_url.replace('https://github.com/', '').replace('.git', '').strip('/')
+        
+        # Validate repository access
+        if not github_service.validate_repository_access(repo_full_name):
+            return {
+                'success': False,
+                'error': 'Repository not found or access denied'
+            }
+        
+        # Initialize differential scan service
+        differential_service = DifferentialScanService(github_service)
+        
+        # Create temporary directory for scan
+        temp_dir = tempfile.mkdtemp(prefix=f'pr_scan_{scan_id}_')
+        
+        # Prepare PR for scanning
+        logger.info(f"Preparing PR #{pr_number} for differential scanning")
+        prep_result = differential_service.prepare_pr_scan(repo_full_name, pr_number, temp_dir)
+        
+        if not prep_result['success']:
+            return {
+                'success': False,
+                'error': prep_result['error']
+            }
+        
+        # Get scan files
+        scan_files = prep_result['files']
+        repo_dir = prep_result['repo_dir']
+        
+        logger.info(f"Found {len(scan_files)} files to scan in PR #{pr_number}")
+        
+        if not scan_files:
+            return {
+                'success': True,
+                'data': {
+                    'repo_url': repo_url,
+                    'pr_number': pr_number,
+                    'status': 'completed',
+                    'vulnerabilities': [],
+                    'patches': [],
+                    'scan_type': 'github_pr',
+                    'analysis_tool': analysis_tool,
+                    'message': 'No scannable files found in pull request changes'
+                }
+            }
+        
+        # Run differential analysis
+        logger.info(f"Running {analysis_tool} analysis on PR changes")
+        analysis_result = differential_service.run_differential_analysis(scan_files, analysis_tool)
+        
+        if not analysis_result['success']:
+            return {
+                'success': False,
+                'error': analysis_result['error']
+            }
+        
+        vulnerabilities = analysis_result['vulnerabilities']
+        
+        # Generate patches for found vulnerabilities (if any)
+        patches = []
+        if vulnerabilities:
+            logger.info(f"Generating patches for {len(vulnerabilities)} vulnerabilities")
+            patches = generate_patches_for_vulnerabilities(vulnerabilities, repo_dir)
+        
+        # Clean up repository directory
+        differential_service.cleanup_scan_directory(repo_dir)
+        
+        logger.info(f"PR scan completed: {len(vulnerabilities)} vulnerabilities, {len(patches)} patches")
+        
+        return {
+            'success': True,
+            'data': {
+                'repo_url': repo_url,
+                'pr_number': pr_number,
+                'status': 'completed',
+                'vulnerabilities': vulnerabilities,
+                'patches': patches,
+                'scan_type': 'github_pr',
+                'analysis_tool': analysis_tool,
+                'files_scanned': len(scan_files),
+                'total_pr_files': prep_result.get('total_count', 0),
+                'scannable_files': prep_result.get('scannable_count', 0)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"PR scan failed: {e}")
+        return {
+            'success': False,
+            'error': f'PR scan failed: {str(e)}'
+        }
+    finally:
+        # Clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def generate_patches_for_vulnerabilities(vulnerabilities, repo_dir):
+    """Generate patches for vulnerabilities found in PR scan"""
+    patches = []
+    
+    try:
+        for vuln in vulnerabilities:
+            if not vuln.get('pr_context'):
+                continue  # Skip non-PR vulnerabilities
+            
+            file_path = vuln.get('file', '')
+            line_number = vuln.get('line', 0)
+            vuln_type = vuln.get('type', '')
+            description = vuln.get('description', '')
+            
+            # Generate patch based on vulnerability type
+            patch_content = generate_patch_for_vulnerability_type(
+                vuln_type, file_path, line_number, description, repo_dir
+            )
+            
+            if patch_content:
+                patch_id = f"patch_{len(patches) + 1}"
+                patches.append({
+                    'id': patch_id,
+                    'vulnerability_id': vuln.get('id', ''),
+                    'file': file_path,
+                    'line': line_number,
+                    'type': vuln_type,
+                    'description': f"Fix for {vuln_type} in {file_path}",
+                    'content': patch_content,
+                    'confidence': 'medium',  # PR patches are generally medium confidence
+                    'pr_context': True
+                })
+    
+    except Exception as e:
+        logger.error(f"Error generating patches: {e}")
+    
+    return patches
+
+
+def generate_patch_for_vulnerability_type(vuln_type, file_path, line_number, description, repo_dir):
+    """Generate a patch for a specific vulnerability type"""
+    try:
+        full_file_path = os.path.join(repo_dir, file_path)
+        
+        if not os.path.exists(full_file_path):
+            return None
+        
+        with open(full_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+        
+        if line_number <= 0 or line_number > len(lines):
+            return None
+        
+        # Get the problematic line
+        problem_line = lines[line_number - 1].strip()
+        
+        # Generate patch based on vulnerability type
+        if 'bufferAccessOutOfBounds' in vuln_type or 'arrayIndexOutOfBounds' in vuln_type:
+            return generate_buffer_overflow_patch(problem_line, line_number)
+        elif 'nullPointer' in vuln_type:
+            return generate_null_pointer_patch(problem_line, line_number)
+        elif 'memoryLeak' in vuln_type:
+            return generate_memory_leak_patch(problem_line, line_number)
+        elif 'uninitvar' in vuln_type:
+            return generate_uninitialized_var_patch(problem_line, line_number)
+        else:
+            # Generic patch
+            return generate_generic_patch(problem_line, line_number, description)
+    
+    except Exception as e:
+        logger.error(f"Error generating patch for {vuln_type}: {e}")
+        return None
+
+
+def generate_buffer_overflow_patch(problem_line, line_number):
+    """Generate patch for buffer overflow vulnerabilities"""
+    patch = f"""--- a/file.c
++++ b/file.c
+@@ -{line_number},1 +{line_number},3 @@
+-{problem_line}
++    // TODO: Add bounds checking before buffer access
++    // Verify buffer size and input length
++{problem_line}"""
+    return patch
+
+
+def generate_null_pointer_patch(problem_line, line_number):
+    """Generate patch for null pointer vulnerabilities"""
+    patch = f"""--- a/file.c
++++ b/file.c
+@@ -{line_number},1 +{line_number},4 @@
+-{problem_line}
++    // Add null pointer check
++    if (ptr != NULL) {{
++{problem_line}
++    }}"""
+    return patch
+
+
+def generate_memory_leak_patch(problem_line, line_number):
+    """Generate patch for memory leak vulnerabilities"""
+    patch = f"""--- a/file.c
++++ b/file.c
+@@ -{line_number},1 +{line_number},2 @@
+ {problem_line}
++    // TODO: Add corresponding free() call for allocated memory"""
+    return patch
+
+
+def generate_uninitialized_var_patch(problem_line, line_number):
+    """Generate patch for uninitialized variable vulnerabilities"""
+    patch = f"""--- a/file.c
++++ b/file.c
+@@ -{line_number},1 +{line_number},2 @@
++    // Initialize variable before use
+ {problem_line}"""
+    return patch
+
+
+def generate_generic_patch(problem_line, line_number, description):
+    """Generate generic patch with security comment"""
+    patch = f"""--- a/file.c
++++ b/file.c
+@@ -{line_number},1 +{line_number},2 @@
++    // Security fix needed: {description}
+ {problem_line}"""
+    return patch
 
 
 def process_github_repo(repo_url, scan_id, analysis_tool='cppcheck'):
@@ -3023,4 +4862,12 @@ def repair_health():
 
 
 if __name__ == '__main__':
+    # Initialize database tables
+    try:
+        create_database()  # Create scan tables
+        user_service.create_tables()  # Create user tables
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing database: {e}")
+    
     app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True, extra_files=['templates/', 'src/'])

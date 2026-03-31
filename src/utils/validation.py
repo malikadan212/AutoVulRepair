@@ -151,7 +151,7 @@ def validate_zip_file(file_obj):
 
 def validate_code_snippet(code_snippet):
     """Validate code snippet input"""
-    if not code_snippet or not code_snippet.strip():
+    if code_snippet is None or not str(code_snippet).strip():
         return False, "Code snippet cannot be empty"
     
     # Check length limits
