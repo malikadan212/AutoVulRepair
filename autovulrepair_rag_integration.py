@@ -129,7 +129,7 @@ def ask_cve_question():
 @app.route('/api/scan/<scan_id>/enrich', methods=['POST'])
 def enrich_scan_with_rag(scan_id):
     """
-    Enrich scan results with AI-powered CVE analysis
+    Enrich scan results with AI-powered CVE analysis - migrated to use new database system
     
     This adds intelligent explanations to each vulnerability found.
     """
@@ -137,46 +137,84 @@ def enrich_scan_with_rag(scan_id):
         return jsonify({'error': 'RAG system not available'}), 503
     
     try:
-        session_db = get_session()
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        
-        if not scan:
-            return jsonify({'error': 'Scan not found'}), 404
-        
-        vulnerabilities = scan.vulnerabilities_json or []
-        
-        # Enrich each vulnerability
-        enriched = []
-        for vuln in vulnerabilities[:10]:  # Limit to first 10 to avoid rate limits
-            try:
-                # Get AI explanation
-                result = cve_rag.ask(
-                    f"Explain this vulnerability and suggest fixes: {vuln['description']}",
-                    top_k=3
-                )
-                
-                vuln['ai_explanation'] = result['answer']
-                vuln['related_cves'] = [
-                    {
-                        'cve_id': cve['cve_id'],
-                        'severity': cve['severity'],
-                        'cvss_score': cve.get('cvss_score')
-                    }
-                    for cve in result['sources']
-                ]
-                
-            except Exception as e:
-                vuln['ai_explanation'] = f"Error: {str(e)}"
-                vuln['related_cves'] = []
+        # Try new database system first
+        results = scan_service.get_scan_results(scan_id)
+        if results and 'error' not in results:
+            vulnerabilities = results['findings'][:10]  # Limit to first 10 to avoid rate limits
             
-            enriched.append(vuln)
+            # Enrich each vulnerability
+            enriched = []
+            for vuln in vulnerabilities:
+                try:
+                    # Get AI explanation
+                    result = cve_rag.ask(
+                        f"Explain this vulnerability and suggest fixes: {vuln.get('message', '')}",
+                        top_k=3
+                    )
+                    
+                    vuln['ai_explanation'] = result['answer']
+                    vuln['related_cves'] = [
+                        {
+                            'cve_id': cve['cve_id'],
+                            'severity': cve['severity'],
+                            'cvss_score': cve.get('cvss_score')
+                        }
+                        for cve in result['sources']
+                    ]
+                    
+                except Exception as e:
+                    vuln['ai_explanation'] = f"Error: {str(e)}"
+                    vuln['related_cves'] = []
+                
+                enriched.append(vuln)
+            
+            return jsonify({
+                'scan_id': scan_id,
+                'enriched_vulnerabilities': enriched
+            })
         
-        session_db.close()
-        
-        return jsonify({
-            'scan_id': scan_id,
-            'enriched_vulnerabilities': enriched
-        })
+        # Fallback to legacy system
+        session_db = get_session()
+        try:
+            scan = session_db.query(Scan).filter_by(id=scan_id).first()
+            
+            if not scan:
+                return jsonify({'error': 'Scan not found'}), 404
+            
+            vulnerabilities = scan.vulnerabilities_json or []
+            
+            # Enrich each vulnerability
+            enriched = []
+            for vuln in vulnerabilities[:10]:  # Limit to first 10 to avoid rate limits
+                try:
+                    # Get AI explanation
+                    result = cve_rag.ask(
+                        f"Explain this vulnerability and suggest fixes: {vuln['description']}",
+                        top_k=3
+                    )
+                    
+                    vuln['ai_explanation'] = result['answer']
+                    vuln['related_cves'] = [
+                        {
+                            'cve_id': cve['cve_id'],
+                            'severity': cve['severity'],
+                            'cvss_score': cve.get('cvss_score')
+                        }
+                        for cve in result['sources']
+                    ]
+                    
+                except Exception as e:
+                    vuln['ai_explanation'] = f"Error: {str(e)}"
+                    vuln['related_cves'] = []
+                
+                enriched.append(vuln)
+            
+            return jsonify({
+                'scan_id': scan_id,
+                'enriched_vulnerabilities': enriched
+            })
+        finally:
+            session_db.close()
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -221,35 +259,64 @@ Provide:
 
 @app.route('/detailed-findings/<scan_id>')
 def detailed_findings_enhanced(scan_id):
-    """Enhanced version with RAG explanations"""
-    session_db = get_session()
+    """Enhanced version with RAG explanations - migrated to use new database system"""
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
+        # Try new database system first
+        results = scan_service.get_scan_results(scan_id)
+        if results and 'error' not in results:
+            scan = results['scan']
+            vulnerabilities = results['findings']
+            
+            # Add AI explanations if RAG is available
+            if cve_rag:
+                for vuln in vulnerabilities[:5]:  # Limit to avoid rate limits
+                    try:
+                        result = cve_rag.ask(
+                            f"Briefly explain: {vuln.get('message', '')}",
+                            top_k=2
+                        )
+                        vuln['ai_summary'] = result['answer'][:200] + "..."
+                    except:
+                        vuln['ai_summary'] = None
+            
+            return render_template('detailed_findings.html',
+                                 scan_id=scan_id,
+                                 vulnerabilities=vulnerabilities,
+                                 rag_enabled=cve_rag is not None)
         
-        if not scan:
-            flash('Scan not found.', 'error')
-            return redirect(url_for('no_login_scan'))
-        
-        vulnerabilities = scan.vulnerabilities_json or []
-        
-        # Add AI explanations if RAG is available
-        if cve_rag:
-            for vuln in vulnerabilities[:5]:  # Limit to avoid rate limits
-                try:
-                    result = cve_rag.ask(
-                        f"Briefly explain: {vuln['description']}",
-                        top_k=2
-                    )
-                    vuln['ai_summary'] = result['answer'][:200] + "..."
-                except:
-                    vuln['ai_summary'] = None
-        
-        return render_template('detailed_findings.html',
-                             scan_id=scan_id,
-                             vulnerabilities=vulnerabilities,
-                             rag_enabled=cve_rag is not None)
-    finally:
-        session_db.close()
+        # Fallback to legacy system
+        session_db = get_session()
+        try:
+            scan = session_db.query(Scan).filter_by(id=scan_id).first()
+            
+            if not scan:
+                flash('Scan not found.', 'error')
+                return redirect(url_for('no_login_scan'))
+            
+            vulnerabilities = scan.vulnerabilities_json or []
+            
+            # Add AI explanations if RAG is available
+            if cve_rag:
+                for vuln in vulnerabilities[:5]:  # Limit to avoid rate limits
+                    try:
+                        result = cve_rag.ask(
+                            f"Briefly explain: {vuln['description']}",
+                            top_k=2
+                        )
+                        vuln['ai_summary'] = result['answer'][:200] + "..."
+                    except:
+                        vuln['ai_summary'] = None
+            
+            return render_template('detailed_findings.html',
+                                 scan_id=scan_id,
+                                 vulnerabilities=vulnerabilities,
+                                 rag_enabled=cve_rag is not None)
+        finally:
+            session_db.close()
+            
+    except Exception as e:
+        flash(f'Error loading scan results: {str(e)}', 'error')
+        return redirect(url_for('no_login_scan'))
 
 
 # ============================================================================

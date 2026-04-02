@@ -164,6 +164,41 @@ def register_health_routes(app):
         """Basic metrics endpoint for monitoring"""
         try:
             # Import here to avoid circular imports
+            # Try new database system first
+            from src.models.scan_v2 import DatabaseManager
+            from src.repositories.scan_repository import ScanRepository
+            import os
+            
+            DATABASE_URL = os.getenv('DATABASE_URL')
+            if DATABASE_URL:
+                try:
+                    db_manager = DatabaseManager(DATABASE_URL)
+                    if db_manager.health_check():
+                        scan_repository = ScanRepository(db_manager, use_database=True)
+                        stats = scan_repository.get_storage_stats()
+                        
+                        metrics_data = {
+                            'autovulrepair_scans_total': stats.get('total_scans', 0),
+                            'autovulrepair_scans_completed': stats.get('completed_scans', 0),
+                            'autovulrepair_scans_failed': stats.get('failed_scans', 0),
+                            'autovulrepair_scans_running': stats.get('active_scans', 0),
+                            'autovulrepair_database_type': 'postgresql'
+                        }
+                        
+                        # Format as Prometheus metrics
+                        prometheus_metrics = []
+                        for metric_name, value in metrics_data.items():
+                            if metric_name == 'autovulrepair_database_type':
+                                prometheus_metrics.append(f'{metric_name}{{type="{value}"}} 1')
+                            else:
+                                prometheus_metrics.append(f'{metric_name} {value}')
+                        
+                        return '\n'.join(prometheus_metrics)
+                        
+                except Exception as e:
+                    logger.warning(f"New database system failed for metrics: {e}")
+            
+            # Fallback to legacy system
             from src.models.scan import get_session, Scan
             
             session = get_session()

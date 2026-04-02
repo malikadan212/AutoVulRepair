@@ -1,3 +1,12 @@
+"""
+Legacy Celery task queue implementation
+
+⚠️  DEPRECATED: This file contains legacy Celery tasks that use the old SQLite database.
+    New implementations should use src/workers/job_worker.py which supports the new PostgreSQL database.
+    
+    This file is maintained for backward compatibility only.
+"""
+
 import os
 import json
 import logging
@@ -6,7 +15,11 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='celery')
 
 from celery import Celery
-from src.models.scan import get_session, Scan
+# Import new database system first, legacy as fallback
+from src.models.scan_v2 import DatabaseManager
+from src.repositories.scan_repository import ScanRepository
+from src.services.scan_service import ScanService
+from src.models.scan import get_session, Scan  # Legacy fallback
 from src.analysis.codeql import CodeQLAnalyzer
 from src.analysis.cppcheck import CppcheckAnalyzer
 

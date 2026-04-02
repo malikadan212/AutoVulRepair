@@ -48,9 +48,10 @@ from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 import requests
 
-# Import legacy components (for backward compatibility)
+# Import legacy components (for backward compatibility - fallback only)
 from src.models.scan import Scan
 from src.database.connection import get_session, create_database
+
 # Import new Celery workers instead of old queue tasks
 try:
     from src.workers.job_worker import celery_app
@@ -725,16 +726,15 @@ def calculate_average_scan_time(user_scans):
 def api_dashboard_stats():
     """Get real-time dashboard statistics"""
     try:
-        session_db = get_session()
-        try:
-            user_scans = session_db.query(Scan).filter(
-                Scan.user_id == current_user.id
-            ).all()
-            
-            stats = calculate_user_stats(user_scans)
-            return jsonify(stats)
-        finally:
-            session_db.close()
+        # Use new scan service instead of legacy database
+        user_scans_data = scan_service.get_scans_by_user(current_user.id)
+        
+        if not user_scans_data or 'error' in user_scans_data:
+            return jsonify({'error': 'Failed to load user scans'}), 500
+        
+        stats = calculate_user_stats_v2(user_scans_data)
+        return jsonify(stats)
+        
     except Exception as e:
         logger.error(f"Error getting dashboard stats: {e}")
         return jsonify({'error': str(e)}), 500
@@ -746,26 +746,25 @@ def api_recent_scans():
     try:
         limit = request.args.get('limit', 10, type=int)
         
-        session_db = get_session()
-        try:
-            recent_scans = session_db.query(Scan).filter(
-                Scan.user_id == current_user.id
-            ).order_by(Scan.created_at.desc()).limit(limit).all()
-            
-            scans_data = []
-            for scan in recent_scans:
-                scans_data.append({
-                    'id': scan.id,
-                    'repo_url': scan.repo_url or 'ZIP Upload',
-                    'status': scan.status,
-                    'created_at': scan.created_at.isoformat() if scan.created_at else None,
-                    'analysis_tool': scan.analysis_tool,
-                    'vulnerability_count': len(scan.vulnerabilities_json) if scan.vulnerabilities_json else 0
-                })
-            
-            return jsonify({'scans': scans_data})
-        finally:
-            session_db.close()
+        # Use new scan service instead of legacy database
+        user_scans_data = scan_service.get_scans_by_user(current_user.id, limit=limit)
+        
+        if not user_scans_data or 'error' in user_scans_data:
+            return jsonify({'error': 'Failed to load recent scans'}), 500
+        
+        scans_data = []
+        for scan in user_scans_data.get('scans', []):
+            scans_data.append({
+                'id': scan['id'],
+                'repo_url': scan.get('repo_url', 'ZIP Upload'),
+                'status': scan['status'],
+                'created_at': scan['created_at'].isoformat() if scan.get('created_at') else None,
+                'analysis_tool': scan.get('analysis_tool', 'cppcheck'),
+                'vulnerability_count': len(scan.get('vulnerabilities', []))
+            })
+        
+        return jsonify({'scans': scans_data})
+        
     except Exception as e:
         logger.error(f"Error getting recent scans: {e}")
         return jsonify({'error': str(e)}), 500
@@ -775,32 +774,40 @@ def api_recent_scans():
 def api_running_scans():
     """Get currently running scans"""
     try:
-        session_db = get_session()
-        try:
-            running_scans = session_db.query(Scan).filter(
-                Scan.user_id == current_user.id,
-                Scan.status.in_(['queued', 'processing'])
-            ).order_by(Scan.created_at.desc()).all()
-            
-            scans_data = []
-            for scan in running_scans:
+        # Use new scan service instead of legacy database
+        user_scans_data = scan_service.get_scans_by_user(current_user.id)
+        
+        if not user_scans_data or 'error' in user_scans_data:
+            return jsonify({'error': 'Failed to load running scans'}), 500
+        
+        scans_data = []
+        for scan in user_scans_data.get('scans', []):
+            # Only include running scans
+            if scan['status'] in ['queued', 'processing']:
                 # Calculate estimated completion time
-                elapsed_time = (datetime.now() - scan.created_at).total_seconds() if scan.created_at else 0
+                elapsed_time = 0
+                if scan.get('created_at'):
+                    from datetime import datetime
+                    if isinstance(scan['created_at'], str):
+                        created_at = datetime.fromisoformat(scan['created_at'].replace('Z', '+00:00'))
+                    else:
+                        created_at = scan['created_at']
+                    elapsed_time = (datetime.now() - created_at.replace(tzinfo=None)).total_seconds()
+                
                 estimated_remaining = max(0, 300 - elapsed_time)  # Assume 5 min average
                 
                 scans_data.append({
-                    'id': scan.id,
-                    'repo_url': scan.repo_url or 'ZIP Upload',
-                    'status': scan.status,
-                    'created_at': scan.created_at.isoformat() if scan.created_at else None,
+                    'id': scan['id'],
+                    'repo_url': scan.get('repo_url', 'ZIP Upload'),
+                    'status': scan['status'],
+                    'created_at': scan['created_at'].isoformat() if scan.get('created_at') else None,
                     'elapsed_time': elapsed_time,
                     'estimated_remaining': estimated_remaining,
-                    'analysis_tool': scan.analysis_tool
+                    'analysis_tool': scan.get('analysis_tool', 'cppcheck')
                 })
-            
-            return jsonify({'scans': scans_data})
-        finally:
-            session_db.close()
+        
+        return jsonify({'scans': scans_data})
+        
     except Exception as e:
         logger.error(f"Error getting running scans: {e}")
         return jsonify({'error': str(e)}), 500
@@ -969,27 +976,7 @@ def api_quick_scan():
         user_settings = get_user_settings(current_user.id)
         analysis_tool = user_settings.get('default_analysis_tool', 'cppcheck')
         
-        # Generate scan ID
-        scan_id = str(uuid.uuid4())
-        
-        # Create scan record in database
-        session_db = get_session()
-        try:
-            new_scan = Scan(
-                id=scan_id,
-                user_id=current_user.id,
-                source_type='repo_url',
-                repo_url=repo_url,
-                analysis_tool=analysis_tool,
-                status='processing'
-            )
-            session_db.add(new_scan)
-            session_db.commit()
-            logger.info(f"Created quick scan {scan_id} for user {current_user.username}")
-        finally:
-            session_db.close()
-        
-        # Start scan processing using Celery
+        # Create scan using new scan service only
         result = scan_service.create_scan(
             user_id=current_user.id,
             source_type='repository',
@@ -999,6 +986,7 @@ def api_quick_scan():
         
         if result['status'] == 'processing':
             # Scan started in background
+            logger.info(f"Created quick scan {result['scan_id']} for user {current_user.username}")
             return jsonify({
                 'scan_id': result['scan_id'],
                 'task_id': result.get('task_id'),
@@ -2131,7 +2119,7 @@ def monitoring_dashboard():
 
 @app.route('/api/scan-status/<scan_id>')
 def api_scan_status(scan_id):
-    """API endpoint for checking scan status - now using database service"""
+    """API endpoint for checking scan status - migrated to use new database system"""
     logger.debug(f"[API] Status check requested for scan: {scan_id}")
     
     try:
@@ -2165,12 +2153,13 @@ def api_scan_status(scan_id):
                 'error': scan_data.get('error_message')
             })
         
-        # Fallback to legacy system
+        # Fallback to legacy system only if not found in new system
+        logger.warning(f"[API] Scan {scan_id} not found in new database, checking legacy system")
         session_db = get_session()
         try:
             scan = session_db.query(Scan).filter_by(id=scan_id).first()
             if not scan:
-                logger.warning(f"[API] Scan not found: {scan_id}")
+                logger.warning(f"[API] Scan not found in either system: {scan_id}")
                 return jsonify({'error': 'Scan not found'}), 404
             
             vuln_count = len(scan.vulnerabilities_json) if scan.vulnerabilities_json else 0
@@ -2201,7 +2190,7 @@ def api_scan_status(scan_id):
 @app.route('/api/scan/<scan_id>/results')
 @login_required
 def api_scan_results(scan_id):
-    """Get scan results in JSON format for VS Code extension - now using database service"""
+    """Get scan results in JSON format for VS Code extension - migrated to use new database system"""
     logger.debug(f"[API] Results requested for scan: {scan_id}")
     
     try:
@@ -2209,6 +2198,7 @@ def api_scan_results(scan_id):
         current_user_id = session.get('user_id')
         if not current_user_id:
             return jsonify({'error': 'Authentication required'}), 401
+            
         # Try new service first
         results = scan_service.get_scan_results(scan_id)
         if results and not results.get('error'):
@@ -2258,12 +2248,13 @@ def api_scan_results(scan_id):
                 'summary': summary
             })
         
-        # Fallback to legacy system
+        # Fallback to legacy system only if not found in new system
+        logger.warning(f"[API] Scan {scan_id} not found in new database, checking legacy system")
         session_db = get_session()
         try:
             scan = session_db.query(Scan).filter_by(id=scan_id).first()
             if not scan:
-                logger.warning(f"[API] Scan not found: {scan_id}")
+                logger.warning(f"[API] Scan not found in either system: {scan_id}")
                 return jsonify({'error': 'Scan not found'}), 404
             
             # Verify ownership for legacy scans
@@ -2328,45 +2319,73 @@ def api_scan_results(scan_id):
 
 @app.route('/api/scan/<scan_id>', methods=['DELETE'])
 def api_cancel_scan(scan_id):
-    """Cancel an active scan"""
+    """Cancel an active scan - migrated to use new database system"""
     logger.info(f"[API] Cancel requested for scan: {scan_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            logger.warning(f"[API] Scan not found: {scan_id}")
-            return jsonify({'error': 'Scan not found'}), 404
-        
-        if scan.status in ['completed', 'failed', 'cancelled']:
-            logger.warning(f"[API] Cannot cancel scan {scan_id} with status: {scan.status}")
+        # Try new database system first
+        scan_data = scan_service.get_scan_status(scan_id)
+        if scan_data:
+            if scan_data['status'] in ['completed', 'failed', 'cancelled']:
+                logger.warning(f"[API] Cannot cancel scan {scan_id} with status: {scan_data['status']}")
+                return jsonify({
+                    'error': f'Cannot cancel scan with status: {scan_data["status"]}'
+                }), 400
+            
+            # Cancel task using scan service
+            task_result = scan_service.cancel_task(scan_data.get('task_id', ''))
+            if 'error' not in task_result:
+                logger.info(f"[API] Cancelled task for scan {scan_id}")
+            
+            # Update scan status to cancelled
+            scan_service.repository.update_scan_status(scan_id, 'cancelled')
+            
+            logger.info(f"[API] Scan {scan_id} cancelled successfully")
             return jsonify({
-                'error': f'Cannot cancel scan with status: {scan.status}'
-            }), 400
+                'scanId': scan_id,
+                'status': 'cancelled',
+                'message': 'Scan cancelled successfully'
+            })
         
-        # Revoke Celery task if it exists
-        if hasattr(scan, 'celery_task_id') and scan.celery_task_id:
-            try:
-                celery_app.control.revoke(scan.celery_task_id, terminate=True)
-                logger.info(f"[API] Revoked Celery task {scan.celery_task_id} for scan {scan_id}")
-            except Exception as e:
-                logger.warning(f"[API] Failed to revoke Celery task: {e}")
-        
-        # Update scan status
-        scan.status = 'cancelled'
-        session_db.commit()
-        
-        logger.info(f"[API] Scan {scan_id} cancelled successfully")
-        
-        return jsonify({
-            'scanId': scan_id,
-            'status': 'cancelled',
-            'message': 'Scan cancelled successfully'
-        })
+        # Fallback to legacy system if scan not found in new system
+        session_db = get_session()
+        try:
+            scan = session_db.query(Scan).filter_by(id=scan_id).first()
+            if not scan:
+                logger.warning(f"[API] Scan not found: {scan_id}")
+                return jsonify({'error': 'Scan not found'}), 404
+            
+            if scan.status in ['completed', 'failed', 'cancelled']:
+                logger.warning(f"[API] Cannot cancel scan {scan_id} with status: {scan.status}")
+                return jsonify({
+                    'error': f'Cannot cancel scan with status: {scan.status}'
+                }), 400
+            
+            # Revoke Celery task if it exists
+            if hasattr(scan, 'celery_task_id') and scan.celery_task_id:
+                try:
+                    celery_app.control.revoke(scan.celery_task_id, terminate=True)
+                    logger.info(f"[API] Revoked Celery task {scan.celery_task_id} for scan {scan_id}")
+                except Exception as e:
+                    logger.warning(f"[API] Failed to revoke Celery task: {e}")
+            
+            # Update scan status
+            scan.status = 'cancelled'
+            session_db.commit()
+            
+            logger.info(f"[API] Legacy scan {scan_id} cancelled successfully")
+            
+            return jsonify({
+                'scanId': scan_id,
+                'status': 'cancelled',
+                'message': 'Scan cancelled successfully'
+            })
+        finally:
+            session_db.close()
+            
     except Exception as e:
         logger.error(f"[API] Error cancelling scan {scan_id}: {e}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        session_db.close()
 
 
 @app.route('/api/generate-single-patch/<scan_id>/<vuln_id>', methods=['POST'])

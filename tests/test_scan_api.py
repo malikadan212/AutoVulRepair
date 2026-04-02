@@ -1,3 +1,10 @@
+"""
+Test cases for scan API endpoints
+
+⚠️  NOTE: These tests use the legacy SQLite database system for backward compatibility testing.
+    New tests should be written to test the PostgreSQL database system.
+"""
+
 import pytest
 import os
 import json

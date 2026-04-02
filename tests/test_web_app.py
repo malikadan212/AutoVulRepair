@@ -2,6 +2,9 @@
 """
 Test cases for Flask web application components
 Tests authentication, scanning endpoints, and web functionality
+
+⚠️  NOTE: These tests use the legacy SQLite database system for backward compatibility testing.
+    New tests should be written to test the PostgreSQL database system.
 """
 import unittest
 import tempfile

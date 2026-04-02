@@ -14,8 +14,11 @@ logger = logging.getLogger(__name__)
 def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
     logger.info(f"Starting AutoVulRepair CLI for source: {source_dir} using {tool}")
     
-    # Initialize the database and models
-    from src.models.scan import create_database, get_session, Scan
+    # Initialize the new database system instead of legacy
+    from src.models.scan_v2 import DatabaseManager
+    from src.repositories.scan_repository import ScanRepository
+    from src.services.scan_service import ScanService
+    import os
     
     # Try to use Celery if available, otherwise fall back to sync
     try:
@@ -35,8 +38,33 @@ def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
     from src.harness.generator import HarnessGenerator
     from src.intrepair.pipeline import IntRepairPipeline
     
-    create_database()
-    session = get_session()
+    # Initialize new database system
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    if DATABASE_URL:
+        try:
+            db_manager = DatabaseManager(DATABASE_URL)
+            db_manager.create_tables()
+            
+            if db_manager.health_check():
+                logger.info("New database system initialized and connected")
+                scan_repository = ScanRepository(db_manager, use_database=True)
+                scan_service = ScanService(scan_repository)
+                USE_DATABASE = True
+            else:
+                logger.warning("Database connection failed, using legacy file system")
+                USE_DATABASE = False
+        except Exception as e:
+            logger.warning(f"Database initialization failed: {e}, using legacy file system")
+            USE_DATABASE = False
+    else:
+        logger.info("No DATABASE_URL configured, using legacy file system")
+        USE_DATABASE = False
+    
+    # Fallback to legacy system if database not available
+    if not USE_DATABASE:
+        from src.models.scan import create_database, get_session, Scan
+        create_database()
+        session = get_session()
     
     # Create a unique scan ID
     scan_id = str(uuid.uuid4())
@@ -53,59 +81,117 @@ def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
     # Using ignore pattern to skip .git and build directories to speed up copy
     shutil.copytree(source_dir, source_dest, dirs_exist_ok=True, 
                     ignore=shutil.ignore_patterns('.git', 'build', 'node_modules', '__pycache__'))
+    
+    # Create the scan record using appropriate system
+    if USE_DATABASE:
+        # Use new database system
+        scan_data = {
+            'scan_id': scan_id,
+            'user_id': 'cli-user',
+            'repo_url': 'github-action-local',
+            'source_type': 'directory',
+            'analysis_tool': tool,
+            'metadata': {
+                'created_by': 'cli',
+                'source_type': 'directory'
+            }
+        }
+        
+        # Store source files in database
+        files = []
+        for root, dirs, filenames in os.walk(source_dest):
+            for filename in filenames:
+                if filename.endswith(('.c', '.cpp', '.cc', '.h', '.hpp')):
+                    file_path = os.path.join(root, filename)
+                    rel_path = os.path.relpath(file_path, source_dest)
                     
-    # Create the scan record
-    new_scan = Scan(
-        id=scan_id,
-        repo_url='github-action-local',
-        source_type='Directory',
-        analysis_tool=tool,
-        status='queued'
-    )
-    session.add(new_scan)
-    session.commit()
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                        files.append({
+                            'path': rel_path,
+                            'content': content
+                        })
+                    except Exception:
+                        continue
+        
+        created_scan_id = scan_repository.create_scan(scan_data)
+        scan_repository.store_source_files(scan_id, files)
+        scan_repository.update_scan_status(scan_id, 'queued')
+        
+        logger.info(f"Created scan in new database system: {scan_id}")
+    else:
+        # Use legacy system
+        new_scan = Scan(
+            id=scan_id,
+            repo_url='github-action-local',
+            source_type='Directory',
+            analysis_tool=tool,
+            status='queued'
+        )
+        session.add(new_scan)
+        session.commit()
+        
+        logger.info(f"Created scan in legacy system: {scan_id}")
     
     has_vulnerabilities = False
     
     # Step 1: Run Static Analysis
     logger.info(f"=== Module 1: Running Static Analysis using {tool} ===")
     try:
-        if CELERY_AVAILABLE:
-            # Use Celery for background processing
-            scan_data = {
-                'source_type': 'existing',  # Scan already created
-                'analysis_tool': tool
-            }
+        if USE_DATABASE:
+            # Use new scan service
+            analysis_result = scan_service.run_static_analysis(scan_id, tool)
             
-            task_result = process_scan_task.delay(scan_id, scan_data)
-            print(f"🚀 Started background analysis task: {task_result.id}")
-            print("⏳ Waiting for task to complete...")
+            if analysis_result['status'] == 'failed':
+                logger.error(f"Analysis failed: {analysis_result.get('error')}")
+                sys.exit(1)
+                
+            vuln_count = analysis_result.get('findings_count', 0)
+            logger.info(f"Analysis completed. Found {vuln_count} vulnerabilities.")
             
-            # Wait for task to complete
-            result = task_result.get(timeout=1800)  # 30 minute timeout
-            print("✅ Background task completed")
+            # Get findings for processing
+            results = scan_service.get_scan_results(scan_id)
+            vulns = results.get('findings', [])
         else:
-            # Fall back to synchronous processing
-            result = analyze_code_sync(scan_id, tool)
-        
-        if result['status'] == 'failed':
-            logger.error(f"Analysis failed: {result.get('error')}")
-            sys.exit(1)
+            # Use legacy system with Celery or sync processing
+            if CELERY_AVAILABLE:
+                # Use Celery for background processing
+                scan_data = {
+                    'source_type': 'existing',  # Scan already created
+                    'analysis_tool': tool
+                }
+                
+                task_result = process_scan_task.delay(scan_id, scan_data)
+                print(f"🚀 Started background analysis task: {task_result.id}")
+                print("⏳ Waiting for task to complete...")
+                
+                # Wait for task to complete
+                result = task_result.get(timeout=1800)  # 30 minute timeout
+                print("✅ Background task completed")
+            else:
+                # Fall back to synchronous processing
+                result = analyze_code_sync(scan_id, tool)
             
-        vuln_count = result.get('vulnerabilities', 0)
-        logger.info(f"Analysis completed. Found {vuln_count} vulnerabilities.")
-        
-        # Reload scan record
-        scan_record = session.query(Scan).filter_by(id=scan_id).first()
-        vulns = scan_record.vulnerabilities_json or []
+            if result['status'] == 'failed':
+                logger.error(f"Analysis failed: {result.get('error')}")
+                sys.exit(1)
+                
+            vuln_count = result.get('vulnerabilities', 0)
+            logger.info(f"Analysis completed. Found {vuln_count} vulnerabilities.")
+            
+            # Reload scan record
+            scan_record = session.query(Scan).filter_by(id=scan_id).first()
+            vulns = scan_record.vulnerabilities_json or []
         
         if vuln_count > 0:
             has_vulnerabilities = True
             logger.warning(f"Found {vuln_count} vulnerabilities in the codebase!")
             for i, v in enumerate(vulns):
-                file_path = v.get('file', 'Unknown')
-                line = v.get('line', 'Unknown')
-                desc = v.get('description', 'No description')
+                # Handle both database and legacy field names
+                file_path = v.get('file_path') or v.get('file', 'Unknown')
+                line = v.get('line_number') or v.get('line', 'Unknown')
+                desc = v.get('message') or v.get('description', 'No description')
                 severity = v.get('severity', 'Unknown')
                 logger.warning(f"  [{i+1}] {severity.upper()}: {file_path}:{line} -> {desc}")
                 
@@ -140,7 +226,7 @@ def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
             all_repairs = []
             
             # Find all unique vulnerable files
-            vulnerable_files = set([v.get('file') for v in vulns if v.get('file')])
+            vulnerable_files = set([v.get('file_path') or v.get('file') for v in vulns if v.get('file_path') or v.get('file')])
             
             for rel_file in vulnerable_files:
                 # Resolve the absolute path
@@ -205,7 +291,8 @@ def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
         logger.error(f"Pipeline execution failed: {e}", exc_info=True)
         sys.exit(1)
     finally:
-        session.close()
+        if not USE_DATABASE and 'session' in locals():
+            session.close()
 
 def generate_github_summary(summary_path, tool, vuln_count, vulns, repairs, scan_dir):
     """Generates a Markdown summary for the GitHub Actions UI"""

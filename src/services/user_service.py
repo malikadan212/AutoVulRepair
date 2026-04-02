@@ -164,17 +164,39 @@ class UserService:
             session_db.close()
     
     def get_user_scan_count(self, user_id):
-        """Get total number of scans for a user"""
-        from src.models.scan import Scan
-        session_db = self.session()
+        """Get total number of scans for a user - migrated to use new database system"""
         try:
-            count = session_db.query(Scan).filter_by(user_id=user_id).count()
-            return count
+            # Try new database system first
+            from src.models.scan_v2 import DatabaseManager
+            from src.repositories.scan_repository import ScanRepository
+            import os
+            
+            DATABASE_URL = os.getenv('DATABASE_URL')
+            if DATABASE_URL:
+                try:
+                    db_manager = DatabaseManager(DATABASE_URL)
+                    if db_manager.health_check():
+                        scan_repository = ScanRepository(db_manager, use_database=True)
+                        user_scans = scan_repository.get_scans_by_user(user_id)
+                        return len(user_scans)
+                except Exception as e:
+                    logger.warning(f"New database system failed for user scan count: {e}")
+            
+            # Fallback to legacy system
+            from src.models.scan import Scan
+            session_db = self.session()
+            try:
+                count = session_db.query(Scan).filter_by(user_id=user_id).count()
+                return count
+            except Exception as e:
+                logger.error(f"Error getting scan count for user {user_id}: {e}")
+                return 0
+            finally:
+                session_db.close()
+                
         except Exception as e:
             logger.error(f"Error getting scan count for user {user_id}: {e}")
             return 0
-        finally:
-            session_db.close()
     
     def create_tables(self):
         """Create user tables if they don't exist"""
