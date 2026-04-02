@@ -76,6 +76,15 @@ class IntegerOverflowScanner:
                 precondition = f"({s1} > 0 && {s1} > ({min_bound}/({s2}))) || ({s1} < 0 && {s1} < ({max_bound}/({s2})))"
             elif is_s2_var and s1_const is not None and s1_const < 0:
                 precondition = f"({s2} > 0 && {s2} > ({min_bound}/({s1}))) || ({s2} < 0 && {s2} < ({max_bound}/({s1})))"
+            elif is_s1_var and s2_const is not None and s2_const > 0:
+                # Variable * positive constant
+                precondition = f"({s1} > 0 && {s1} > ({max_bound}/{s2})) || ({s1} < 0 && {s1} < ({min_bound}/{s2}))"
+            elif is_s2_var and s1_const is not None and s1_const > 0:
+                # Positive constant * variable
+                precondition = f"({s2} > 0 && {s2} > ({max_bound}/{s1})) || ({s2} < 0 && {s2} < ({min_bound}/{s1}))"
+            elif is_s1_var and is_s2_var:
+                # Two different variables
+                precondition = f"({s1} != 0 && {s2} != 0 && abs({s1}) > ({max_bound}/abs({s2})))"
             else:
                 return {'line': line_num, 'status': 'no_repair_proposed'}
 
@@ -126,7 +135,116 @@ class IntegerOverflowFixer:
     def __init__(self, mode: str = "automated"):
         self.mode = mode
 
-    def generate_patch(self, vuln: Dict[str, Any]) -> str:
+    def generate_patch(
+        self,
+        vuln: Dict[str, Any],
+        source_code: str,
+        source_file: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate integer overflow patch
+        
+        Args:
+            vuln: Vulnerability dict
+            source_code: Full source code
+            source_file: Path to source file
+            
+        Returns:
+            Patch dict or None
+        """
+        line_num = vuln.get('line', 0)
+        
+        if not line_num:
+            logger.warning(f"Missing line number for integer overflow vuln")
+            return None
+        
+        # Get the source line
+        lines = source_code.split('\n')
+        if line_num < 1 or line_num > len(lines):
+            logger.error(f"Line number {line_num} out of range")
+            return None
+        
+        original_line = lines[line_num - 1]
+        
+        # Use the scanner to analyze the line
+        scanner = IntegerOverflowScanner()
+        scan_result = scanner.scan_line(original_line, line_num, source_code)
+        
+        if not scan_result or scan_result.get('status') != 'vulnerable':
+            logger.warning(f"Integer overflow scanner could not analyze line {line_num}: {original_line.strip()}")
+            return None
+        
+        # Generate the repaired line using the scanner result
+        indent = scan_result.get('indent', '')
+        precondition = scan_result.get('precondition')
+        original = scan_result.get('original')
+        
+        if not precondition:
+            logger.warning(f"No precondition generated for line {line_num}")
+            return None
+        
+        # Generate repaired code
+        repaired_lines = []
+        repaired_lines.append(f"{indent}if ({precondition}) {{")
+        repaired_lines.append(f"{indent}    // Integer overflow detected - abort")
+        repaired_lines.append(f"{indent}    fprintf(stderr, \"Integer overflow detected at line {line_num}\\n\");")
+        repaired_lines.append(f"{indent}    abort();")
+        repaired_lines.append(f"{indent}}} else {{")
+        repaired_lines.append(f"{indent}    {original}")
+        repaired_lines.append(f"{indent}}}")
+        
+        repaired_code = '\n'.join(repaired_lines)
+        
+        # Generate unified diff
+        diff = self._generate_diff(
+            source_file,
+            line_num,
+            original_line,
+            repaired_code
+        )
+        
+        return {
+            'patch_id': str(uuid.uuid4()),
+            'vulnerability_id': vuln.get('finding_id', ''),
+            'file': source_file,
+            'line': line_num,
+            'original': original_line.strip(),
+            'repaired': repaired_code,
+            'diff': diff,
+            'description': f"Add integer overflow check at line {line_num}",
+            'confidence': 0.90,
+            'requires_acr_header': False,
+            'precondition': precondition
+        }
+    
+    def _generate_diff(
+        self,
+        filename: str,
+        line_num: int,
+        original: str,
+        repaired: str
+    ) -> str:
+        """
+        Generate unified diff format
+        
+        Args:
+            filename: Source file name
+            line_num: Line number
+            original: Original line
+            repaired: Repaired code block
+            
+        Returns:
+            Unified diff string
+        """
+        diff = f"""--- {filename}	(original)
++++ {filename}	(repaired)
+@@ -{line_num},1 +{line_num},{len(repaired.split(chr(10)))} @@
+-{original}
++{repaired.replace(chr(10), chr(10) + '+')}
+"""
+        return diff
+
+    def generate_patch_old(self, vuln: Dict[str, Any]) -> str:
         indent = vuln.get('indent', '')
         precondition = vuln.get('precondition')
         original = vuln.get('original')

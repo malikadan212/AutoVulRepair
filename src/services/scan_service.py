@@ -9,15 +9,28 @@ import os
 import tempfile
 import shutil
 import json
+import logging
 from datetime import datetime
 
 from src.repositories.scan_repository import ScanRepository
 from src.models.scan_v2 import DatabaseManager
-# Import legacy task for backward compatibility
+
+# Set up logging
+logger = logging.getLogger(__name__)
+# Import Celery tasks for background processing
 try:
-    from src.queue.tasks import analyze_code_sync
+    from src.workers.job_worker import process_scan_task, process_fuzzing_task
+    CELERY_AVAILABLE = True
+    logger.info("Celery workers available - using async processing")
 except ImportError:
-    analyze_code_sync = None
+    try:
+        from src.queue.tasks import analyze_code, analyze_code_sync
+        CELERY_AVAILABLE = True
+        logger.info("Celery queue tasks available - using async processing")
+    except ImportError:
+        CELERY_AVAILABLE = False
+        analyze_code_sync = None
+        logger.warning("Celery not available - falling back to synchronous processing")
 from src.fuzz_plan.generator import FuzzPlanGenerator
 from src.harness.generator import HarnessGenerator
 from src.build.orchestrator import BuildOrchestrator
@@ -89,7 +102,49 @@ class ScanService:
             self.repository.update_scan_status(scan_id, 'failed', 'Invalid source type or missing data')
             return {'scan_id': scan_id, 'status': 'failed', 'error': 'Invalid input'}
         
-        # Run analysis immediately instead of enqueuing
+        # Start background processing with Celery if available
+        if CELERY_AVAILABLE:
+            try:
+                # Try to use the new worker system first
+                from src.workers.job_worker import process_scan_task
+                
+                # Prepare scan data for background processing
+                scan_data = {
+                    'source_type': source_type,
+                    'analysis_tool': analysis_tool,
+                    'code_snippet': code_snippet,
+                    'repo_url': repo_url,
+                    'file_upload': None  # File data already processed and stored
+                }
+                
+                # Start background task
+                task_result = process_scan_task.delay(scan_id, scan_data)
+                logger.info(f"Started background scan task {task_result.id} for scan {scan_id}")
+                
+                return {
+                    'scan_id': scan_id,
+                    'status': 'processing',
+                    'task_id': task_result.id,
+                    'message': 'Scan started in background'
+                }
+                
+            except ImportError:
+                # Fallback to queue tasks
+                from src.queue.tasks import analyze_code
+                task_result = analyze_code.delay(scan_id, analysis_tool)
+                logger.info(f"Started background analysis task {task_result.id} for scan {scan_id}")
+                
+                return {
+                    'scan_id': scan_id,
+                    'status': 'processing', 
+                    'task_id': task_result.id,
+                    'message': 'Scan started in background'
+                }
+        else:
+            # Fallback to synchronous processing
+            logger.warning(f"Celery not available, running scan {scan_id} synchronously")
+            
+        # Run analysis (synchronously if Celery not available)
         try:
             analysis_result = self.run_static_analysis(scan_id, analysis_tool)
             return {
@@ -270,6 +325,117 @@ class ScanService:
             'total_files': len(source_files)
         }
     
+    def get_task_status(self, task_id: str) -> Dict[str, Any]:
+        """Get Celery task status"""
+        if not CELERY_AVAILABLE:
+            return {'error': 'Celery not available'}
+        
+        try:
+            from src.workers.job_worker import celery_app
+            result = celery_app.AsyncResult(task_id)
+            
+            return {
+                'task_id': task_id,
+                'status': result.status,
+                'result': result.result if result.ready() else None,
+                'info': result.info,
+                'ready': result.ready(),
+                'successful': result.successful() if result.ready() else None,
+                'failed': result.failed() if result.ready() else None
+            }
+        except Exception as e:
+            return {'error': f'Failed to get task status: {str(e)}'}
+    
+    def cancel_task(self, task_id: str) -> Dict[str, Any]:
+        """Cancel a Celery task"""
+        if not CELERY_AVAILABLE:
+            return {'error': 'Celery not available'}
+        
+        try:
+            from src.workers.job_worker import celery_app
+            celery_app.control.revoke(task_id, terminate=True)
+            
+            return {
+                'task_id': task_id,
+                'status': 'cancelled',
+                'message': 'Task cancelled successfully'
+            }
+        except Exception as e:
+            return {'error': f'Failed to cancel task: {str(e)}'}
+    
+    def get_active_tasks(self) -> Dict[str, Any]:
+        """Get all active Celery tasks"""
+        if not CELERY_AVAILABLE:
+            return {'error': 'Celery not available'}
+        
+        try:
+            from src.workers.job_worker import celery_app
+            inspect = celery_app.control.inspect()
+            
+            active_tasks = inspect.active()
+            scheduled_tasks = inspect.scheduled()
+            reserved_tasks = inspect.reserved()
+            
+            return {
+                'active': active_tasks or {},
+                'scheduled': scheduled_tasks or {},
+                'reserved': reserved_tasks or {},
+                'total_active': sum(len(tasks) for tasks in (active_tasks or {}).values()),
+                'total_scheduled': sum(len(tasks) for tasks in (scheduled_tasks or {}).values()),
+                'total_reserved': sum(len(tasks) for tasks in (reserved_tasks or {}).values())
+            }
+        except Exception as e:
+            return {'error': f'Failed to get active tasks: {str(e)}'}
+    
+    def start_fuzzing_async(self, scan_id: str, fuzzing_config: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Start fuzzing in background using Celery"""
+        if not CELERY_AVAILABLE:
+            return {'error': 'Celery not available for background fuzzing'}
+        
+        try:
+            from src.workers.job_worker import process_fuzzing_task
+            
+            # Default fuzzing configuration
+            if not fuzzing_config:
+                fuzzing_config = {
+                    'duration': 300,  # 5 minutes
+                    'max_crashes': 10,
+                    'timeout': 30
+                }
+            
+            # Start background fuzzing task
+            task_result = process_fuzzing_task.delay(scan_id, fuzzing_config)
+            logger.info(f"Started background fuzzing task {task_result.id} for scan {scan_id}")
+            
+            return {
+                'scan_id': scan_id,
+                'task_id': task_result.id,
+                'status': 'processing',
+                'message': 'Fuzzing started in background'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to start fuzzing for scan {scan_id}: {e}")
+            return {'error': f'Failed to start fuzzing: {str(e)}'}
+    
+    def get_scan_results(self, scan_id: str) -> Dict[str, Any]:
+        """Get complete scan results"""
+        scan = self.repository.get_scan(scan_id)
+        if not scan:
+            return {'error': 'Scan not found'}
+        
+        # Get all related data
+        findings = self.repository.get_static_findings(scan_id)
+        source_files = self.repository.get_source_files(scan_id)
+        
+        return {
+            'scan': scan,
+            'findings': findings,
+            'source_files': source_files,
+            'total_findings': len(findings),
+            'total_files': len(source_files)
+        }
+    
     # ============================================================================
     # Analysis Pipeline
     # ============================================================================
@@ -391,100 +557,101 @@ class ScanService:
     
     def _run_legacy_analysis(self, source_dir: str, analysis_tool: str) -> List[Dict]:
         """Run actual static analysis using the specified tool"""
-        import subprocess
-        import tempfile
-        import glob
-        
         findings = []
         
         if analysis_tool == 'cppcheck':
-            # First, try to find existing Cppcheck XML files in scans directory
-            existing_xml = None
-            scans_pattern = os.path.join(self.scans_dir, '*', 'artifacts', 'cppcheck-report.xml')
-            xml_files = glob.glob(scans_pattern)
-            
-            if xml_files:
-                # Use the most recent XML file (largest file size indicates more complete analysis)
-                xml_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
-                existing_xml = xml_files[0]
-                print(f"[SCAN] Using existing Cppcheck XML: {existing_xml}")
-                
-                try:
-                    # Convert XML to findings using our converter
-                    from src.module1.cppcheck_to_findings import convert_cppcheck_to_findings
-                    
-                    # Create temporary output file for converter
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as json_file:
-                        json_path = json_file.name
-                    
-                    # Run converter
-                    print(f"[SCAN] Converting existing Cppcheck XML to findings...")
-                    output_data = convert_cppcheck_to_findings(existing_xml, json_path)
-                    findings = output_data.get('findings', [])
-                    
-                    print(f"[SCAN] Conversion complete: {len(findings)} findings from existing XML")
-                    
-                    # Cleanup temporary file
-                    os.unlink(json_path)
-                    
-                    return findings
-                    
-                except Exception as e:
-                    print(f"[SCAN] Error using existing XML: {e}")
-            
-            # If no existing XML or error, try to run Cppcheck
             try:
-                # Create temporary file for Cppcheck XML output
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False) as xml_file:
-                    xml_path = xml_file.name
+                # Use the proper Cppcheck analyzer that knows about Docker
+                from src.analysis.cppcheck import CppcheckAnalyzer
                 
-                # Run Cppcheck
-                cmd = [
-                    'cppcheck',
-                    '--xml',
-                    '--xml-version=2',
-                    '--enable=all',
-                    '--inconclusive',
-                    '--force',
-                    source_dir
-                ]
+                logger.info(f"[SCAN] Using CppcheckAnalyzer for real analysis on {source_dir}")
+                analyzer = CppcheckAnalyzer()
                 
-                print(f"[SCAN] Running Cppcheck: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, stderr=subprocess.STDOUT)
+                if not analyzer.is_available():
+                    logger.warning("[SCAN] Cppcheck analyzer not available, falling back to pattern analysis")
+                    return self._fallback_pattern_analysis(source_dir)
                 
-                # Cppcheck outputs XML to stderr
-                with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(result.stderr)
+                # Run real Cppcheck analysis - ALWAYS run fresh analysis, don't reuse old results
+                logger.info("[SCAN] Running fresh Cppcheck analysis (not reusing old results)")
+                vulnerabilities, patches = analyzer.analyze(source_dir, 'local_path')
                 
-                print(f"[SCAN] Cppcheck completed with return code: {result.returncode}")
+                # Convert to our findings format
+                for vuln in vulnerabilities:
+                    finding = {
+                        'finding_id': vuln.get('id', str(uuid.uuid4())),
+                        'rule_id': vuln.get('rule_id', 'unknown'),
+                        'severity': vuln.get('severity', 'medium'),
+                        'confidence': 'high',
+                        'message': vuln.get('description', ''),
+                        'cwe': '',  # Cppcheck doesn't provide CWE directly
+                        'file_path': vuln.get('file', ''),
+                        'file': os.path.basename(vuln.get('file', '')),
+                        'line_number': vuln.get('line', 0),
+                        'line': vuln.get('line', 0),
+                        'column_number': 1,
+                        'column': 1,
+                        'function_name': '',
+                        'function': '',
+                        'priority_score': 7.0 if vuln.get('severity') == 'high' else 5.0
+                    }
+                    findings.append(finding)
                 
-                # Convert XML to findings using our converter
-                from src.module1.cppcheck_to_findings import convert_cppcheck_to_findings
+                logger.info(f"[SCAN] Real Cppcheck analysis found {len(findings)} findings")
+                return findings
                 
-                # Create temporary output file for converter
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as json_file:
-                    json_path = json_file.name
-                
-                # Run converter
-                print(f"[SCAN] Converting Cppcheck XML to findings...")
-                output_data = convert_cppcheck_to_findings(xml_path, json_path)
-                findings = output_data.get('findings', [])
-                
-                print(f"[SCAN] Conversion complete: {len(findings)} findings")
-                
-                # Cleanup temporary files
-                os.unlink(xml_path)
-                os.unlink(json_path)
-                
-            except FileNotFoundError:
-                print("[SCAN] Cppcheck not found, falling back to pattern-based analysis")
-                findings = self._fallback_pattern_analysis(source_dir)
             except Exception as e:
-                print(f"[SCAN] Error running Cppcheck: {e}")
-                findings = self._fallback_pattern_analysis(source_dir)
+                logger.error(f"[SCAN] Error running real Cppcheck analysis: {e}")
+                logger.info("[SCAN] Falling back to pattern analysis")
+                return self._fallback_pattern_analysis(source_dir)
+        
+        elif analysis_tool == 'codeql':
+            try:
+                # Use the proper CodeQL analyzer that knows about Docker
+                from src.analysis.codeql import CodeQLAnalyzer
+                
+                logger.info(f"[SCAN] Using CodeQLAnalyzer for real analysis on {source_dir}")
+                analyzer = CodeQLAnalyzer()
+                
+                if not analyzer.is_available():
+                    logger.warning("[SCAN] CodeQL analyzer not available, falling back to pattern analysis")
+                    return self._fallback_pattern_analysis(source_dir)
+                
+                # Run real CodeQL analysis
+                vulnerabilities, patches = analyzer.analyze(source_dir, 'local_path')
+                
+                # Convert to our findings format
+                for vuln in vulnerabilities:
+                    finding = {
+                        'finding_id': vuln.get('id', str(uuid.uuid4())),
+                        'rule_id': vuln.get('rule_id', 'unknown'),
+                        'severity': vuln.get('severity', 'medium'),
+                        'confidence': 'high',
+                        'message': vuln.get('description', ''),
+                        'cwe': vuln.get('cwe', ''),
+                        'file_path': vuln.get('file', ''),
+                        'file': os.path.basename(vuln.get('file', '')),
+                        'line_number': vuln.get('line', 0),
+                        'line': vuln.get('line', 0),
+                        'column_number': vuln.get('column', 1),
+                        'column': vuln.get('column', 1),
+                        'function_name': vuln.get('function', ''),
+                        'function': vuln.get('function', ''),
+                        'priority_score': 8.0 if vuln.get('severity') == 'high' else 6.0
+                    }
+                    findings.append(finding)
+                
+                logger.info(f"[SCAN] Real CodeQL analysis found {len(findings)} findings")
+                return findings
+                
+            except Exception as e:
+                logger.error(f"[SCAN] Error running real CodeQL analysis: {e}")
+                logger.info("[SCAN] Falling back to pattern analysis")
+                return self._fallback_pattern_analysis(source_dir)
+        
         else:
             # For other tools, use pattern-based analysis
-            findings = self._fallback_pattern_analysis(source_dir)
+            logger.info(f"[SCAN] Unknown analysis tool '{analysis_tool}', using pattern analysis")
+            return self._fallback_pattern_analysis(source_dir)
         
         return findings
     
@@ -957,3 +1124,177 @@ class ScanService:
             'storage': storage_stats,
             'timestamp': datetime.utcnow().isoformat()
         }
+    
+    def update_scan_status(self, scan_id: str, status: str, metadata: Dict[str, Any] = None) -> bool:
+        """
+        Update scan status - used by Celery workers
+        """
+        try:
+            # Update basic status
+            success = self.repository.update_scan_status(scan_id, status)
+            
+            # If metadata provided, store it (for now just log it)
+            if metadata:
+                logger.info(f"Scan {scan_id} status updated to {status} with metadata: {metadata}")
+            
+            return success
+        except Exception as e:
+            logger.error(f"Failed to update scan status for {scan_id}: {e}")
+            return False
+    
+    def update_fuzzing_status(self, scan_id: str, status: str, metadata: Dict[str, Any] = None) -> bool:
+        """
+        Update fuzzing status - used by Celery workers
+        """
+        try:
+            # For now, update the main scan status with fuzzing prefix
+            fuzzing_status = f"fuzzing_{status}" if not status.startswith('fuzzing') else status
+            success = self.repository.update_scan_status(scan_id, fuzzing_status)
+            
+            # If metadata provided, store it (for now just log it)
+            if metadata:
+                logger.info(f"Scan {scan_id} fuzzing status updated to {status} with metadata: {metadata}")
+            
+            return success
+        except Exception as e:
+            logger.error(f"Failed to update fuzzing status for {scan_id}: {e}")
+            return False
+    # ============================================================================
+    # Celery Job Processing Methods
+    # ============================================================================
+    
+    def process_scan_job(self, scan_id: str, scan_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process a scan job - called by Celery workers
+        This method handles the actual scan processing logic
+        """
+        try:
+            logger.info(f"Processing scan job {scan_id} with data: {scan_data}")
+            
+            # Get scan from database
+            scan = self.repository.get_scan(scan_id)
+            if not scan:
+                raise Exception(f"Scan {scan_id} not found")
+            
+            # Update status to processing
+            self.repository.update_scan_status(scan_id, 'processing')
+            
+            # Determine analysis tool
+            analysis_tool = scan_data.get('analysis_tool', scan.get('analysis_tool', 'cppcheck'))
+            
+            # Check if this is an existing scan or new data
+            source_type = scan_data.get('source_type', 'existing')
+            
+            if source_type != 'existing':
+                # Process new source data
+                if source_type == 'snippet' and scan_data.get('code_snippet'):
+                    self._process_code_snippet(scan_id, scan_data['code_snippet'])
+                elif source_type == 'repository' and scan_data.get('repo_url'):
+                    self._process_repository(scan_id, scan_data['repo_url'])
+                elif source_type == 'file_upload' and scan_data.get('file_upload'):
+                    self._process_file_upload(scan_id, scan_data['file_upload'])
+            
+            # Run static analysis
+            analysis_result = self.run_static_analysis(scan_id, analysis_tool)
+            
+            logger.info(f"Scan job {scan_id} completed successfully")
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Scan job {scan_id} failed: {e}")
+            self.repository.update_scan_status(scan_id, 'failed', str(e))
+            raise
+    
+    def process_fuzzing_job(self, scan_id: str, fuzzing_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process a fuzzing job - called by Celery workers
+        """
+        try:
+            logger.info(f"Processing fuzzing job {scan_id} with config: {fuzzing_config}")
+            
+            # Get scan from database
+            scan = self.repository.get_scan(scan_id)
+            if not scan:
+                raise Exception(f"Scan {scan_id} not found")
+            
+            # Update status to processing
+            self.repository.update_scan_status(scan_id, 'fuzzing')
+            
+            # Generate fuzz plan first
+            fuzz_plan_result = self.generate_fuzz_plan(scan_id)
+            if fuzz_plan_result.get('status') != 'success':
+                raise Exception("Failed to generate fuzz plan")
+            
+            # Generate harnesses
+            harness_result = self.generate_harnesses(scan_id)
+            if harness_result.get('status') != 'success':
+                raise Exception("Failed to generate harnesses")
+            
+            # Execute fuzzing campaign
+            fuzzing_result = self.execute_fuzzing(scan_id, fuzzing_config)
+            
+            logger.info(f"Fuzzing job {scan_id} completed successfully")
+            return fuzzing_result
+            
+        except Exception as e:
+            logger.error(f"Fuzzing job {scan_id} failed: {e}")
+            self.repository.update_scan_status(scan_id, 'failed', str(e))
+            raise
+    
+    def execute_fuzzing(self, scan_id: str, fuzzing_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute fuzzing campaign - called by fuzzing jobs
+        """
+        try:
+            # This would use the existing fuzzing infrastructure
+            scans_dir = os.getenv('SCANS_DIR', './scans')
+            scan_dir = os.path.join(scans_dir, scan_id)
+            
+            # Use the existing FuzzExecutor
+            executor = FuzzExecutor(scan_dir)
+            
+            # Run fuzzing with configuration
+            runtime_minutes = fuzzing_config.get('duration', 300) // 60  # Convert seconds to minutes
+            max_crashes = fuzzing_config.get('max_crashes', 10)
+            
+            # Execute fuzzing campaign
+            campaign_results = executor.run_campaign(
+                runtime_minutes=runtime_minutes,
+                max_crashes=max_crashes
+            )
+            
+            # Store results
+            self.store_fuzz_campaign_results(scan_id, campaign_results)
+            
+            return {
+                'status': 'success',
+                'campaign_results': campaign_results,
+                'total_crashes': sum(r.get('crashes_found', 0) for r in campaign_results.get('results', [])),
+                'targets_executed': len(campaign_results.get('results', []))
+            }
+            
+        except Exception as e:
+            logger.error(f"Fuzzing execution failed for {scan_id}: {e}")
+            return {
+                'status': 'failed',
+                'error': str(e)
+            }
+    
+    def cleanup_old_scans(self, days_old: int = 30) -> Dict[str, Any]:
+        """
+        Cleanup old scans - called by Celery beat scheduler
+        """
+        try:
+            logger.info(f"Starting cleanup of scans older than {days_old} days")
+            
+            # This would implement the actual cleanup logic
+            # For now, return a placeholder
+            return {
+                'status': 'success',
+                'message': f'Cleanup completed for scans older than {days_old} days',
+                'deleted_count': 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Cleanup failed: {e}")
+            raise

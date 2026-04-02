@@ -3,11 +3,16 @@ Configuration management for Kubernetes deployment
 Handles environment variables, secrets, and configuration validation
 """
 import os
+import sys
 import logging
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+def get_settings():
+    """Get application settings instance"""
+    return config
 
 @dataclass
 class DatabaseConfig:
@@ -56,6 +61,10 @@ class AppConfig:
         self.debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
         self.port = int(os.getenv('PORT', '5000'))
         self.host = os.getenv('HOST', '0.0.0.0')
+        
+        # Add convenience properties for Celery compatibility
+        self.REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        self.DATABASE_URL = os.getenv('DATABASE_URL')
         
         # Load configurations
         self.database = self._load_database_config()
@@ -116,12 +125,18 @@ class AppConfig:
         """Load security configuration"""
         flask_secret_key = os.getenv('FLASK_SECRET_KEY')
         if not flask_secret_key:
-            if self.environment == 'production':
-                # Only raise error in actual production, not during testing
+            # Check if we're running in a Celery worker context
+            is_celery_worker = os.getenv('CELERY_WORKER', 'false').lower() == 'true' or 'celery' in os.getenv('_', '')
+            
+            if self.environment == 'production' and not is_celery_worker:
+                # Only raise error in actual production web app, not during testing or Celery workers
                 if not os.getenv('TESTING', 'false').lower() == 'true':
                     raise ValueError("FLASK_SECRET_KEY must be set in production")
+            
+            # Use a default secret key for development and Celery workers
             flask_secret_key = 'dev-secret-key-change-in-production'
-            logger.warning("Using default secret key for development")
+            if not is_celery_worker:
+                logger.warning("Using default secret key for development")
         
         return SecurityConfig(
             flask_secret_key=flask_secret_key,

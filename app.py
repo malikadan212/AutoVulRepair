@@ -51,7 +51,19 @@ import requests
 # Import legacy components (for backward compatibility)
 from src.models.scan import Scan
 from src.database.connection import get_session, create_database
-from src.queue.tasks import celery_app, analyze_code, analyze_code_sync
+# Import new Celery workers instead of old queue tasks
+try:
+    from src.workers.job_worker import celery_app
+    CELERY_AVAILABLE = True
+except ImportError:
+    # Fallback for development environments
+    try:
+        from src.queue.tasks import celery_app, analyze_code, analyze_code_sync
+        CELERY_AVAILABLE = True
+    except ImportError:
+        CELERY_AVAILABLE = False
+        celery_app = None
+
 from src.utils.validation import (
     is_valid_github_url, validate_zip_file, validate_code_snippet, 
     safe_extract_zip, sanitize_filename
@@ -205,17 +217,33 @@ def load_user(user_id):
 
 # OAuth (GitHub) setup
 oauth = OAuth(app)
-github = oauth.register(
-    name='github',
-    client_id=os.getenv('GITHUB_CLIENT_ID'),
-    client_secret=os.getenv('GITHUB_CLIENT_SECRET'),
-    access_token_url='https://github.com/login/oauth/access_token',
-    authorize_url='https://github.com/login/oauth/authorize',
-    api_base_url='https://api.github.com/',
-    client_kwargs={
-        'scope': 'user:email'
-    },
+
+# Check if GitHub OAuth credentials are configured
+GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
+GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
+GITHUB_OAUTH_ENABLED = (
+    GITHUB_CLIENT_ID and 
+    GITHUB_CLIENT_SECRET and 
+    GITHUB_CLIENT_ID != 'your_github_client_id_here' and
+    GITHUB_CLIENT_SECRET != 'your_github_client_secret_here'
 )
+
+if GITHUB_OAUTH_ENABLED:
+    github = oauth.register(
+        name='github',
+        client_id=GITHUB_CLIENT_ID,
+        client_secret=GITHUB_CLIENT_SECRET,
+        access_token_url='https://github.com/login/oauth/access_token',
+        authorize_url='https://github.com/login/oauth/authorize',
+        api_base_url='https://api.github.com/',
+        client_kwargs={
+            'scope': 'user:email'
+        },
+    )
+    logger.info("GitHub OAuth enabled")
+else:
+    github = None
+    logger.warning("GitHub OAuth disabled - credentials not configured")
 
 
 def login_required_oauth(f):
@@ -239,7 +267,7 @@ def is_api_request():
 
 @app.route('/')
 def home():
-    return render_template('home.html')
+    return render_template('home.html', github_oauth_enabled=GITHUB_OAUTH_ENABLED)
 
 
 @app.route('/api/health')
@@ -323,12 +351,20 @@ def scan_public_form():
 
 @app.route('/login')
 def login():
+    if not GITHUB_OAUTH_ENABLED:
+        flash('GitHub OAuth is not configured. Please set up GitHub OAuth credentials or use the no-login option.', 'warning')
+        return redirect(url_for('no_login_scan'))
+    
     redirect_uri = url_for('authorized', _external=True)
     return github.authorize_redirect(redirect_uri)
 
 
 @app.route('/auth')
 def authorized():
+    if not GITHUB_OAUTH_ENABLED:
+        flash('GitHub OAuth is not configured.', 'error')
+        return redirect(url_for('home'))
+    
     try:
         logger.info("[AUTH] GitHub OAuth callback initiated")
         
@@ -953,43 +989,110 @@ def api_quick_scan():
         finally:
             session_db.close()
         
-        # Start scan processing
-        result = process_github_repo(repo_url, scan_id, analysis_tool)
+        # Start scan processing using Celery
+        result = scan_service.create_scan(
+            user_id=current_user.id,
+            source_type='repository',
+            analysis_tool=analysis_tool,
+            repo_url=repo_url
+        )
         
-        if result['success']:
-            # Update scan record with results
-            session_db = get_session()
-            try:
-                scan = session_db.query(Scan).filter_by(id=scan_id).first()
-                if scan:
-                    scan.status = 'completed'
-                    scan.vulnerabilities_json = result['data'].get('vulnerabilities', [])
-                    scan.patches_json = result['data'].get('patches', [])
-                    session_db.commit()
-            finally:
-                session_db.close()
-            
+        if result['status'] == 'processing':
+            # Scan started in background
             return jsonify({
-                'scan_id': scan_id,
+                'scan_id': result['scan_id'],
+                'task_id': result.get('task_id'),
+                'message': 'Scan started in background',
+                'status': 'processing',
+                'redirect_url': url_for('scan_status', scan_id=result['scan_id'])
+            })
+        elif result['status'] == 'completed':
+            # Scan completed synchronously (Celery not available)
+            return jsonify({
+                'scan_id': result['scan_id'],
                 'message': 'Scan completed successfully',
-                'redirect_url': url_for('detailed_findings', scan_id=scan_id)
+                'redirect_url': url_for('detailed_findings', scan_id=result['scan_id'])
             })
         else:
-            # Update scan record with failure
-            session_db = get_session()
-            try:
-                scan = session_db.query(Scan).filter_by(id=scan_id).first()
-                if scan:
-                    scan.status = 'failed'
-                    session_db.commit()
-            finally:
-                session_db.close()
-            
-            return jsonify({'error': result['error']}), 400
+            # Scan failed
+            return jsonify({'error': result.get('error', 'Scan failed')}), 400
             
     except Exception as e:
         logger.error(f"Error starting quick scan: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tasks/<task_id>/status')
+@login_required
+def api_task_status(task_id):
+    """Get Celery task status"""
+    try:
+        result = scan_service.get_task_status(task_id)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting task status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tasks/<task_id>/cancel', methods=['POST'])
+@login_required
+def api_cancel_task(task_id):
+    """Cancel a Celery task"""
+    try:
+        result = scan_service.cancel_task(task_id)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error cancelling task: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tasks/active')
+@login_required
+def api_active_tasks():
+    """Get all active Celery tasks"""
+    try:
+        result = scan_service.get_active_tasks()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting active tasks: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scans/<scan_id>/fuzzing/start', methods=['POST'])
+@login_required
+def api_start_fuzzing(scan_id):
+    """Start fuzzing for a scan"""
+    try:
+        data = request.get_json() or {}
+        fuzzing_config = data.get('config', {})
+        
+        result = scan_service.start_fuzzing_async(scan_id, fuzzing_config)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error starting fuzzing: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/scan/<scan_id>/status')
+@login_required
+def scan_status(scan_id):
+    """Show scan status page with real-time updates"""
+    try:
+        scan = scan_service.get_scan_status(scan_id)
+        if not scan:
+            flash('Scan not found')
+            return redirect(url_for('dashboard'))
+        
+        # Check if user owns this scan
+        if scan.get('user_id') != current_user.id:
+            flash('Access denied')
+            return redirect(url_for('dashboard'))
+        
+        return render_template('scan_status.html', scan=scan, scan_id=scan_id)
+    except Exception as e:
+        logger.error(f"Error loading scan status: {e}")
+        flash('Error loading scan status')
+        return redirect(url_for('dashboard'))
 
 
 @app.route('/debug/session')
@@ -1113,45 +1216,6 @@ def scan():
 
 
 # Advanced scan functionality is now integrated into the main /scan route
-
-
-@app.route('/results/<scan_id>')
-def results(scan_id):
-    """Show comprehensive final results - accessible without login"""
-    session_db = get_session()
-    try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            return redirect(url_for('no_login_scan'))
-        
-        # Get static analysis results
-        vulnerabilities = scan.vulnerabilities_json or []
-        patches = scan.patches_json or []
-        
-        # Get fuzzing results
-        scans_dir = os.getenv('SCANS_DIR', './scans')
-        fuzz_results_path = os.path.join(scans_dir, scan_id, 'fuzz', 'results', 'campaign_results.json')
-        fuzz_results = None
-        if os.path.exists(fuzz_results_path):
-            with open(fuzz_results_path, 'r') as f:
-                fuzz_results = json.load(f)
-        
-        # Get triage results
-        triage_results_path = os.path.join(scans_dir, scan_id, 'fuzz', 'triage', 'triage_results.json')
-        triage_results = None
-        if os.path.exists(triage_results_path):
-            with open(triage_results_path, 'r') as f:
-                triage_results = json.load(f)
-        
-        return render_template('final_results.html',
-                             scan_id=scan_id,
-                             scan=scan,
-                             vulnerabilities=vulnerabilities,
-                             patches=patches,
-                             fuzz_results=fuzz_results,
-                             triage_results=triage_results)
-    finally:
-        session_db.close()
 
 
 @app.route('/scan-progress/<scan_id>')
@@ -1338,7 +1402,7 @@ def determine_vulnerability_type(rule_id, message, severity):
     if ('buffer' in rule_id or 'overflow' in rule_id or 
         'strcpy' in message or 'sprintf' in message or 'strcat' in message or 'gets' in message):
         
-        # Downgrade some buffer overflows based on context
+        # Adjust severity and risk score based on context
         if ('printf(' in message and ('buffer overflows' in message or 'gets' in message)):
             # This is just a printf statement, not an actual buffer overflow
             actual_severity = 'low'
@@ -1362,9 +1426,9 @@ def determine_vulnerability_type(rule_id, message, severity):
             # Direct dangerous sprintf calls - keep high  
             risk_score = 8.5 if actual_severity == 'high' else 6.2
         else:
-            # Other buffer overflow patterns - medium risk by default
-            actual_severity = 'medium'
-            risk_score = 6.0
+            # Other buffer overflow patterns - high risk by default
+            actual_severity = 'high'
+            risk_score = 8.0
             
         return {
             'actual_severity': actual_severity,
@@ -1608,8 +1672,16 @@ def detailed_findings(scan_id):
                 }
                 cwe_description = cwe_descriptions.get(actual_cwe, 'Security Vulnerability')
                 
-                # Use actual Cppcheck priority score if available
-                risk_score = finding.get('priority_score', 5.0)
+                # Use actual Cppcheck priority score if available, otherwise calculate
+                risk_score = finding.get('priority_score')
+                if risk_score is None:
+                    # Fallback calculation based on CWE severity
+                    if actual_cwe in ['788', '787', '415', '476']:  # Critical vulnerabilities
+                        risk_score = 8.5 if severity == 'high' else 7.0
+                    elif actual_cwe in ['401', '775', '190', '457']:  # High-risk vulnerabilities  
+                        risk_score = 7.0 if severity == 'high' else 5.5
+                    else:  # Medium/low risk
+                        risk_score = 5.0 if severity == 'high' else 3.5
                 
             else:
                 # Fallback to determine_vulnerability_type for findings without CWE
@@ -1718,107 +1790,328 @@ def detailed_findings(scan_id):
         return redirect(url_for('no_login_scan'))
 
 
+@app.route('/debug-test')
+def debug_test():
+    """Simple debug test route"""
+    return "<h1>Debug Test Route Working!</h1>"
+
+
+def classify_vulnerability_for_patching(rule_id, message, cwe):
+    """Classify vulnerability for patch generation stages"""
+    rule_id = rule_id.lower() if rule_id else ''
+    message = message.lower() if message else ''
+    cwe = str(cwe) if cwe else ''
+    
+    # Stage 1: Rule-based repairs (deterministic)
+    
+    # Null pointer dereference (CWE-476)
+    if (cwe == '476' or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'nullpointer', 'null pointer', 'dereference', 'null_ptr'
+        ])):
+        return {
+            'stage': 1,
+            'category': 'null_pointer_dereference',
+            'enabled': True,
+            'reason': 'Null pointer dereference - deterministic repair available'
+        }
+    
+    # Memory management issues (CWE-401, CWE-415, CWE-416)
+    if (cwe in ['401', '415', '416'] or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'memleak', 'memory leak', 'doublefree', 'double free', 'memory pointed', 'freed twice'
+        ])):
+        return {
+            'stage': 1,
+            'category': 'memory_deallocation',
+            'enabled': True,
+            'reason': 'Memory management issue - MemFix repair available'
+        }
+    
+    # Integer overflow (CWE-190, CWE-191)
+    if (cwe in ['190', '191'] or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'overflow', 'integer overflow', 'signed integer overflow'
+        ])):
+        return {
+            'stage': 1,
+            'category': 'integer_overflow',
+            'enabled': True,
+            'reason': 'Integer overflow - IntRepair available'
+        }
+    
+    # Uninitialized variables (CWE-457, CWE-398, CWE-908)
+    if (cwe in ['457', '398', '908'] or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'uninitialized', 'uninit', 'scope of the variable', 'variable can be reduced'
+        ])):
+        return {
+            'stage': 1,
+            'category': 'uninitialized_variable',
+            'enabled': True,
+            'reason': 'Uninitialized variable - deterministic repair available'
+        }
+    
+    # Dead code (CWE-561) - disabled by default
+    if (cwe == '561' or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'dead', 'unused', 'unreachable'
+        ])):
+        return {
+            'stage': 1,
+            'category': 'dead_code',
+            'enabled': False,  # Disabled due to low success rate
+            'reason': 'Dead code - disabled due to low success rate (20-40%)'
+        }
+    
+    # Stage 2: AI-assisted repairs (complex cases)
+    
+    # Buffer overflow (CWE-121, CWE-122, CWE-788)
+    if (cwe in ['121', '122', '788'] or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'buffer', 'array', 'bounds', 'buffer overflow'
+        ])):
+        return {
+            'stage': 2,
+            'category': 'buffer_overflow',
+            'enabled': True,
+            'reason': 'Buffer overflow requires contextual analysis'
+        }
+    
+    # Format string (CWE-134)
+    if (cwe == '134' or 
+        any(keyword in rule_id or keyword in message for keyword in [
+            'format', 'printf', 'sprintf'
+        ])):
+        return {
+            'stage': 2,
+            'category': 'format_string',
+            'enabled': True,
+            'reason': 'Format string vulnerability requires calling convention understanding'
+        }
+    
+    # Default to Stage 2 for unknown vulnerabilities
+    return {
+        'stage': 2,
+        'category': 'other',
+        'enabled': True,
+        'reason': 'Complex vulnerability requiring AI analysis'
+    }
+
+def get_existing_patches(scan_id):
+    """Get existing patches for a scan"""
+    try:
+        # Try to get patches directly from database using the new schema
+        from src.models.scan_v2 import RepairPatch, DatabaseManager
+        import os
+        
+        DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://autovulrepair:autovulrepair_secure_password_2024@localhost:5432/autovulrepair')
+        db_manager = DatabaseManager(DATABASE_URL)
+        session_db = db_manager.get_session()
+        
+        repair_patches = session_db.query(RepairPatch).filter_by(scan_id=scan_id).all()
+        
+        if repair_patches:
+            # Convert RepairPatch objects to legacy format
+            patches = []
+            for repair_patch in repair_patches:
+                patch_dict = {
+                    'patch_id': str(repair_patch.id),
+                    'finding_id': str(repair_patch.finding_id) if repair_patch.finding_id else None,
+                    'file': repair_patch.file_path,
+                    'original': repair_patch.original_code,
+                    'repaired': repair_patch.patched_code,
+                    'diff': repair_patch.patch_diff,
+                    'category': repair_patch.repair_method,
+                    'confidence': float(repair_patch.confidence_score) if repair_patch.confidence_score else None,
+                    'stage': 1,  # Assume Stage 1 for now
+                    'description': f"Automated repair using {repair_patch.repair_method}",
+                    'created_at': repair_patch.created_at.isoformat() if repair_patch.created_at else None
+                }
+                patches.append(patch_dict)
+            
+            session_db.close()
+            logger.info(f"[GET_PATCHES] Loaded {len(patches)} patches from database for scan {scan_id}")
+            return patches
+        
+        session_db.close()
+        logger.info(f"[GET_PATCHES] No patches found in database for scan {scan_id}")
+        
+    except Exception as db_error:
+        logger.warning(f"[GET_PATCHES] Database error for scan {scan_id}: {db_error}")
+    
+    # Fallback: try to load from file system
+    try:
+        import json
+        import os
+        scan_dir = os.path.join('scans', scan_id)
+        patches_file = os.path.join(scan_dir, 'patches.json')
+        
+        if os.path.exists(patches_file):
+            with open(patches_file, 'r') as f:
+                patches_data = json.load(f)
+                # Convert from dict format to list format if needed
+                if isinstance(patches_data, dict):
+                    patches = list(patches_data.values())
+                else:
+                    patches = patches_data
+                logger.info(f"[GET_PATCHES] Loaded {len(patches)} patches from file system for scan {scan_id}")
+                return patches
+    except Exception as file_error:
+        logger.warning(f"[GET_PATCHES] File system error for scan {scan_id}: {file_error}")
+    
+    logger.info(f"[GET_PATCHES] No patches found for scan {scan_id}")
+    return []
+
+
+
 @app.route('/patch-review/<scan_id>')
 def patch_review(scan_id):
-    """Show patch review interface with Stage 1 repairs - accessible without login"""
-    session_db = get_session()
+    """Show patch generation interface for vulnerabilities"""
+    logger.info(f"[PATCH_REVIEW] Request for scan: {scan_id}")
+    
+    try:
+        # Try to get scan results from the database
+        try:
+            results = scan_service.get_scan_results(scan_id)
+            if 'error' not in results:
+                scan = results['scan']
+                findings = results['findings']
+                logger.info(f"[PATCH_REVIEW] Loaded scan from database with {len(findings)} findings")
+            else:
+                raise Exception("Scan not found in database")
+        except Exception as db_error:
+            logger.warning(f"[PATCH_REVIEW] Database error for scan {scan_id}: {db_error}")
+            # Try to load from file system as fallback
+            import json
+            import os
+            scan_dir = os.path.join('scans', scan_id)
+            findings_file = os.path.join(scan_dir, 'static_findings.json')
+            
+            if os.path.exists(findings_file):
+                logger.info(f"[PATCH_REVIEW] Loading scan data from file system: {findings_file}")
+                with open(findings_file, 'r') as f:
+                    file_data = json.load(f)
+                
+                # Create mock scan data
+                scan = {
+                    'id': scan_id,
+                    'status': 'completed',
+                    'analysis_tool': 'cppcheck',
+                    'repo_url': 'https://github.com/malikadan212/Test-Repo.git'
+                }
+                findings = file_data.get('findings', [])
+                
+                logger.info(f"[PATCH_REVIEW] Loaded {len(findings)} findings from file system")
+            else:
+                logger.warning(f"[PATCH_REVIEW] No file system data found for scan: {scan_id}")
+                flash('Scan not found.', 'error')
+                return redirect(url_for('no_login_scan'))
+        
+        logger.info(f"[PATCH_REVIEW] Processing {len(findings)} findings for patch generation")
+        
+        # Convert findings to vulnerability format and classify for patching
+        vulnerabilities = []
+        seen_vulnerabilities = set()  # Track duplicates by (file, line, message)
+        
+        for i, finding in enumerate(findings):
+            # Map severity
+            severity_mapping = {
+                'error': 'high',
+                'warning': 'medium', 
+                'style': 'low',
+                'performance': 'medium',
+                'portability': 'medium',
+                'information': 'low',
+                'info': 'low',
+                'unknown': 'low'
+            }
+            
+            raw_severity = finding.get('severity', 'info').lower()
+            severity = severity_mapping.get(raw_severity, 'low')
+            
+            # Get CWE and vulnerability type
+            actual_cwe = finding.get('cwe', '')
+            rule_id = finding.get('rule_id', '').lower()
+            message = finding.get('message', '')
+            
+            # Get file and line for deduplication
+            file_path = finding.get('file', finding.get('file_path', ''))
+            line_num = finding.get('line', finding.get('line_number', 0))
+            
+            # Create deduplication key
+            dedup_key = (file_path, line_num, message.strip())
+            if dedup_key in seen_vulnerabilities:
+                logger.debug(f"Skipping duplicate vulnerability: {file_path}:{line_num} - {message[:50]}")
+                continue
+            seen_vulnerabilities.add(dedup_key)
+            
+            # Get the finding ID - database uses 'id', file system uses 'finding_id'
+            finding_id = finding.get('finding_id') or str(finding.get('id', f"vuln_{i}"))
+            
+            # Classify vulnerability for patch generation
+            classification = classify_vulnerability_for_patching(rule_id, message, actual_cwe)
+            
+            vuln = {
+                'finding_id': finding_id,  # Use the finding_id we extracted
+                'file_name': finding.get('file_name', file_path.split('/')[-1] if file_path else 'unknown'),
+                'file': file_path,
+                'line': line_num,
+                'column': finding.get('column', finding.get('column_number', 0)),
+                'function': finding.get('function', finding.get('function_name', '')),
+                'message': message,
+                'cwe': actual_cwe or '476',  # Default to null pointer if no CWE
+                'severity': severity,
+                'classification': classification,
+                'code_context': extract_code_context(scan_id, file_path, line_num, context_lines=2)
+            }
+            
+            vulnerabilities.append(vuln)
+        
+        # Get existing patches (if any)
+        patches = get_existing_patches(scan_id)
+        
+        logger.info(f"[PATCH_REVIEW] Loaded {len(patches)} existing patches for scan {scan_id}")
+        if patches:
+            logger.info(f"[PATCH_REVIEW] Sample patch IDs: {[p.get('patch_id', 'NO_ID')[:8] for p in patches[:3]]}")
+        
+        # Calculate stage counts
+        stage1_vulns = [v for v in vulnerabilities if v['classification']['stage'] == 1 and v['classification']['enabled']]
+        stage2_vulns = [v for v in vulnerabilities if v['classification']['stage'] == 2]
+        
+        stage1_counts = {
+            'null_pointer': len([v for v in stage1_vulns if 'null' in v['classification']['category']]),
+            'memory_dealloc': len([v for v in stage1_vulns if 'memory' in v['classification']['category']]),
+            'integer_overflow': len([v for v in stage1_vulns if 'integer' in v['classification']['category']]),
+            'uninitialized_var': len([v for v in stage1_vulns if 'uninitialized' in v['classification']['category']]),
+            'dead_code': len([v for v in stage1_vulns if 'dead_code' in v['classification']['category']])
+        }
+        
+        logger.info(f"[PATCH_REVIEW] Rendering patch review with {len(stage1_vulns)} Stage 1 and {len(stage2_vulns)} Stage 2 vulnerabilities")
+        
+        return render_template('patch_review.html',
+                             scan_id=scan_id,
+                             vulnerabilities=vulnerabilities,
+                             patches=patches,
+                             total_stage1=len(stage1_vulns),
+                             total_stage2=len(stage2_vulns),
+                             stage1_counts=stage1_counts,
+                             stage2_vulns=stage2_vulns)
+                             
+    except Exception as e:
+        logger.error(f"[PATCH_REVIEW] Error processing scan {scan_id}: {e}", exc_info=True)
+        flash('Error loading patch review interface.', 'error')
+        return redirect(url_for('detailed_findings', scan_id=scan_id))
+
+
+# Patch review route temporarily disabled due to technical issues
+# Users can access vulnerability details through the detailed findings page
 
 # Temporary redirect for patch_dashboard to repair_dashboard
 @app.route('/patch/<scan_id>')
 def patch_dashboard(scan_id):
     """Temporary redirect to repair_dashboard"""
     return redirect(url_for('repair_dashboard', scan_id=scan_id))
-    """Show patch review interface with Stage 1 repairs - accessible without login"""
-    session_db = get_session()
-    try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            flash('Scan not found', 'error')
-            return redirect(url_for('home'))
-        
-        # Load vulnerabilities from static_findings.json
-        import json
-        from pathlib import Path
-        
-        findings_file = Path('scans') / scan_id / 'static_findings.json'
-        vulnerabilities = []
-        
-        if findings_file.exists():
-            with open(findings_file, 'r') as f:
-                findings_data = json.load(f)
-            vulnerabilities = findings_data.get('findings', [])
-            logger.info(f"Loaded {len(vulnerabilities)} vulnerabilities from static_findings.json")
-        else:
-            logger.warning(f"Static findings file not found: {findings_file}")
-        
-        # Import Stage 1 components
-        from src.repair.stage1 import Stage1RepairEngine, classify_vulnerability
-        
-        # Initialize repair engine
-        repair_engine = Stage1RepairEngine(enable_dead_code=False)
-        
-        # Classify vulnerabilities and compute statistics
-        classified_vulns = []
-        stage1_counts = {
-            'null_pointer': 0,
-            'uninitialized_var': 0,
-            'dead_code': 0,
-            'integer_overflow': 0,
-            'memory_dealloc': 0
-        }
-        stage2_vulns = []
-        
-        for vuln in vulnerabilities:
-            classification = classify_vulnerability(vuln)
-            vuln_with_class = vuln.copy()
-            vuln_with_class['classification'] = classification
-            
-            # Add code context for better visualization
-            if vuln.get('file') and vuln.get('line'):
-                vuln_with_class['code_context'] = extract_code_context(
-                    scan_id,
-                    vuln['file'],
-                    vuln['line'],
-                    context_lines=5
-                )
-            
-            classified_vulns.append(vuln_with_class)
-            
-            # Count by category
-            if classification['stage'] == 1 and classification['enabled']:
-                category = classification['category']
-                if category in stage1_counts:
-                    stage1_counts[category] += 1
-            elif classification['stage'] == 2:
-                stage2_vulns.append(vuln_with_class)
-        
-        # Calculate totals
-        total_stage1 = sum(stage1_counts.values())
-        total_stage2 = len(stage2_vulns)
-        
-        # Get existing patches (if any were generated)
-        # Refresh the scan object to get latest patches from database
-        session_db.expire(scan)
-        session_db.refresh(scan)
-        patches = scan.patches_json or []
-        
-        # Filter out invalid patches (those with no content)
-        valid_patches = [p for p in patches if p.get('file') and p.get('line') and p.get('original')]
-        
-        logger.info(f"Loaded {len(patches)} total patches, {len(valid_patches)} valid patches")
-        
-        return render_template('patch_review.html',
-                             scan_id=scan_id,
-                             scan=scan,
-                             vulnerabilities=classified_vulns,
-                             patches=valid_patches,
-                             repair_engine=repair_engine,
-                             stage1_counts=stage1_counts,
-                             total_stage1=total_stage1,
-                             total_stage2=total_stage2,
-                             stage2_vulns=stage2_vulns)
-    finally:
-        session_db.close()
 
 
 @app.route('/fuzzing-dashboard')
@@ -2080,72 +2373,183 @@ def api_cancel_scan(scan_id):
 def api_generate_single_patch(scan_id, vuln_id):
     """API endpoint to generate a single Stage 1 patch"""
     logger.info(f"[API] Single patch generation requested for scan: {scan_id}, vuln: {vuln_id}")
-    session_db = get_session()
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            return jsonify({'error': 'Scan not found'}), 404
+        # Check if patch already exists for this vulnerability
+        existing_patches = get_existing_patches(scan_id)
+        for patch in existing_patches:
+            if patch.get('finding_id') == vuln_id:
+                logger.info(f"[API] Patch already exists for vulnerability {vuln_id}")
+                return jsonify({
+                    'success': True,
+                    'patch': patch,
+                    'message': 'Patch already exists'
+                })
         
-        # Load vulnerabilities from static_findings.json
-        import json
-        from pathlib import Path
+        # Try to get scan results from the database first
+        try:
+            results = scan_service.get_scan_results(scan_id)
+            if 'error' not in results:
+                scan = results['scan']
+                findings = results['findings']
+                logger.info(f"[API] Loaded {len(findings)} findings from database")
+            else:
+                raise Exception("Scan not found in database")
+        except Exception as db_error:
+            logger.warning(f"[API] Database error for scan {scan_id}: {db_error}")
+            # Try to load from file system as fallback
+            import json
+            import os
+            scan_dir = os.path.join('scans', scan_id)
+            findings_file = os.path.join(scan_dir, 'static_findings.json')
+            
+            if os.path.exists(findings_file):
+                logger.info(f"[API] Loading scan data from file system: {findings_file}")
+                with open(findings_file, 'r') as f:
+                    file_data = json.load(f)
+                
+                # Create mock scan data
+                scan = {
+                    'id': scan_id,
+                    'status': 'completed',
+                    'analysis_tool': 'cppcheck',
+                    'repo_url': 'https://github.com/malikadan212/Test-Repo.git'
+                }
+                findings = file_data.get('findings', [])
+                
+                logger.info(f"[API] Loaded {len(findings)} findings from file system")
+            else:
+                logger.warning(f"[API] No file system data found for scan: {scan_id}")
+                return jsonify({'error': 'Scan not found'}), 404
         
-        findings_file = Path('scans') / scan_id / 'static_findings.json'
-        if not findings_file.exists():
-            return jsonify({'error': 'Static findings file not found'}), 404
+        # Find the specific vulnerability by database ID or finding_id
+        vuln = None
+        for finding in findings:
+            # Try both 'id' (database) and 'finding_id' (file system) fields
+            finding_id = str(finding.get('id', ''))
+            finding_id_alt = str(finding.get('finding_id', ''))
+            
+            if finding_id == vuln_id or finding_id_alt == vuln_id:
+                vuln = finding
+                break
         
-        with open(findings_file, 'r') as f:
-            findings_data = json.load(f)
-        
-        vulnerabilities = findings_data.get('findings', [])
-        
-        # Find the specific vulnerability
-        vuln = next((v for v in vulnerabilities if v.get('finding_id') == vuln_id), None)
         if not vuln:
+            logger.warning(f"[API] Vulnerability {vuln_id} not found in {len(findings)} findings")
             return jsonify({'error': 'Vulnerability not found'}), 404
         
-        # Get source files
-        source_files = {}
-        scan_dir = Path('scans') / scan_id / 'source'
+        # Get source files from database using scan service
+        results = scan_service.get_scan_results(scan_id)
+        if 'error' in results:
+            return jsonify({'error': 'Scan not found'}), 404
         
-        if scan_dir.exists():
-            for source_file in scan_dir.rglob('*.c*'):
+        source_files = {}
+        for source_file in results.get('source_files', []):
+            file_path = source_file.get('file_path', '')
+            
+            # Get content from database
+            try:
+                from src.models.scan_v2 import ScanSource, DatabaseManager
+                import os
+                
+                DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://autovulrepair:autovulrepair_secure_password_2024@localhost:5432/autovulrepair')
+                db_manager = DatabaseManager(DATABASE_URL)
+                session = db_manager.get_session()
+                
                 try:
-                    with open(source_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        filename = source_file.name
+                    source = session.query(ScanSource).filter(ScanSource.id == source_file.get('id')).first()
+                    if source:
+                        content = source.file_content
+                        filename = os.path.basename(file_path)
+                        # Map multiple path formats for compatibility
                         source_files[f'/tmp/source/{filename}'] = content
                         source_files[filename] = content
-                        source_files[str(source_file)] = content
-                except Exception as e:
-                    logger.warning(f"Could not read {source_file}: {e}")
+                        source_files[file_path] = content
+                finally:
+                    session.close()
+                    
+            except Exception as e:
+                logger.warning(f"Could not read source file {file_path}: {e}")
+        
+        logger.info(f"Loaded {len(source_files)} source file mappings from database")
         
         # Initialize Stage 1 repair engine
         from src.repair.stage1 import Stage1RepairEngine
         
         repair_engine = Stage1RepairEngine(enable_dead_code=False)
         
-        # Get source code
-        file_path = vuln.get('file', '')
+        # Get source code - handle both database and file system field names
+        file_path = vuln.get('file_path') or vuln.get('file', '')
         source_code = source_files.get(file_path)
         
         if not source_code:
             return jsonify({'error': f'Source code not found for {file_path}'}), 400
         
+        # Convert finding to format expected by repair engine - handle both database and file system field names
+        vuln_for_repair = {
+            'finding_id': str(vuln.get('id') or vuln.get('finding_id', '')),
+            'rule_id': vuln.get('rule_id', ''),
+            'severity': vuln.get('severity', ''),
+            'message': vuln.get('message', ''),
+            'cwe': vuln.get('cwe', ''),
+            'file': vuln.get('file_path') or vuln.get('file', ''),
+            'line': vuln.get('line_number') or vuln.get('line', 0),
+            'column': vuln.get('column_number') or vuln.get('column', 0),
+            'function': vuln.get('function_name') or vuln.get('function', '')
+        }
+        
         # Generate patch
-        patch = repair_engine.generate_patch(vuln, source_code, file_path)
+        patch = repair_engine.generate_patch(vuln_for_repair, source_code, file_path)
         
         if patch:
-            # Save patch to database
-            existing_patches = scan.patches_json or []
-            existing_patches.append(patch)
-            scan.patches_json = existing_patches
+            # Try to save patch (detect if we loaded from database or file system)
+            loaded_from_database = hasattr(scan, 'patches_json')  # Database objects have this attribute
             
-            # Mark the JSON field as modified (required for SQLAlchemy to detect changes)
-            from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(scan, 'patches_json')
-            
-            session_db.commit()
+            try:
+                if loaded_from_database:
+                    # Save to database
+                    session_db = get_session()
+                    existing_patches = scan.patches_json or []
+                    existing_patches.append(patch)
+                    scan.patches_json = existing_patches
+                    
+                    # Mark the JSON field as modified (required for SQLAlchemy to detect changes)
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(scan, 'patches_json')
+                    
+                    session_db.commit()
+                    session_db.close()
+                    logger.info(f"[API] Saved patch to database for vulnerability {vuln_id}")
+                else:
+                    # Save to file system
+                    import json
+                    import os
+                    scan_dir = os.path.join('scans', scan_id)
+                    os.makedirs(scan_dir, exist_ok=True)
+                    patches_file = os.path.join(scan_dir, 'patches.json')
+                    
+                    # Load existing patches
+                    existing_patches = []
+                    if os.path.exists(patches_file):
+                        try:
+                            with open(patches_file, 'r') as f:
+                                patches_data = json.load(f)
+                                if isinstance(patches_data, dict):
+                                    existing_patches = list(patches_data.values())
+                                else:
+                                    existing_patches = patches_data
+                        except Exception as e:
+                            logger.warning(f"Could not load existing patches: {e}")
+                    
+                    # Add new patch
+                    existing_patches.append(patch)
+                    
+                    # Save to file
+                    with open(patches_file, 'w') as f:
+                        json.dump(existing_patches, f, indent=2)
+                    
+                    logger.info(f"[API] Saved patch to file system for vulnerability {vuln_id}")
+            except Exception as save_error:
+                logger.warning(f"[API] Could not save patch: {save_error}")
             
             logger.info(f"[API] Generated single patch for {vuln_id}")
             
@@ -2159,69 +2563,135 @@ def api_generate_single_patch(scan_id, vuln_id):
     except Exception as e:
         logger.error(f"[API] Error generating single patch: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-    finally:
-        session_db.close()
 
 
 @app.route('/api/generate-stage1-patches/<scan_id>', methods=['POST'])
 def api_generate_stage1_patches(scan_id):
     """API endpoint to generate Stage 1 patches - accessible without login"""
-    logger.info(f"[API] Stage 1 patch generation requested for scan: {scan_id}")
-    session_db = get_session()
+    logger.info(f"[API] Stage 1 patch generation requested for scan: {scan_id} - UPDATED CODE VERSION 2")
+    
     try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            return jsonify({'error': 'Scan not found'}), 404
+        # Check existing patches first to avoid duplicates
+        existing_patches = get_existing_patches(scan_id)
+        existing_patch_finding_ids = {patch.get('finding_id') for patch in existing_patches if patch.get('finding_id')}
+        logger.info(f"[API] Found {len(existing_patches)} existing patches for {len(existing_patch_finding_ids)} vulnerabilities")
         
-        # Load vulnerabilities from static_findings.json instead of database
-        import json
-        from pathlib import Path
+        # Try to get scan results from the database first
+        try:
+            results = scan_service.get_scan_results(scan_id)
+            if 'error' not in results:
+                scan = results['scan']
+                findings = results['findings']
+                logger.info(f"[API] Loaded {len(findings)} findings from database")
+            else:
+                raise Exception("Scan not found in database")
+        except Exception as db_error:
+            logger.warning(f"[API] Database error for scan {scan_id}: {db_error}")
+            # Try to load from file system as fallback
+            import json
+            import os
+            scan_dir = os.path.join('scans', scan_id)
+            findings_file = os.path.join(scan_dir, 'static_findings.json')
+            
+            if os.path.exists(findings_file):
+                logger.info(f"[API] Loading scan data from file system: {findings_file}")
+                with open(findings_file, 'r') as f:
+                    file_data = json.load(f)
+                
+                # Create mock scan data
+                scan = {
+                    'id': scan_id,
+                    'status': 'completed',
+                    'analysis_tool': 'cppcheck',
+                    'repo_url': 'https://github.com/malikadan212/Test-Repo.git'
+                }
+                findings = file_data.get('findings', [])
+                
+                logger.info(f"[API] Loaded {len(findings)} findings from file system")
+            else:
+                logger.warning(f"[API] No file system data found for scan: {scan_id}")
+                return jsonify({'error': 'Scan not found'}), 404
         
-        findings_file = Path('scans') / scan_id / 'static_findings.json'
-        if not findings_file.exists():
-            return jsonify({'error': 'Static findings file not found'}), 404
-        
-        with open(findings_file, 'r') as f:
-            findings_data = json.load(f)
-        
-        vulnerabilities = findings_data.get('findings', [])
-        if not vulnerabilities:
+        if not findings:
             return jsonify({'error': 'No vulnerabilities found'}), 400
         
-        logger.info(f"Loaded {len(vulnerabilities)} vulnerabilities from static_findings.json")
+        logger.info(f"[API] Loaded {len(findings)} vulnerabilities from database")
         
-        # Get source files from scan artifacts
-        import os
-        from pathlib import Path
+        # Convert findings to format expected by repair engine - handle both database and file system field names
+        # Filter out vulnerabilities that already have patches
+        vulnerabilities = []
+        skipped_count = 0
+        for finding in findings:
+            finding_id = str(finding.get('id') or finding.get('finding_id', ''))
+            
+            # Skip if patch already exists
+            if finding_id in existing_patch_finding_ids:
+                skipped_count += 1
+                logger.debug(f"[API] Skipping vulnerability {finding_id} - patch already exists")
+                continue
+            
+            vuln = {
+                'finding_id': finding_id,
+                'rule_id': finding.get('rule_id', ''),
+                'severity': finding.get('severity', ''),
+                'message': finding.get('message', ''),
+                'cwe': finding.get('cwe', ''),
+                'file': finding.get('file_path') or finding.get('file', ''),
+                'line': finding.get('line_number') or finding.get('line', 0),
+                'column': finding.get('column_number') or finding.get('column', 0),
+                'function': finding.get('function_name') or finding.get('function', '')
+            }
+            vulnerabilities.append(vuln)
+        
+        logger.info(f"[API] Processing {len(vulnerabilities)} vulnerabilities (skipped {skipped_count} with existing patches)")
+        
+        # If no vulnerabilities need patches, return early
+        if not vulnerabilities:
+            logger.info(f"[API] All vulnerabilities already have patches")
+            return jsonify({
+                'success': True,
+                'patches_generated': 0,
+                'message': 'All vulnerabilities already have patches',
+                'existing_patches': len(existing_patches),
+                'skipped_count': skipped_count
+            })
+        
+        # Get source files from database using scan service
+        results = scan_service.get_scan_results(scan_id)
+        if 'error' in results:
+            return jsonify({'error': 'Scan not found'}), 404
         
         source_files = {}
-        
-        # Find the scan's source directory
-        scan_dir = Path('scans') / scan_id / 'source'
-        
-        if scan_dir.exists():
-            logger.info(f"Loading source files from: {scan_dir}")
-            for source_file in scan_dir.rglob('*.c*'):
+        for source_file in results.get('source_files', []):
+            file_path = source_file.get('file_path', '')
+            
+            # Get content from database
+            try:
+                from src.models.scan_v2 import ScanSource, DatabaseManager
+                import os
+                
+                DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://autovulrepair:autovulrepair_secure_password_2024@localhost:5432/autovulrepair')
+                db_manager = DatabaseManager(DATABASE_URL)
+                session = db_manager.get_session()
+                
                 try:
-                    with open(source_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        filename = source_file.name
-                        
-                        # Map multiple path formats:
-                        # 1. /tmp/source/filename.cpp (Docker container path)
+                    source = session.query(ScanSource).filter(ScanSource.id == source_file.get('id')).first()
+                    if source:
+                        content = source.file_content
+                        filename = os.path.basename(file_path)
+                        # Map multiple path formats for compatibility
                         source_files[f'/tmp/source/{filename}'] = content
-                        # 2. Just the filename
                         source_files[filename] = content
-                        # 3. The actual path
-                        source_files[str(source_file)] = content
+                        source_files[file_path] = content
                         
                         logger.info(f"Loaded: {filename} ({len(content)} bytes)")
-                except Exception as e:
-                    logger.warning(f"Could not read {source_file}: {e}")
-            
-            logger.info(f"Loaded {len(set(source_files.values()))} unique source files with {len(source_files)} path mappings")
-        else:
-            logger.warning(f"Source directory not found: {scan_dir}")
+                finally:
+                    session.close()
+                    
+            except Exception as e:
+                logger.warning(f"Could not read source file {file_path}: {e}")
+        
+        logger.info(f"Loaded {len(set(source_files.values()))} unique source files with {len(source_files)} path mappings from database")
         
         # Initialize Stage 1 repair engine
         from src.repair.stage1 import Stage1RepairEngine
@@ -2232,54 +2702,131 @@ def api_generate_stage1_patches(scan_id):
         # Generate patches
         result = repair_engine.batch_repair(vulnerabilities, source_files)
         
-        # Save patches to database
-        existing_patches = scan.patches_json or []
-        new_patches = result['patches']
+        # Try to save patches (detect if we loaded from database or file system)
+        loaded_from_database = False
         
-        logger.info(f"Before merge: {len(existing_patches)} existing patches, {len(new_patches)} new patches")
+        try:
+            results = scan_service.get_scan_results(scan_id)
+            if 'error' not in results:
+                loaded_from_database = True
+                logger.info(f"[API] Detected database loading: {loaded_from_database}")
+        except Exception as detect_error:
+            logger.warning(f"[API] Error detecting database loading: {detect_error}")
         
-        # Merge patches (avoid duplicates) - filter out invalid patches
-        patch_ids = {p.get('patch_id') for p in existing_patches if p.get('patch_id')}
-        added_count = 0
-        for patch in new_patches:
-            patch_id = patch.get('patch_id')
-            if patch_id and patch_id not in patch_ids:
-                existing_patches.append(patch)
-                added_count += 1
-            elif not patch_id:
-                logger.warning(f"Patch missing patch_id: {patch}")
+        logger.info(f"[API] Will save patches to: {'database' if loaded_from_database else 'file system'}")
         
-        scan.patches_json = existing_patches
+        try:
+            if loaded_from_database:
+                # Save to new database schema using RepairPatch table
+                from src.models.scan_v2 import RepairPatch, DatabaseManager
+                import os
+                
+                DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://autovulrepair:autovulrepair_secure_password_2024@localhost:5432/autovulrepair')
+                db_manager = DatabaseManager(DATABASE_URL)
+                session_db = db_manager.get_session()
+                
+                new_patches = result['patches']
+                
+                logger.info(f"[API] Saving {len(new_patches)} patches to new database schema")
+                
+                # Get existing patch IDs to avoid duplicates
+                existing_patches = session_db.query(RepairPatch).filter_by(scan_id=scan_id).all()
+                existing_patch_ids = {str(p.id) for p in existing_patches}
+                
+                logger.info(f"[API] Found {len(existing_patches)} existing patches")
+                
+                added_count = 0
+                for patch in new_patches:
+                    patch_id = patch.get('patch_id')
+                    if not patch_id:
+                        logger.warning(f"[API] Patch missing patch_id: {patch}")
+                        continue
+                    
+                    if patch_id in existing_patch_ids:
+                        logger.debug(f"[API] Patch {patch_id} already exists, skipping")
+                        continue
+                    
+                    # Create RepairPatch object
+                    repair_patch = RepairPatch(
+                        scan_id=scan_id,
+                        finding_id=patch.get('finding_id'),  # May be None
+                        file_path=patch.get('file', ''),
+                        original_code=patch.get('original', ''),
+                        patched_code=patch.get('repaired', '') or patch.get('patched', ''),
+                        patch_diff=patch.get('diff', ''),
+                        repair_method=patch.get('category', 'unknown'),
+                        confidence_score=patch.get('confidence', 0.8)
+                    )
+                    
+                    session_db.add(repair_patch)
+                    added_count += 1
+                    logger.debug(f"[API] Added patch {patch_id} to session")
+                
+                logger.info(f"[API] Committing {added_count} patches to database...")
+                session_db.commit()
+                logger.info(f"[API] Database commit successful!")
+                
+                session_db.close()
+                
+                logger.info(f"[API] Saved {added_count} new patches to database. Total patches: {len(existing_patches) + added_count}")
+            else:
+                # Save to file system
+                import json
+                import os
+                scan_dir = os.path.join('scans', scan_id)
+                os.makedirs(scan_dir, exist_ok=True)
+                patches_file = os.path.join(scan_dir, 'patches.json')
+                
+                # Load existing patches from file
+                existing_patches = []
+                if os.path.exists(patches_file):
+                    try:
+                        with open(patches_file, 'r') as f:
+                            patches_data = json.load(f)
+                            if isinstance(patches_data, dict):
+                                existing_patches = list(patches_data.values())
+                            else:
+                                existing_patches = patches_data
+                    except Exception as e:
+                        logger.warning(f"Could not load existing patches file: {e}")
+                
+                # Merge new patches
+                patch_ids = {p.get('patch_id') for p in existing_patches if p.get('patch_id')}
+                added_count = 0
+                for patch in result['patches']:
+                    patch_id = patch.get('patch_id')
+                    if patch_id and patch_id not in patch_ids:
+                        existing_patches.append(patch)
+                        added_count += 1
+                
+                # Save to file
+                with open(patches_file, 'w') as f:
+                    json.dump(existing_patches, f, indent=2)
+                
+                logger.info(f"[API] Saved {added_count} new patches to file system. Total patches: {len(existing_patches)}")
+        except Exception as save_error:
+            logger.error(f"[API] Could not save patches: {save_error}")
+            import traceback
+            traceback.print_exc()
         
-        # Mark the JSON field as modified (required for SQLAlchemy to detect changes)
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(scan, 'patches_json')
-        
-        session_db.flush()  # Flush to ensure changes are written
-        session_db.commit()
-        session_db.refresh(scan)  # Refresh to get the committed state
-        
-        logger.info(f"[API] Saved {added_count} new patches. Total patches in DB: {len(existing_patches)}")
-        logger.info(f"[API] After commit, scan.patches_json has {len(scan.patches_json or [])} patches")
-        logger.info(f"[API] Generated {len(new_patches)} Stage 1 patches for scan {scan_id}")
+        logger.info(f"[API] Generated {len(result['patches'])} Stage 1 patches for scan {scan_id}")
         
         return jsonify({
             'success': True,
-            'patches_generated': len(new_patches),
+            'patches_generated': len(result['patches']),
             'stats': result['stats'],
-            'patches': new_patches,
-            'source_files_found': len(source_files)
+            'patches': result['patches'],
+            'source_files_found': len(source_files),
+            'code_version': 'UPDATED_VERSION_2'  # Added to verify code is updated
         })
         
     except Exception as e:
         logger.error(f"[API] Error generating Stage 1 patches: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-    finally:
-        session_db.close()
 
 @app.route('/api/scan_status/<scan_id>')
 @login_required
-def scan_status(scan_id):
+def api_legacy_scan_status(scan_id):
     """Legacy endpoint for authenticated users"""
     logger.debug(f"[API] Legacy status check for scan: {scan_id}")
     scans = session.get('scans', {})
@@ -3429,37 +3976,6 @@ def scan_public():
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
-@app.route('/public-results/<scan_id>')
-def public_results(scan_id):
-    """Show results for public scans (no login required)"""
-    session_db = get_session()
-    try:
-        scan = session_db.query(Scan).filter_by(id=scan_id).first()
-        if not scan:
-            flash('Scan not found.', 'error')
-            return redirect(url_for('no_login_scan'))
-        
-        vulnerabilities = scan.vulnerabilities_json or []
-        patches = scan.patches_json or []
-        
-        scan_data = {
-            'status': scan.status,
-            'analysis_tool': scan.analysis_tool,
-            'vulnerabilities': vulnerabilities,
-            'patches': patches,
-            'repo_url': scan.repo_url,
-            'created_at': scan.created_at
-        }
-        
-        return render_template('public_results.html', scan_id=scan_id, scan=scan_data)
-    except Exception as e:
-        logger.error(f"Error loading public results for scan {scan_id}: {e}")
-        flash('Error loading scan results.', 'error')
-        return redirect(url_for('no_login_scan'))
-    finally:
-        session_db.close()
-
-
 @app.route('/api/tool-status')
 def tool_status():
     """Check availability of analysis tools"""
@@ -4470,57 +4986,52 @@ def apply_patch(scan_id, crash_id):
 def repair_dashboard(scan_id):
     """Repair dashboard showing all AI-generated repairs"""
     try:
-        # Try to load triage results from Module 2 (fuzzing)
-        triage_path = Path(f"scans/{scan_id}/triage/triage_results.json")
-        triage_results = None
-        if triage_path.exists():
-            with open(triage_path, 'r') as f:
-                triage_results = json.load(f)
+        # Use scan service to get vulnerabilities from database
+        results = scan_service.get_scan_results(scan_id)
+        if 'error' in results:
+            flash('Scan not found.', 'error')
+            return redirect(url_for('no_login_scan'))
         
-        # If no triage results, try to load static analysis vulnerabilities from Module 1
-        if not triage_results:
-            session_db = get_session()
-            try:
-                scan = session_db.query(Scan).filter_by(id=scan_id).first()
-                if scan and scan.vulnerabilities_json:
-                    # Convert static analysis vulnerabilities to triage format
-                    vulnerabilities = scan.vulnerabilities_json if isinstance(scan.vulnerabilities_json, list) else []
-                    
-                    # Filter for Stage 2 vulnerabilities (complex ones that need AI)
-                    stage2_vulns = []
-                    for vuln in vulnerabilities:
-                        # Stage 2 includes buffer overflows, format strings, obsolete functions, and other complex issues
-                        rule_id = vuln.get('rule_id', '')
-                        # Include buffer overflows, array bounds, obsolete functions (gets, strcpy, etc.)
-                        if any(keyword in rule_id.lower() for keyword in [
-                            'arrayindexoutofbounds', 'bufferaccessoutofbounds', 'bufferoverflow',
-                            'obsoletefunction', 'gets', 'strcpy', 'sprintf', 'strcat',
-                            'formatstring', 'racecondition'
-                        ]):
-                            stage2_vulns.append({
-                                'crash_id': vuln.get('id', f"vuln_{vuln.get('line', 0)}"),
-                                'file': vuln.get('file', 'unknown'),
-                                'line': vuln.get('line', 0),
-                                'description': vuln.get('description', 'Unknown vulnerability'),
-                                'severity': vuln.get('severity', 'medium'),
-                                'rule_id': vuln.get('rule_id', 'unknown')
-                            })
-                    
-                    if stage2_vulns:
-                        triage_results = {
-                            'crashes': stage2_vulns,
-                            'summary': {
-                                'total': len(stage2_vulns),
-                                'unique': len(stage2_vulns)
-                            }
-                        }
-            finally:
-                session_db.close()
+        scan = results['scan']
+        findings = results['findings']
         
-        # If still no vulnerabilities, show error
-        if not triage_results or not triage_results.get('crashes'):
-            flash('No vulnerabilities found for AI repair. Please run a scan first.', 'warning')
-            return redirect(url_for('detailed_findings', scan_id=scan_id))
+        logger.info(f"[REPAIR_DASHBOARD] Loaded {len(findings)} findings from database")
+        
+        # Filter for Stage 2 vulnerabilities (complex ones that need AI)
+        stage2_vulns = []
+        for finding in findings:
+            rule_id = finding.get('rule_id', '')
+            # Include buffer overflows, array bounds, obsolete functions (gets, strcpy, etc.)
+            if any(keyword in rule_id.lower() for keyword in [
+                'arrayindexoutofbounds', 'bufferaccessoutofbounds', 'bufferoverflow',
+                'obsoletefunction', 'gets', 'strcpy', 'sprintf', 'strcat',
+                'formatstring', 'racecondition'
+            ]):
+                stage2_vulns.append({
+                    'crash_id': str(finding.get('id', f"vuln_{finding.get('line_number', 0)}")),
+                    'file': finding.get('file_path', 'unknown'),
+                    'line': finding.get('line_number', 0),
+                    'description': finding.get('message', 'Unknown vulnerability'),
+                    'severity': 'High',  # Stage 2 vulnerabilities are high severity
+                    'rule_id': finding.get('rule_id', 'unknown'),
+                    'cwe': finding.get('cwe', ''),
+                    'function': finding.get('function_name', '')
+                })
+        
+        if not stage2_vulns:
+            flash('No Stage 2 vulnerabilities found for AI repair. These vulnerabilities may be handled by Stage 1 (rule-based) repair.', 'info')
+            return redirect(url_for('patch_review', scan_id=scan_id))
+        
+        # Create triage results format
+        triage_results = {
+            'crashes': stage2_vulns,
+            'summary': {
+                'total': len(stage2_vulns),
+                'unique': len(stage2_vulns)
+            }
+        }
+        
+        logger.info(f"[REPAIR_DASHBOARD] Found {len(stage2_vulns)} Stage 2 vulnerabilities")
         
         # Load repair results if available
         repair_path = Path(f"scans/{scan_id}/repair/repair_results.json")
@@ -4541,8 +5052,9 @@ def repair_dashboard(scan_id):
                              triage_results=triage_results,
                              repair_results=repair_results,
                              metrics=metrics)
+                             
     except Exception as e:
-        logger.error(f"Error loading repair dashboard: {e}")
+        logger.error(f"[REPAIR_DASHBOARD] Error loading repair dashboard: {e}", exc_info=True)
         flash(f'Error loading repair dashboard: {str(e)}', 'danger')
         return redirect(url_for('detailed_findings', scan_id=scan_id))
 
@@ -4563,63 +5075,52 @@ def start_repair(scan_id):
                 'message': 'No LLM provider is configured. Please set GROQ_API_KEY or GEMINI_API_KEY in .env file.'
             }), 400
         
-        # Try to load triage results from Module 2 (fuzzing)
-        triage_path = Path(f"scans/{scan_id}/triage/triage_results.json")
-        triage_results = None
-        if triage_path.exists():
-            with open(triage_path, 'r') as f:
-                triage_results = json.load(f)
-        
-        # If no triage results, try to load static analysis vulnerabilities from Module 1
-        if not triage_results:
-            session_db = get_session()
-            try:
-                scan = session_db.query(Scan).filter_by(id=scan_id).first()
-                if scan and scan.vulnerabilities_json:
-                    # Convert static analysis vulnerabilities to triage format
-                    vulnerabilities_list = scan.vulnerabilities_json if isinstance(scan.vulnerabilities_json, list) else []
-                    
-                    # Filter for Stage 2 vulnerabilities (complex ones that need AI)
-                    stage2_vulns = []
-                    for vuln in vulnerabilities_list:
-                        rule_id = vuln.get('rule_id', '')
-                        if any(keyword in rule_id.lower() for keyword in [
-                            'arrayindexoutofbounds', 'bufferaccessoutofbounds', 'bufferoverflow',
-                            'obsoletefunction', 'gets', 'strcpy', 'sprintf', 'strcat',
-                            'formatstring', 'racecondition'
-                        ]):
-                            stage2_vulns.append({
-                                'crash_id': vuln.get('id', f"vuln_{vuln.get('line', 0)}"),
-                                'file': vuln.get('file', 'unknown'),
-                                'line': vuln.get('line', 0),
-                                'description': vuln.get('description', 'Unknown vulnerability'),
-                                'severity': 'High',  # Stage 2 vulnerabilities are high severity
-                                'rule_id': vuln.get('rule_id', 'unknown')
-                            })
-                    
-                    if stage2_vulns:
-                        triage_results = {
-                            'crashes': stage2_vulns,
-                            'summary': {
-                                'total': len(stage2_vulns),
-                                'unique': len(stage2_vulns)
-                            }
-                        }
-            finally:
-                session_db.close()
-        
-        # If still no vulnerabilities, return error
-        if not triage_results:
+        # Use scan service to get vulnerabilities from database
+        results = scan_service.get_scan_results(scan_id)
+        if 'error' in results:
             return jsonify({
                 'status': 'error',
                 'message': 'No vulnerabilities found. Please run a scan first.'
             }), 404
         
+        scan = results['scan']
+        findings = results['findings']
+        
+        logger.info(f"[START_REPAIR] Loaded {len(findings)} findings from database")
+        
+        # Filter for Stage 2 vulnerabilities (complex ones that need AI)
+        stage2_vulns = []
+        for finding in findings:
+            rule_id = finding.get('rule_id', '')
+            if any(keyword in rule_id.lower() for keyword in [
+                'arrayindexoutofbounds', 'bufferaccessoutofbounds', 'bufferoverflow',
+                'obsoletefunction', 'gets', 'strcpy', 'sprintf', 'strcat',
+                'formatstring', 'racecondition'
+            ]):
+                stage2_vulns.append({
+                    'crash_id': str(finding.get('id', f"vuln_{finding.get('line_number', 0)}")),
+                    'file': finding.get('file_path', 'unknown'),
+                    'line': finding.get('line_number', 0),
+                    'description': finding.get('message', 'Unknown vulnerability'),
+                    'severity': 'High',  # Stage 2 vulnerabilities are high severity
+                    'rule_id': finding.get('rule_id', 'unknown'),
+                    'cwe': finding.get('cwe', ''),
+                    'function': finding.get('function_name', '')
+                })
+        
+        if not stage2_vulns:
+            return jsonify({
+                'status': 'info',
+                'message': 'No Stage 2 vulnerabilities found. These may be handled by Stage 1 (rule-based) repair.'
+            })
+        
+        logger.info(f"[START_REPAIR] Found {len(stage2_vulns)} Stage 2 vulnerabilities")
+        
         # Filter critical/high vulnerabilities
         vulnerabilities = []
-        for crash in triage_results.get('crashes', []):
-            if crash.get('severity') in ['Critical', 'High']:
-                vulnerabilities.append(crash)
+        for vuln in stage2_vulns:
+            if vuln.get('severity') in ['Critical', 'High']:
+                vulnerabilities.append(vuln)
         
         if not vulnerabilities:
             return jsonify({
@@ -4627,58 +5128,136 @@ def start_repair(scan_id):
                 'message': 'No critical or high severity vulnerabilities found to repair.'
             })
         
-        # Start repair workflow (async)
+        # Start repair workflow (async) with proper error handling and context
         from threading import Thread
+        import traceback
         
         def run_repairs():
-            orchestrator = RepairOrchestrator()
-            results = []
-            
-            for vuln in vulnerabilities:
-                crash_id = vuln.get('crash_id', vuln.get('target', 'unknown'))
-                try:
-                    result = orchestrator.repair(
-                        vulnerability=vuln,
-                        scan_id=scan_id,
-                        crash_id=crash_id,
-                        max_retries=2
-                    )
-                    results.append({
-                        'crash_id': crash_id,
-                        'status': result['status'],
-                        'patches_generated': len(result.get('patches', [])),
-                        'best_patch': result.get('best_patch'),
-                        'validation_results': result.get('validation_results')
-                    })
-                except Exception as e:
-                    logger.error(f"Repair failed for {crash_id}: {e}")
-                    results.append({
-                        'crash_id': crash_id,
-                        'status': 'failed',
-                        'error': str(e)
-                    })
-            
-            # Save results
-            repair_dir = Path(f"scans/{scan_id}/repair")
-            repair_dir.mkdir(parents=True, exist_ok=True)
-            
-            with open(repair_dir / 'repair_results.json', 'w') as f:
-                json.dump({
+            try:
+                logger.info(f"[REPAIR_THREAD] Starting repair thread for scan {scan_id}")
+                logger.info(f"[REPAIR_THREAD] Processing {len(vulnerabilities)} vulnerabilities")
+                
+                # Initialize orchestrator in thread context
+                orchestrator = RepairOrchestrator()
+                logger.info(f"[REPAIR_THREAD] RepairOrchestrator initialized successfully")
+                
+                results = []
+                
+                for i, vuln in enumerate(vulnerabilities):
+                    crash_id = vuln.get('crash_id', vuln.get('target', 'unknown'))
+                    logger.info(f"[REPAIR_THREAD] Processing vulnerability {i+1}/{len(vulnerabilities)}: {crash_id}")
+                    
+                    try:
+                        # Log vulnerability details
+                        logger.info(f"[REPAIR_THREAD] Vulnerability: {vuln.get('rule_id', 'unknown')} in {vuln.get('file', 'unknown')}:{vuln.get('line', 0)}")
+                        
+                        result = orchestrator.repair(
+                            vulnerability=vuln,
+                            scan_id=scan_id,
+                            crash_id=crash_id,
+                            max_retries=2
+                        )
+                        
+                        logger.info(f"[REPAIR_THREAD] Repair completed for {crash_id}: status={result.get('status', 'unknown')}")
+                        
+                        # Extract patches properly
+                        patches = result.get('patches', [])
+                        best_patch = result.get('best_patch')
+                        
+                        results.append({
+                            'crash_id': crash_id,
+                            'file': vuln.get('file', 'unknown'),
+                            'line': vuln.get('line', 0),
+                            'rule_id': vuln.get('rule_id', 'unknown'),
+                            'status': result.get('status', 'unknown'),
+                            'patches_generated': len(patches),
+                            'patches': patches,  # Include actual patches
+                            'best_patch': best_patch,
+                            'patch': best_patch.get('patch_content', '') if best_patch else '',  # For compatibility
+                            'validation_results': result.get('validation_results', {}),
+                            'analysis': result.get('analysis', ''),
+                            'error': result.get('error')
+                        })
+                        
+                        logger.info(f"[REPAIR_THREAD] Successfully processed {crash_id}: {len(patches)} patches generated")
+                        
+                    except Exception as e:
+                        logger.error(f"[REPAIR_THREAD] Repair failed for {crash_id}: {e}")
+                        logger.error(f"[REPAIR_THREAD] Traceback: {traceback.format_exc()}")
+                        results.append({
+                            'crash_id': crash_id,
+                            'file': vuln.get('file', 'unknown'),
+                            'line': vuln.get('line', 0),
+                            'rule_id': vuln.get('rule_id', 'unknown'),
+                            'status': 'failed',
+                            'patches_generated': 0,
+                            'patches': [],
+                            'best_patch': None,
+                            'patch': '',
+                            'validation_results': {},
+                            'analysis': '',
+                            'error': str(e)
+                        })
+                
+                # Save results
+                repair_dir = Path(f"scans/{scan_id}/repair")
+                repair_dir.mkdir(parents=True, exist_ok=True)
+                
+                final_results = {
                     'scan_id': scan_id,
+                    'status': 'completed',
                     'repairs': results,
                     'summary': {
                         'total': len(results),
                         'successful': sum(1 for r in results if r['status'] == 'completed'),
-                        'failed': sum(1 for r in results if r['status'] == 'failed')
+                        'failed': sum(1 for r in results if r['status'] == 'failed'),
+                        'total_patches': sum(r.get('patches_generated', 0) for r in results)
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                with open(repair_dir / 'repair_results.json', 'w') as f:
+                    json.dump(final_results, f, indent=2)
+                
+                logger.info(f"[REPAIR_THREAD] Repair thread completed successfully")
+                logger.info(f"[REPAIR_THREAD] Results: {final_results['summary']}")
+                
+                # Save metrics
+                if hasattr(orchestrator, 'metrics') and orchestrator.metrics:
+                    try:
+                        orchestrator.metrics.finalize()
+                        orchestrator.metrics.save()
+                        logger.info(f"[REPAIR_THREAD] Metrics saved successfully")
+                    except Exception as e:
+                        logger.error(f"[REPAIR_THREAD] Failed to save metrics: {e}")
+                        
+            except Exception as e:
+                logger.error(f"[REPAIR_THREAD] Critical error in repair thread: {e}")
+                logger.error(f"[REPAIR_THREAD] Full traceback: {traceback.format_exc()}")
+                
+                # Save error results
+                try:
+                    repair_dir = Path(f"scans/{scan_id}/repair")
+                    repair_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    error_results = {
+                        'scan_id': scan_id,
+                        'status': 'failed',
+                        'error': str(e),
+                        'traceback': traceback.format_exc(),
+                        'repairs': [],
+                        'summary': {'total': 0, 'successful': 0, 'failed': 0},
+                        'timestamp': datetime.now().isoformat()
                     }
-                }, f, indent=2)
-            
-            # Save metrics
-            if orchestrator.metrics:
-                orchestrator.metrics.finalize()
-                orchestrator.metrics.save()
+                    
+                    with open(repair_dir / 'repair_results.json', 'w') as f:
+                        json.dump(error_results, f, indent=2)
+                        
+                except Exception as save_error:
+                    logger.error(f"[REPAIR_THREAD] Failed to save error results: {save_error}")
         
-        thread = Thread(target=run_repairs)
+        thread = Thread(target=run_repairs, name=f"RepairThread-{scan_id}")
+        thread.daemon = True  # Make thread daemon so it doesn't block shutdown
         thread.start()
         
         return jsonify({

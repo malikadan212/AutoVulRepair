@@ -94,22 +94,54 @@ class NullPointerRepair:
         # If no symbol, try to extract from message or description
         if not symbol:
             message = vuln.get('message') or vuln.get('description', '')
-            # Pattern: "Null pointer dereference: symbol_name" or "... : symbol_name"
-            import re
+            
+            # Pattern 1: "Null pointer dereference: symbol_name" or "... : symbol_name"
             match = re.search(r':\s*(\w+)', message)
             if match:
                 symbol = match.group(1)
-        
-        # If still no symbol, try to extract from source code at the line
-        if not symbol and line_num:
-            lines = source_code.split('\n')
-            if 0 < line_num <= len(lines):
-                line_text = lines[line_num - 1]
-                # Look for pointer dereferences: *ptr, ptr->, ptr[
-                match = re.search(r'[\*\->]\s*(\w+)|(\w+)\s*->', line_text)
+            
+            # Pattern 2: "dereference: symbol_name" or similar
+            if not symbol:
+                match = re.search(r'dereference:\s*(\w+)', message, re.IGNORECASE)
                 if match:
-                    symbol = match.group(1) or match.group(2)
+                    symbol = match.group(1)
+            
+            # Pattern 3: Look for "null_ptr", "ptr", etc. in message
+            if not symbol:
+                match = re.search(r'\b(\w*ptr\w*)\b', message, re.IGNORECASE)
+                if match:
+                    symbol = match.group(1)
+            
+            # Pattern 4: Extract from source line if available
+            if not symbol and line_num:
+                lines = source_code.split('\n')
+                if 0 < line_num <= len(lines):
+                    line_text = lines[line_num - 1]
+                    # Look for pointer dereferences: *ptr, ptr->, ptr[, strcpy(ptr, ...)
+                    
+                    # Pattern: strcpy(symbol, ...)
+                    match = re.search(r'strcpy\s*\(\s*(\w+)', line_text)
+                    if match:
+                        symbol = match.group(1)
+                    
+                    # Pattern: *symbol or symbol->
+                    if not symbol:
+                        match = re.search(r'[\*\->]\s*(\w+)|(\w+)\s*->', line_text)
+                        if match:
+                            symbol = match.group(1) or match.group(2)
+                    
+                    # Pattern: function(symbol, ...)
+                    if not symbol:
+                        match = re.search(r'\w+\s*\(\s*(\w+)', line_text)
+                        if match and match.group(1) not in ['printf', 'malloc', 'free', 'sizeof']:
+                            symbol = match.group(1)
+                    
                     logger.info(f"Extracted symbol '{symbol}' from source line: {line_text.strip()}")
+            
+            # Fallback: use generic symbol if still not found
+            if not symbol:
+                symbol = 'ptr'  # Generic fallback
+                logger.warning(f"Could not extract symbol from message '{message}', using fallback: {symbol}")
         
         if not line_num or not symbol:
             logger.warning(f"Missing line number or symbol for null pointer vuln: line={line_num}, symbol={symbol}, desc={vuln.get('description', '')[:100]}")

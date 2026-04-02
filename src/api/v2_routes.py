@@ -188,7 +188,7 @@ def get_scan_status(scan_id: str):
 @api_v2.route('/scans/<scan_id>/analyze', methods=['POST'])
 def run_analysis(scan_id: str):
     """
-    Run static analysis on a scan
+    Run static analysis on a scan using Celery
     
     Body:
     {
@@ -199,8 +199,31 @@ def run_analysis(scan_id: str):
         data = request.get_json() or {}
         analysis_tool = data.get('analysis_tool', 'cppcheck')
         
-        result = scan_service.run_static_analysis(scan_id, analysis_tool)
-        return jsonify(result)
+        # Check if Celery is available
+        try:
+            from src.workers.job_worker import process_scan_task
+            
+            # Prepare scan data
+            scan_data = {
+                'analysis_tool': analysis_tool,
+                'source_type': 'existing',  # Scan already exists
+            }
+            
+            # Start background task
+            task_result = process_scan_task.delay(scan_id, scan_data)
+            
+            return jsonify({
+                'scan_id': scan_id,
+                'task_id': task_result.id,
+                'status': 'processing',
+                'message': 'Analysis started in background'
+            })
+            
+        except ImportError:
+            # Fallback to synchronous processing
+            result = scan_service.run_static_analysis(scan_id, analysis_tool)
+            return jsonify(result)
+            
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

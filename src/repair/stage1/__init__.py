@@ -9,7 +9,8 @@ from .repair_engine import Stage1RepairEngine
 from .null_pointer import NullPointerRepair
 from .uninitialized_var import UninitializedVarRepair
 from .dead_code import DeadCodeRepair
-from .integer_overflow import IntegerOverflowRepair
+from .integer_overflow import IntegerOverflowFixer
+from .memfix.memfix_repair import MemFixRepair
 
 __all__ = [
     'classify_vulnerability',
@@ -18,5 +19,6 @@ __all__ = [
     'NullPointerRepair',
     'UninitializedVarRepair',
     'DeadCodeRepair',
-    'IntegerOverflowRepair'
+    'IntegerOverflowFixer',
+    'MemFixRepair'
 ]

@@ -44,6 +44,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
+# Make scripts executable
+RUN chmod +x celery_worker.py celery_beat.py celery_flower.py docker-entrypoint.sh
+
 # Create necessary directories with proper permissions
 RUN mkdir -p scans logs faiss_indexes && \
     chown -R autovulrepair:autovulrepair /app
@@ -59,4 +62,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
 # Default command
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["python", "app.py"]

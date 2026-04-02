@@ -16,7 +16,21 @@ def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
     
     # Initialize the database and models
     from src.models.scan import create_database, get_session, Scan
-    from src.queue.tasks import analyze_code_sync
+    
+    # Try to use Celery if available, otherwise fall back to sync
+    try:
+        from src.workers.job_worker import process_scan_task
+        CELERY_AVAILABLE = True
+        print("🚀 Celery available - using background processing")
+    except ImportError:
+        try:
+            from src.queue.tasks import analyze_code_sync
+            CELERY_AVAILABLE = False
+            print("⚠️  Celery not available - using synchronous processing")
+        except ImportError:
+            print("❌ No analysis tasks available")
+            return
+    
     from src.fuzz_plan.generator import FuzzPlanGenerator
     from src.harness.generator import HarnessGenerator
     from src.intrepair.pipeline import IntRepairPipeline
@@ -56,7 +70,23 @@ def run_pipeline(source_dir, tool='cppcheck', fail_on_vuln=False):
     # Step 1: Run Static Analysis
     logger.info(f"=== Module 1: Running Static Analysis using {tool} ===")
     try:
-        result = analyze_code_sync(scan_id, tool)
+        if CELERY_AVAILABLE:
+            # Use Celery for background processing
+            scan_data = {
+                'source_type': 'existing',  # Scan already created
+                'analysis_tool': tool
+            }
+            
+            task_result = process_scan_task.delay(scan_id, scan_data)
+            print(f"🚀 Started background analysis task: {task_result.id}")
+            print("⏳ Waiting for task to complete...")
+            
+            # Wait for task to complete
+            result = task_result.get(timeout=1800)  # 30 minute timeout
+            print("✅ Background task completed")
+        else:
+            # Fall back to synchronous processing
+            result = analyze_code_sync(scan_id, tool)
         
         if result['status'] == 'failed':
             logger.error(f"Analysis failed: {result.get('error')}")

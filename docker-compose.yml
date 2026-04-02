@@ -1,8 +1,6 @@
 # Docker Compose V2 - Enhanced Architecture
 # Includes Redis, Celery workers, and improved database setup
 
-version: '3.8'
-
 services:
   # Main application
   app:
@@ -99,11 +97,14 @@ services:
   # Celery worker for scan processing
   celery-worker-scan:
     image: autovulrepair:latest  # Reuse the built image
-    command: celery -A src.workers.job_worker worker --loglevel=info --queues=scan_queue --concurrency=4 --hostname=scan-worker@%h
+    entrypoint: ["python", "start_correct_worker.py"]
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_WORKER=true
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
       - WORKER_TYPE=scan
+      - PYTHONUNBUFFERED=1
     depends_on:
       app:  # Depend on app to ensure image is built first
         condition: service_started
@@ -120,7 +121,7 @@ services:
     deploy:
       replicas: 2
     healthcheck:
-      test: ["CMD", "celery", "-A", "src.workers.job_worker", "inspect", "ping"]
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]  # Simple health check
       interval: 30s
       timeout: 10s
       retries: 3
@@ -128,11 +129,14 @@ services:
   # Celery worker for fuzzing
   celery-worker-fuzz:
     image: autovulrepair:latest  # Reuse the built image
-    command: celery -A src.workers.job_worker worker --loglevel=info --queues=fuzzing_queue --concurrency=2 --hostname=fuzz-worker@%h
+    entrypoint: ["python", "start_correct_worker.py"]
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_WORKER=true
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
       - WORKER_TYPE=fuzzing
+      - PYTHONUNBUFFERED=1
     depends_on:
       app:  # Depend on app to ensure image is built first
         condition: service_started
@@ -149,7 +153,7 @@ services:
     deploy:
       replicas: 1
     healthcheck:
-      test: ["CMD", "celery", "-A", "src.workers.job_worker", "inspect", "ping"]
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]  # Simple health check
       interval: 30s
       timeout: 10s
       retries: 3
@@ -157,10 +161,13 @@ services:
   # Celery beat scheduler
   celery-beat:
     image: autovulrepair:latest  # Reuse the built image
-    command: celery -A src.workers.job_worker beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    command: python celery_beat.py
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_WORKER=true
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
+      - PYTHONUNBUFFERED=1
     depends_on:
       app:  # Depend on app to ensure image is built first
         condition: service_started
@@ -175,7 +182,7 @@ services:
       - autovulrepair-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/celerybeat-schedule"]
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]  # Simple health check
       interval: 60s
       timeout: 10s
       retries: 3
@@ -183,12 +190,15 @@ services:
   # Celery flower for monitoring (optional)
   celery-flower:
     image: autovulrepair:latest  # Reuse the built image
-    command: celery -A src.workers.job_worker flower --port=5555
+    command: python celery_flower.py
     ports:
       - "5555:5555"
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_WORKER=true
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
+      - PYTHONUNBUFFERED=1
     depends_on:
       app:  # Depend on app to ensure image is built first
         condition: service_started

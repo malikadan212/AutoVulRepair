@@ -45,11 +45,51 @@ class UninitializedVarRepair:
         # If no symbol, try to extract from message or description
         if not symbol:
             message = vuln.get('message') or vuln.get('description', '')
-            # Pattern: "Uninitialized variable: symbol_name" or "... : symbol_name"
-            import re
+            
+            # Pattern 1: "Uninitialized variable: symbol_name" or "... : symbol_name"
             match = re.search(r':\s*(\w+)', message)
             if match:
                 symbol = match.group(1)
+            
+            # Pattern 2: "variable 'symbol_name'" or "variable symbol_name"
+            if not symbol:
+                match = re.search(r"variable\s+['\"]?(\w+)['\"]?", message, re.IGNORECASE)
+                if match:
+                    symbol = match.group(1)
+            
+            # Pattern 3: "scope of the variable 'symbol_name'"
+            if not symbol:
+                match = re.search(r"scope.*variable\s+['\"]?(\w+)['\"]?", message, re.IGNORECASE)
+                if match:
+                    symbol = match.group(1)
+            
+            # Pattern 4: Extract variable name from single quotes
+            if not symbol:
+                match = re.search(r"'(\w+)'", message)
+                if match:
+                    symbol = match.group(1)
+            
+            # Pattern 5: Try to extract from the source line
+            if not symbol and line_num:
+                lines = source_code.split('\n')
+                if 0 < line_num <= len(lines):
+                    source_line = lines[line_num - 1]
+                    # Look for variable declarations: type variable_name;
+                    match = re.search(r'\b(int|char|float|double|long|short|size_t)\s+(\w+)\s*[;,]', source_line)
+                    if match:
+                        symbol = match.group(2)
+                        logger.info(f"Extracted symbol '{symbol}' from declaration: {source_line.strip()}")
+                    
+                    # Look for variable usage patterns
+                    if not symbol:
+                        # Find variable names in the line, excluding keywords
+                        var_matches = re.findall(r'\b[a-zA-Z_]\w*\b', source_line)
+                        keywords = {'int', 'char', 'float', 'double', 'void', 'if', 'else', 'for', 'while', 'return', 'printf', 'malloc', 'free', 'sizeof'}
+                        for var in var_matches:
+                            if var not in keywords and len(var) > 2:
+                                symbol = var
+                                logger.info(f"Extracted symbol '{symbol}' from usage: {source_line.strip()}")
+                                break
         
         if not line_num or not symbol:
             logger.warning(f"Missing line number or symbol for uninit var vuln: line={line_num}, symbol={symbol}, desc={vuln.get('description', '')[:100]}")
@@ -98,7 +138,7 @@ class UninitializedVarRepair:
         
         return {
             'patch_id': str(uuid.uuid4()),
-            'vulnerability_id': vuln.get('id', ''),
+            'vulnerability_id': vuln.get('finding_id', ''),
             'file': source_file,
             'line': decl_line_num,
             'usage_line': line_num,

@@ -1,0 +1,61 @@
+# Minimal Docker Compose - Just 2 containers!
+# App + Database only - perfect for testing
+
+services:
+  # Main application (everything in one container)
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: autovulrepair:minimal
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD:-autovulrepair_secure_password_2024}@postgres:5432/autovulrepair
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-your_github_client_id_here}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-your_github_client_secret_here}
+      - GROQ_API_KEY=${GROQ_API_KEY:-your_groq_api_key_here}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_gemini_api_key_here}
+      - SCANS_DIR=/app/scans
+      - PYTHONUNBUFFERED=1
+      - ENABLE_BACKGROUND_JOBS=false  # No Redis, no Celery
+      - REDIS_URL=  # Disable Redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scans:/app/scans
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=autovulrepair
+      - POSTGRES_USER=autovulrepair
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-autovulrepair_secure_password_2024}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autovulrepair -d autovulrepair"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  autovulrepair-network:
+    driver: bridge

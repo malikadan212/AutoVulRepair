@@ -10,8 +10,8 @@ from .classifier import classify_vulnerability, is_stage1_repairable
 from .null_pointer import NullPointerRepair
 from .uninitialized_var import UninitializedVarRepair
 from .dead_code import DeadCodeRepair
-from .integer_overflow import IntegerOverflowRepair
-from .memfix import MemFixRepair
+from .integer_overflow import IntegerOverflowFixer
+from .memfix.memfix_repair import MemFixRepair
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class Stage1RepairEngine:
         self.null_pointer_repair = NullPointerRepair()
         self.uninitialized_var_repair = UninitializedVarRepair()
         self.dead_code_repair = DeadCodeRepair()
-        self.integer_overflow_repair = IntegerOverflowRepair()
+        self.integer_overflow_repair = IntegerOverflowFixer()
         self.memfix_repair = MemFixRepair()
         
         logger.info(f"Stage1RepairEngine initialized (dead_code={enable_dead_code})")

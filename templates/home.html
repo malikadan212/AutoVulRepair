@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <div class="col-md-10">
         <div class="row g-4">
           <!-- GitHub Login Option -->
+          {% if github_oauth_enabled %}
           <div class="col-md-6">
             <div class="card h-100">
               <div class="card-body text-center d-flex flex-column">
@@ -53,15 +54,43 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           </div>
+          {% else %}
+          <div class="col-md-6">
+            <div class="card h-100 border-warning">
+              <div class="card-body text-center d-flex flex-column">
+                <h5 class="card-title text-warning">
+                  <i class="fas fa-exclamation-triangle"></i> GitHub OAuth Not Configured
+                </h5>
+                <p class="card-text flex-grow-1">
+                  GitHub OAuth credentials are not set up. To enable GitHub login, configure your OAuth app credentials in the environment variables.
+                </p>
+                <button class="btn btn-outline-warning btn-lg" disabled>GitHub Login Unavailable</button>
+                <small class="text-muted mt-2">
+                  <a href="https://github.com/settings/developers" target="_blank" class="text-decoration-none">
+                    <i class="fas fa-external-link-alt"></i> Set up GitHub OAuth App
+                  </a>
+                </small>
+              </div>
+            </div>
+          </div>
+          {% endif %}
           
           <!-- No Login Option -->
           <div class="col-md-6">
             <div class="card h-100">
               <div class="card-body text-center d-flex flex-column">
-                <h5 class="card-title">Login without GitHub</h5>
-                <p class="card-text flex-grow-1">Run a quick, privacy‑first scan of public repositories, ZIP uploads, or pasted code — no account required and nothing stored.</p>
+                <h5 class="card-title">{% if not github_oauth_enabled %}Quick Scan{% else %}Login without GitHub{% endif %}</h5>
+                <p class="card-text flex-grow-1">
+                  {% if not github_oauth_enabled %}
+                  Scan public repositories, ZIP uploads, or pasted code — no account required and nothing stored.
+                  {% else %}
+                  Run a quick, privacy‑first scan of public repositories, ZIP uploads, or pasted code — no account required and nothing stored.
+                  {% endif %}
+                </p>
                 <div class="d-grid gap-2">
-                  <a class="btn btn-outline-primary btn-lg" href="{{ url_for('no_login_scan') }}">Continue without GitHub</a>
+                  <a class="btn btn-{% if not github_oauth_enabled %}primary{% else %}outline-primary{% endif %} btn-lg" href="{{ url_for('no_login_scan') }}">
+                    {% if not github_oauth_enabled %}Start Scanning{% else %}Continue without GitHub{% endif %}
+                  </a>
                 </div>
               </div>
             </div>

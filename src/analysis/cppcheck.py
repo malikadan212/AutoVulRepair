@@ -70,6 +70,36 @@ class CppcheckAnalyzer:
         
         return cpp_files
     
+    def _calculate_priority_score(self, rule_id: str, severity: str) -> float:
+        """Calculate priority score based on rule and severity"""
+        base_scores = {
+            'high': 7.0,
+            'medium': 5.0, 
+            'low': 3.0
+        }
+        
+        # High-risk rules get bonus points
+        high_risk_rules = [
+            'arrayIndexOutOfBounds', 'bufferAccessOutOfBounds', 
+            'useAfterFree', 'doubleFree', 'nullPointer', 'memleak',
+            'resourceLeak', 'integerOverflow', 'uninitvar'
+        ]
+        
+        # Critical rules get even higher scores
+        critical_rules = [
+            'arrayIndexOutOfBounds', 'bufferAccessOutOfBounds',
+            'useAfterFree', 'doubleFree'
+        ]
+        
+        score = base_scores.get(severity, 5.0)
+        
+        if rule_id in critical_rules:
+            score += 3.0  # Critical vulnerabilities
+        elif rule_id in high_risk_rules:
+            score += 2.0  # High-risk vulnerabilities
+            
+        return min(score, 10.0)  # Cap at 10.0
+
     def _map_severity(self, cppcheck_severity: str) -> str:
         """Map Cppcheck severity to our standard levels"""
         return self.severity_map.get(cppcheck_severity, 'low')
@@ -78,6 +108,7 @@ class CppcheckAnalyzer:
         """Parse Cppcheck XML output into standardized format"""
         vulnerabilities = []
         patches = []
+        seen_vulnerabilities = set()  # Track unique vulnerabilities to prevent duplicates
         
         try:
             tree = ET.parse(xml_file)
@@ -104,14 +135,25 @@ class CppcheckAnalyzer:
                 if not file_path:
                     continue
                 
+                # Create unique identifier to prevent duplicates
+                unique_id = f"{error_id}:{file_path}:{line}:{msg}"
+                if unique_id in seen_vulnerabilities:
+                    continue  # Skip duplicate
+                seen_vulnerabilities.add(unique_id)
+                
+                # Calculate priority score
+                mapped_severity = self._map_severity(severity)
+                priority_score = self._calculate_priority_score(error_id, mapped_severity)
+                
                 vulnerability = {
                     'id': f'cppcheck_{error_id}_{line}',
-                    'severity': self._map_severity(severity),
+                    'severity': mapped_severity,
                     'description': msg,
                     'file': file_path,
                     'line': line,
                     'tool': 'cppcheck',
-                    'rule_id': error_id
+                    'rule_id': error_id,
+                    'priority_score': priority_score
                 }
                 
                 vulnerabilities.append(vulnerability)
@@ -119,6 +161,7 @@ class CppcheckAnalyzer:
         except ET.ParseError as e:
             logger.error(f"Failed to parse Cppcheck XML output: {e}")
         
+        logger.info(f"[CPPCHECK] Parsed {len(vulnerabilities)} unique vulnerabilities from XML")
         return vulnerabilities, patches
     
     def _parse_stderr_output(self, stderr_output: str) -> Tuple[List[Dict], List[Dict]]:
@@ -139,6 +182,7 @@ class CppcheckAnalyzer:
                     
                     # Determine severity from message
                     severity = 'high' if 'error' in line else 'medium'
+                    priority_score = self._calculate_priority_score('stderr_parse', severity)
                     
                     vulnerability = {
                         'id': f'cppcheck_stderr_{line_num}',
@@ -147,7 +191,8 @@ class CppcheckAnalyzer:
                         'file': file_path,
                         'line': line_num,
                         'tool': 'cppcheck',
-                        'rule_id': 'stderr_parse'
+                        'rule_id': 'stderr_parse',
+                        'priority_score': priority_score
                     }
                     
                     vulnerabilities.append(vulnerability)
@@ -226,10 +271,12 @@ class CppcheckAnalyzer:
                 # Parse XML results
                 vulnerabilities, patches = self._parse_xml_results(xml_output)
                 
-                # If no XML results, try parsing stderr
+                # Only use stderr parsing if XML parsing found no results
                 if not vulnerabilities and result.stderr:
+                    logger.info("[CPPCHECK] No XML results found, trying stderr parsing as fallback")
                     vulnerabilities, patches = self._parse_stderr_output(result.stderr)
                 
+                logger.info(f"[CPPCHECK] Local analysis found {len(vulnerabilities)} vulnerabilities")
                 return vulnerabilities, patches
                 
             except subprocess.TimeoutExpired:

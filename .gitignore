@@ -260,3 +260,11 @@ demo-results/
 users.db
 verify_existing_tables.py
 verify_password.py
+
+# Keep Celery scripts
+!celery_worker.py
+!celery_beat.py
+!celery_flower.py
+!docker-entrypoint.sh
+!docker-restart.sh
+.env.docker

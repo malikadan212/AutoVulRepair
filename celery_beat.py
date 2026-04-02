@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Celery worker for vulnerability scanning tasks
+Celery beat scheduler for periodic tasks
 """
 import os
 import sys
@@ -11,6 +11,7 @@ load_dotenv()
 
 # Set Celery worker flag to avoid Flask secret key requirement
 os.environ['CELERY_WORKER'] = 'true'
+os.environ['FLASK_SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -24,5 +25,5 @@ except ImportError:
     from src.queue.tasks import celery_app
 
 if __name__ == '__main__':
-    # Start Celery worker with proper arguments for Windows
-    celery_app.worker_main(['worker', '--loglevel=info', '--pool=solo'])
+    # Start Celery beat scheduler
+    celery_app.start(['celery', 'beat', '--loglevel=info', '--schedule=/tmp/celerybeat-schedule'])

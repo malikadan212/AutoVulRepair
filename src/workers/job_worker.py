@@ -4,6 +4,7 @@ Processes scan jobs asynchronously using Celery
 """
 
 import os
+import sys
 import logging
 import traceback
 from datetime import datetime
@@ -12,17 +13,26 @@ from typing import Dict, Any, Optional
 from celery import Celery
 from celery.signals import worker_ready, worker_shutdown
 
-from src.services.scan_service import ScanService
-from src.repositories.scan_repository import ScanRepository
-from src.database.connection import get_session
-from src.config.settings import get_settings
-
-# Configure logging
+# Set up logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set Celery worker environment flag
+os.environ['CELERY_WORKER'] = 'true'
+
+try:
+    from src.config.settings import get_settings
+    settings = get_settings()
+except Exception as e:
+    logger.warning(f"Could not load settings: {e}. Using environment variables directly.")
+    # Fallback to direct environment variable access
+    class FallbackSettings:
+        def __init__(self):
+            self.REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+            self.DATABASE_URL = os.getenv('DATABASE_URL')
+    settings = FallbackSettings()
+
 # Initialize Celery
-settings = get_settings()
 celery_app = Celery(
     'autovulrepair',
     broker=settings.REDIS_URL,
@@ -71,11 +81,18 @@ def process_scan_task(self, scan_id: str, scan_data: Dict[str, Any]) -> Dict[str
     """
     logger.info(f"Starting scan processing for scan_id: {scan_id}")
     
-    session = get_session()
-    scan_repository = ScanRepository(session)
-    scan_service = ScanService(scan_repository)
-    
     try:
+        # Import dependencies here to avoid import errors during module loading
+        from src.services.scan_service import ScanService
+        from src.repositories.scan_repository import ScanRepository
+        from src.models.scan_v2 import DatabaseManager
+        
+        # Initialize database manager with correct connection
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        db_manager = DatabaseManager(DATABASE_URL)
+        scan_repository = ScanRepository(db_manager, use_database=True)
+        scan_service = ScanService(scan_repository)
+        
         # Update scan status to processing
         scan_service.update_scan_status(scan_id, 'processing', {
             'started_at': datetime.utcnow().isoformat(),
@@ -98,17 +115,21 @@ def process_scan_task(self, scan_id: str, scan_data: Dict[str, Any]) -> Dict[str
         logger.error(f"Scan processing failed for scan_id: {scan_id}, error: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # Update scan status to failed
-        scan_service.update_scan_status(scan_id, 'failed', {
-            'failed_at': datetime.utcnow().isoformat(),
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        })
+        try:
+            # Try to update scan status to failed
+            scan_service.update_scan_status(scan_id, 'failed', {
+                'failed_at': datetime.utcnow().isoformat(),
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+        except:
+            pass  # Ignore errors when updating status
         
         # Re-raise the exception so Celery can handle retries
         raise
     finally:
-        session.close()
+        # No need to close session - DatabaseManager handles this
+        pass
 
 
 @celery_app.task(bind=True, name='process_fuzzing')
@@ -125,11 +146,18 @@ def process_fuzzing_task(self, scan_id: str, fuzzing_config: Dict[str, Any]) -> 
     """
     logger.info(f"Starting fuzzing processing for scan_id: {scan_id}")
     
-    session = get_session()
-    scan_repository = ScanRepository(session)
-    scan_service = ScanService(scan_repository)
-    
     try:
+        # Import dependencies here to avoid import errors during module loading
+        from src.services.scan_service import ScanService
+        from src.repositories.scan_repository import ScanRepository
+        from src.models.scan_v2 import DatabaseManager
+        
+        # Initialize database manager with correct connection
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        db_manager = DatabaseManager(DATABASE_URL)
+        scan_repository = ScanRepository(db_manager, use_database=True)
+        scan_service = ScanService(scan_repository)
+        
         # Update fuzzing status to processing
         scan_service.update_fuzzing_status(scan_id, 'processing', {
             'started_at': datetime.utcnow().isoformat(),
@@ -152,16 +180,22 @@ def process_fuzzing_task(self, scan_id: str, fuzzing_config: Dict[str, Any]) -> 
         logger.error(f"Fuzzing processing failed for scan_id: {scan_id}, error: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # Update fuzzing status to failed
-        scan_service.update_fuzzing_status(scan_id, 'failed', {
-            'failed_at': datetime.utcnow().isoformat(),
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        })
+        try:
+            # Try to update fuzzing status to failed
+            scan_service.update_fuzzing_status(scan_id, 'failed', {
+                'failed_at': datetime.utcnow().isoformat(),
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+        except:
+            pass  # Ignore errors when updating status
         
         raise
     finally:
-        session.close()
+        try:
+            session.close()
+        except:
+            pass
 
 
 @celery_app.task(name='cleanup_old_scans')
@@ -177,11 +211,18 @@ def cleanup_old_scans_task(days_old: int = 30) -> Dict[str, Any]:
     """
     logger.info(f"Starting cleanup of scans older than {days_old} days")
     
-    session = get_session()
-    scan_repository = ScanRepository(session)
-    scan_service = ScanService(scan_repository)
-    
     try:
+        # Import dependencies here to avoid import errors during module loading
+        from src.services.scan_service import ScanService
+        from src.repositories.scan_repository import ScanRepository
+        from src.models.scan_v2 import DatabaseManager
+        
+        # Initialize database manager with correct connection
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        db_manager = DatabaseManager(DATABASE_URL)
+        scan_repository = ScanRepository(db_manager, use_database=True)
+        scan_service = ScanService(scan_repository)
+        
         result = scan_service.cleanup_old_scans(days_old)
         logger.info(f"Cleanup completed: {result}")
         return result
@@ -191,7 +232,10 @@ def cleanup_old_scans_task(days_old: int = 30) -> Dict[str, Any]:
         logger.error(traceback.format_exc())
         raise
     finally:
-        session.close()
+        try:
+            session.close()
+        except:
+            pass
 
 
 @celery_app.task(name='health_check')
@@ -203,13 +247,18 @@ def health_check_task() -> Dict[str, Any]:
         Dict with health status
     """
     try:
-        session = get_session()
+        # Import dependencies here to avoid import errors during module loading
+        from src.models.scan_v2 import DatabaseManager
+        
+        # Initialize database manager with correct connection
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        db_manager = DatabaseManager(DATABASE_URL)
+        
         # Simple database connectivity check
-        session.execute("SELECT 1")
-        session.close()
+        health = db_manager.health_check()
         
         return {
-            'status': 'healthy',
+            'status': 'healthy' if health else 'unhealthy',
             'timestamp': datetime.utcnow().isoformat(),
             'worker_id': health_check_task.request.id
         }

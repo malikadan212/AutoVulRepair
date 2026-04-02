@@ -25,7 +25,11 @@ class HealthChecker:
         """Check Redis connectivity"""
         try:
             # Import here to avoid circular imports
-            from src.queue.tasks import celery_app
+            try:
+                from src.workers.job_worker import celery_app
+            except ImportError:
+                from src.queue.tasks import celery_app
+            
             # Use Celery's Redis connection
             result = celery_app.control.ping(timeout=5)
             return len(result) > 0 if result else False

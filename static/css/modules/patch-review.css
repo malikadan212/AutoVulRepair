@@ -38,3 +38,50 @@
   padding-left: 5px;
   display: block;
 }
+
+/* New layout improvements */
+.vulnerability-card {
+  transition: all 0.2s ease;
+}
+
+.vulnerability-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.category-item {
+  border-radius: var(--border-radius-sm);
+  background: rgba(255,255,255,0.5);
+  transition: background-color 0.2s ease;
+}
+
+.category-item:hover {
+  background: rgba(255,255,255,0.8);
+}
+
+.vulnerability-list {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Compact spacing for better layout */
+.card-body.py-2 {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+.card-header.py-2 {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+/* Responsive improvements */
+@media (max-width: 991.98px) {
+  .vulnerability-list {
+    max-height: none;
+  }
+  
+  .col-lg-8, .col-lg-4 {
+    margin-bottom: 1rem;
+  }
+}
