@@ -2183,6 +2183,7 @@ def detailed_findings(scan_id):
         patches = get_existing_patches(scan_id)
         
         logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} has {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
+        logger.info(f"[DETAILED_FINDINGS] Patches type: {type(patches)}, Patches value: {patches[:2] if patches else 'None'}")
         
         # If scan is still running, show progress
         status = scan.get('status', 'unknown')
