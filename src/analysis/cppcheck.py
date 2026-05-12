@@ -31,6 +31,100 @@ class CppcheckAnalyzer:
             'unknown': 'low'
         }
         
+        # CWE mapping for Cppcheck rule IDs
+        # Based on Cppcheck documentation and CPPCHECK_CWE_MAPPING.md
+        self.cwe_map = {
+            # Buffer overflows and memory access
+            'bufferAccessOutOfBounds': 'CWE-788',
+            'arrayIndexOutOfBounds': 'CWE-788',
+            'arrayIndexThenCheck': 'CWE-119',
+            'outOfBounds': 'CWE-119',
+            'negativeIndex': 'CWE-119',
+            'pointerOutOfBounds': 'CWE-119',
+            
+            # Null pointer dereference
+            'nullPointer': 'CWE-476',
+            'nullPointerArithmetic': 'CWE-476',
+            'nullPointerRedundantCheck': 'CWE-476',
+            
+            # Memory leaks
+            'memleak': 'CWE-401',
+            'memleakOnRealloc': 'CWE-401',
+            'resourceLeak': 'CWE-404',
+            'leakReturnValNotUsed': 'CWE-401',
+            
+            # Use after free
+            'useAfterFree': 'CWE-416',
+            'deallocuse': 'CWE-416',
+            'deallocDealloc': 'CWE-415',
+            'doubleFree': 'CWE-415',
+            
+            # Integer overflows
+            'integerOverflow': 'CWE-190',
+            'signConversion': 'CWE-195',
+            'negativeArraySize': 'CWE-129',
+            
+            # Uninitialized variables
+            'uninitvar': 'CWE-457',
+            'uninitdata': 'CWE-457',
+            'uninitstring': 'CWE-457',
+            'uninitStructMember': 'CWE-457',
+            
+            # Format string vulnerabilities
+            'wrongPrintfScanfArgNum': 'CWE-685',
+            'invalidPrintfArgType_sint': 'CWE-686',
+            'invalidPrintfArgType_uint': 'CWE-686',
+            
+            # Division by zero
+            'zerodiv': 'CWE-369',
+            'zerodivcond': 'CWE-369',
+            
+            # Race conditions
+            'raceAfterInterlockedDecrement': 'CWE-362',
+            
+            # Dangerous functions
+            'bufferNotZeroTerminated': 'CWE-170',
+            'terminateStrncpy': 'CWE-170',
+            
+            # Other common issues
+            'invalidPointerCast': 'CWE-704',
+            'va_list_usedBeforeStarted': 'CWE-664',
+            'va_start_wrongParameter': 'CWE-664',
+        }
+        
+        # CWE ID to human-readable name mapping
+        self.cwe_names = {
+            'CWE-119': 'Buffer Overflow',
+            'CWE-120': 'Buffer Copy without Checking Size',
+            'CWE-121': 'Stack-based Buffer Overflow',
+            'CWE-122': 'Heap-based Buffer Overflow',
+            'CWE-125': 'Out-of-bounds Read',
+            'CWE-129': 'Improper Validation of Array Index',
+            'CWE-170': 'Improper Null Termination',
+            'CWE-190': 'Integer Overflow',
+            'CWE-195': 'Signed to Unsigned Conversion Error',
+            'CWE-362': 'Race Condition',
+            'CWE-369': 'Divide By Zero',
+            'CWE-398': 'Code Quality Issue',
+            'CWE-401': 'Memory Leak',
+            'CWE-404': 'Resource Leak',
+            'CWE-415': 'Double Free',
+            'CWE-416': 'Use After Free',
+            'CWE-457': 'Uninitialized Variable',
+            'CWE-476': 'NULL Pointer Dereference',
+            'CWE-477': 'Use of Obsolete Function',
+            'CWE-561': 'Dead Code',
+            'CWE-563': 'Unused Variable',
+            'CWE-570': 'Expression Always False',
+            'CWE-571': 'Expression Always True',
+            'CWE-664': 'Improper Control of Resource',
+            'CWE-685': 'Function Call With Incorrect Number of Arguments',
+            'CWE-686': 'Function Call With Incorrect Argument Type',
+            'CWE-704': 'Incorrect Type Conversion',
+            'CWE-775': 'Missing Release of File Descriptor',
+            'CWE-788': 'Access of Memory Location After End of Buffer',
+        }
+        
         # Try to use Docker if available
         try:
             from src.utils.docker_helper import DockerToolRunner
@@ -70,33 +164,84 @@ class CppcheckAnalyzer:
         
         return cpp_files
     
-    def _calculate_priority_score(self, rule_id: str, severity: str) -> float:
-        """Calculate priority score based on rule and severity"""
+    def _calculate_priority_score(self, rule_id: str, severity: str, cwe_id: str = None) -> float:
+        """Calculate priority score based on rule, severity, and CWE
+        
+        Returns a score from 1.0 to 10.0 where:
+        - 9.0-10.0: Critical (buffer overflows, use-after-free, double free)
+        - 7.0-8.9: High (null pointer, memory leaks, integer overflow)
+        - 4.0-6.9: Medium (resource leaks, uninitialized vars, obsolete functions)
+        - 1.0-3.9: Low (style issues, dead code, unused variables)
+        """
+        # Base scores from Cppcheck severity
         base_scores = {
-            'high': 7.0,
-            'medium': 5.0, 
-            'low': 3.0
+            'error': 8.0,      # Cppcheck 'error' = serious issues
+            'warning': 6.0,    # Cppcheck 'warning' = potential issues
+            'style': 2.0,      # Code style issues
+            'performance': 3.0,
+            'portability': 2.5,
+            'information': 1.5,
+            'unknown': 4.0
         }
         
-        # High-risk rules get bonus points
-        high_risk_rules = [
-            'arrayIndexOutOfBounds', 'bufferAccessOutOfBounds', 
-            'useAfterFree', 'doubleFree', 'nullPointer', 'memleak',
-            'resourceLeak', 'integerOverflow', 'uninitvar'
-        ]
+        score = base_scores.get(severity, 4.0)
         
-        # Critical rules get even higher scores
+        # Critical vulnerabilities (memory corruption, exploitable)
         critical_rules = [
-            'arrayIndexOutOfBounds', 'bufferAccessOutOfBounds',
-            'useAfterFree', 'doubleFree'
+            'arrayIndexOutOfBounds',      # CWE-788: Out-of-bounds access
+            'bufferAccessOutOfBounds',    # CWE-788: Buffer overflow
+            'useAfterFree',               # CWE-416: Use after free
+            'doubleFree',                 # CWE-415: Double free
+            'deallocDealloc',             # CWE-415: Double free variant
         ]
         
-        score = base_scores.get(severity, 5.0)
+        # High-risk vulnerabilities (crashes, data corruption)
+        high_risk_rules = [
+            'nullPointer',                # CWE-476: NULL deref (crash)
+            'nullPointerArithmetic',      # CWE-476: NULL pointer math
+            'memleak',                    # CWE-401: Memory leak
+            'memleakOnRealloc',           # CWE-401: Memory leak variant
+            'resourceLeak',               # CWE-404: Resource leak
+            'integerOverflow',            # CWE-190: Integer overflow
+            'signConversion',             # CWE-195: Sign conversion
+            'zerodiv',                    # CWE-369: Division by zero
+            'uninitvar',                  # CWE-457: Uninitialized variable
+            'uninitdata',                 # CWE-457: Uninitialized data
+        ]
         
+        # Medium-risk vulnerabilities (quality issues, potential problems)
+        medium_risk_rules = [
+            'getsCalled',                 # CWE-477: Obsolete function
+            'bufferNotZeroTerminated',    # CWE-170: String termination
+            'invalidPointerCast',         # CWE-704: Type conversion
+            'wrongPrintfScanfArgNum',     # CWE-685: Wrong arg count
+        ]
+        
+        # Adjust score based on rule criticality
         if rule_id in critical_rules:
-            score += 3.0  # Critical vulnerabilities
+            score = max(score, 9.0)  # Critical: 9.0-10.0
         elif rule_id in high_risk_rules:
-            score += 2.0  # High-risk vulnerabilities
+            score = max(score, 7.0)  # High: 7.0-8.9
+        elif rule_id in medium_risk_rules:
+            score = max(score, 5.0)  # Medium: 5.0-6.9
+        
+        # CWE-based adjustments (if CWE is available)
+        if cwe_id:
+            critical_cwes = ['CWE-788', 'CWE-787', 'CWE-416', 'CWE-415', 'CWE-119', 'CWE-120']
+            high_cwes = ['CWE-476', 'CWE-401', 'CWE-404', 'CWE-190', 'CWE-369']
+            
+            if cwe_id in critical_cwes:
+                score = max(score, 9.0)
+            elif cwe_id in high_cwes:
+                score = max(score, 7.0)
+        
+        # Style/quality issues should stay low
+        if severity in ['style', 'information', 'performance', 'portability']:
+            score = min(score, 4.0)
+        
+        # Dead code and unused variables are low priority
+        if rule_id in ['unusedFunction', 'unusedVariable', 'unreadVariable', 'unusedAllocatedMemory']:
+            score = min(score, 3.0)
             
         return min(score, 10.0)  # Cap at 10.0
 
@@ -121,6 +266,18 @@ class CppcheckAnalyzer:
                 severity = error.get('severity', 'warning')
                 msg = error.get('msg', 'No message')
                 
+                # Extract CWE ID from XML attribute or map from rule ID
+                cwe_id = error.get('cwe')
+                if cwe_id:
+                    # Format as CWE-XXX if it's just a number
+                    if cwe_id.isdigit():
+                        cwe_id = f'CWE-{cwe_id}'
+                    elif not cwe_id.startswith('CWE-'):
+                        cwe_id = f'CWE-{cwe_id}'
+                else:
+                    # Map from rule ID if CWE not in XML
+                    cwe_id = self.cwe_map.get(error_id)
+                
                 # Get location information
                 locations = error.findall('location')
                 if not locations:
@@ -136,14 +293,18 @@ class CppcheckAnalyzer:
                     continue
                 
                 # Create unique identifier to prevent duplicates
-                unique_id = f"{error_id}:{file_path}:{line}:{msg}"
+                # Use only error_id, file, and line (not message) to avoid duplicates with different messages
+                unique_id = f"{error_id}:{file_path}:{line}"
                 if unique_id in seen_vulnerabilities:
                     continue  # Skip duplicate
                 seen_vulnerabilities.add(unique_id)
                 
                 # Calculate priority score
                 mapped_severity = self._map_severity(severity)
-                priority_score = self._calculate_priority_score(error_id, mapped_severity)
+                priority_score = self._calculate_priority_score(error_id, severity, cwe_id)
+                
+                # Get human-readable CWE name
+                cwe_name = self.cwe_names.get(cwe_id, 'Security Vulnerability') if cwe_id else 'Security Issue'
                 
                 vulnerability = {
                     'id': f'cppcheck_{error_id}_{line}',
@@ -153,7 +314,9 @@ class CppcheckAnalyzer:
                     'line': line,
                     'tool': 'cppcheck',
                     'rule_id': error_id,
-                    'priority_score': priority_score
+                    'priority_score': priority_score,
+                    'cwe': cwe_id,  # CWE ID (e.g., CWE-788)
+                    'cwe_name': cwe_name  # Human-readable name (e.g., "Buffer Overflow")
                 }
                 
                 vulnerabilities.append(vulnerability)

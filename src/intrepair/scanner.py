@@ -179,6 +179,15 @@ class IntRepairScanner:
                 fault_counter += 1
                 fault_id = f"IDInteger_Overflow_Fault_{fault_counter:04d}"
 
+                # Determine CWE based on overflow type
+                cwe_id = None
+                if can_overflow and can_underflow:
+                    cwe_id = 'CWE-190/191'  # Both overflow and underflow possible
+                elif can_overflow:
+                    cwe_id = 'CWE-190'  # Integer Overflow
+                elif can_underflow:
+                    cwe_id = 'CWE-191'  # Integer Underflow
+                
                 fault = OverflowFault(
                     fault_id=fault_id,
                     file_name=os.path.basename(filepath),
@@ -195,6 +204,7 @@ class IntRepairScanner:
                     lower_bound=int_min,
                     can_overflow=can_overflow,
                     can_underflow=can_underflow,
+                    cwe_id=cwe_id,  # Add CWE classification
                 )
 
                 self.faults.append(fault)

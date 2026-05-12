@@ -20,10 +20,15 @@ services:
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_APP_NAME=${GITHUB_APP_NAME:-autovulrepair-dev}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - SCANS_DIR=/app/scans
       - PYTHONUNBUFFERED=1
+      - FLASK_ENV=development
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,6 +37,7 @@ services:
     volumes:
       - ./scans:/app/scans  # Temporary during migration
       - ./logs:/app/logs
+      - ./templates:/app/templates  # Mount templates for live updates
       - /var/run/docker.sock:/var/run/docker.sock  # For Docker-based analysis tools
     networks:
       - autovulrepair-network
@@ -98,6 +104,7 @@ services:
   celery-worker-scan:
     image: autovulrepair:latest  # Reuse the built image
     entrypoint: ["python", "start_correct_worker.py"]
+    user: root  # Run as root to access Docker socket
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
@@ -115,6 +122,7 @@ services:
     volumes:
       - ./scans:/app/scans  # Temporary during migration
       - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker-based analysis tools
     networks:
       - autovulrepair-network
     restart: unless-stopped
@@ -130,6 +138,7 @@ services:
   celery-worker-fuzz:
     image: autovulrepair:latest  # Reuse the built image
     entrypoint: ["python", "start_correct_worker.py"]
+    user: root  # Run as root to access Docker socket
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
@@ -147,6 +156,7 @@ services:
     volumes:
       - ./scans:/app/scans  # Temporary during migration
       - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker-based analysis tools
     networks:
       - autovulrepair-network
     restart: unless-stopped
@@ -161,7 +171,8 @@ services:
   # Celery beat scheduler
   celery-beat:
     image: autovulrepair:latest  # Reuse the built image
-    command: python celery_beat.py
+    entrypoint: []
+    command: celery -A src.workers.job_worker beat --loglevel=info --schedule=/tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid
     environment:
       - DATABASE_URL=postgresql://autovulrepair:${POSTGRES_PASSWORD}@postgres:5432/autovulrepair
       - REDIS_URL=redis://redis:6379/0
@@ -267,6 +278,26 @@ services:
     profiles:
       - monitoring
 
+  # pgAdmin for database visualization
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@autovulrepair.local
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    profiles:
+      - database
+
 volumes:
   postgres_data:
     driver: local
@@ -277,6 +308,8 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  pgadmin_data:
     driver: local
 
 networks:

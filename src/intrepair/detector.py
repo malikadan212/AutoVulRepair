@@ -83,6 +83,7 @@ class OverflowFault:
     lower_bound: int = -2147483648
     can_overflow: bool = True
     can_underflow: bool = False
+    cwe_id: Optional[str] = None    # CWE classification (CWE-190, CWE-191, or CWE-190/191)
 
 
 @dataclass

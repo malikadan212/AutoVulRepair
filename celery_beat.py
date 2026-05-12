@@ -26,4 +26,11 @@ except ImportError:
 
 if __name__ == '__main__':
     # Start Celery beat scheduler
-    celery_app.start(['celery', 'beat', '--loglevel=info', '--schedule=/tmp/celerybeat-schedule'])
+    # Use the Beat class directly instead of worker_main
+    from celery.bin.beat import beat
+    beat_instance = celery_app.Beat(
+        loglevel='INFO',
+        schedule='/tmp/celerybeat-schedule',
+        pidfile='/tmp/celerybeat.pid'
+    )
+    beat_instance.run()

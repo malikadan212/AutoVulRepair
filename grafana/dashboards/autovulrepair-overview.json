@@ -1,0 +1,152 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "AutoVulRepair - Enterprise Overview",
+    "tags": ["autovulrepair", "security", "enterprise"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Scan Requests (24h)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(autovulrepair_scan_requests_total[24h])",
+            "legendFormat": "Total Scans"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "red", "value": 100}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Vulnerabilities Found (24h)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(autovulrepair_vulnerabilities_found_total[24h])",
+            "legendFormat": "Total Vulnerabilities"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "red", "value": 50}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Active Scans",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "autovulrepair_active_scans",
+            "legendFormat": "Active"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "GitHub Rate Limit",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "autovulrepair_github_rate_limit_remaining",
+            "legendFormat": "Remaining"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 5000,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 1000},
+                {"color": "green", "value": 2000}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Scan Duration by Tool",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(autovulrepair_scan_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile - {{analysis_tool}}"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(autovulrepair_scan_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile - {{analysis_tool}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Vulnerabilities by Severity",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (severity) (increase(autovulrepair_vulnerabilities_found_total[24h]))",
+            "legendFormat": "{{severity}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "System Health",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "up{job=\"autovulrepair\"}",
+            "legendFormat": "Application"
+          },
+          {
+            "expr": "up{job=\"postgres\"}",
+            "legendFormat": "Database"
+          },
+          {
+            "expr": "up{job=\"redis\"}",
+            "legendFormat": "Cache"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      }
+    ],
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}

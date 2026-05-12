@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: autovulrepair:production
+    container_name: autovulrepair-app
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_APP_NAME=${GITHUB_APP_NAME}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - FLASK_ENV=production
+      - FLASK_DEBUG=False
+    volumes:
+      - ./scans:/app/scans
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: autovulrepair-postgres
+    environment:
+      - POSTGRES_USER=autovulrepair
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=autovulrepair
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autovulrepair"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: autovulrepair-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery-worker-scan:
+    image: autovulrepair:production
+    container_name: autovulrepair-celery-scan
+    entrypoint: ["python", "start_correct_worker.py"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_TYPE=scan
+    volumes:
+      - ./scans:/app/scans
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+
+  celery-worker-fuzz:
+    image: autovulrepair:production
+    container_name: autovulrepair-celery-fuzz
+    entrypoint: ["python", "start_correct_worker.py"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_TYPE=fuzz
+    volumes:
+      - ./scans:/app/scans
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+
+  celery-beat:
+    image: autovulrepair:production
+    container_name: autovulrepair-celery-beat
+    entrypoint: ["python", "celery_beat.py"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - autovulrepair-network
+    restart: unless-stopped
+
+networks:
+  autovulrepair-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

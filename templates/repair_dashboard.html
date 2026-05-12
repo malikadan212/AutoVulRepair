@@ -1,563 +1,621 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Repair Dashboard - Scan {{ scan_id }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        body {
-            background-color: #f8f9fa;
-        }
-        .dashboard-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            border-radius: 10px;
-        }
-        .stat-card {
-            background: white;
-            border-radius: 10px;
-            padding: 1.5rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 1rem;
-        }
-        .stat-value {
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin: 0;
-        }
-        .stat-label {
-            color: #6c757d;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-        }
-        .repair-card {
-            background: white;
-            border-radius: 10px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .repair-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        }
-        .status-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.85rem;
-        }
-        .status-completed {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .status-failed {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        .status-pending {
-            background-color: #fff3cd;
-            color: #856404;
-        }
-        .patch-preview {
-            background-color: #f8f9fa;
-            border-left: 4px solid #667eea;
-            padding: 1rem;
-            margin: 1rem 0;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .diff-line-add {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .diff-line-remove {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        .score-bar {
-            height: 8px;
-            background-color: #e9ecef;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .score-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
-            transition: width 0.3s;
-        }
-        .btn-ai {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            color: white;
-        }
-        .btn-ai:hover {
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-            color: white;
-        }
-        .loading-spinner {
-            display: inline-block;
-            width: 1rem;
-            height: 1rem;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="container-fluid py-4">
-        <!-- Header -->
-        <div class="dashboard-header">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h1><i class="fas fa-robot"></i> AI Repair Dashboard</h1>
-                    <p class="mb-0">Scan ID: {{ scan_id }}</p>
-                </div>
-                <div>
-                    <a href="{{ url_for('detailed_findings', scan_id=scan_id) }}" class="btn btn-light">
-                        <i class="fas fa-arrow-left"></i> Back to Scan
-                    </a>
-                </div>
-            </div>
-        </div>
+{% extends 'layout.html' %}
 
-        <!-- Statistics -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="stat-card">
-                    <div class="stat-label">Total Vulnerabilities</div>
-                    <div class="stat-value text-primary" id="total-vulns">
-                        {% if triage_results and triage_results.crashes %}
-                            {{ triage_results.crashes|length }}
-                        {% else %}
-                            0
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stat-card">
-                    <div class="stat-label">Repaired</div>
-                    <div class="stat-value text-success" id="repaired-count">
-                        {% if repair_results and repair_results.summary %}
-                            {{ repair_results.summary.successful }}
-                        {% else %}
-                            0
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stat-card">
-                    <div class="stat-label">Failed</div>
-                    <div class="stat-value text-danger" id="failed-count">
-                        {% if repair_results and repair_results.summary %}
-                            {{ repair_results.summary.failed }}
-                        {% else %}
-                            0
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stat-card">
-                    <div class="stat-label">Success Rate</div>
-                    <div class="stat-value text-info" id="success-rate">
-                        {% if repair_results and repair_results.summary and repair_results.summary.total > 0 %}
-                            {{ ((repair_results.summary.successful / repair_results.summary.total) * 100)|round|int }}%
-                        {% else %}
-                            0%
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
+{% block title %}AI Repair Dashboard{% endblock %}
 
-        <!-- Actions -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="stat-card">
-                    <h5><i class="fas fa-cogs"></i> Actions</h5>
-                    <button id="start-repair-btn" class="btn btn-ai btn-lg" onclick="startRepair()">
-                        <i class="fas fa-magic"></i> Start AI Repair
-                    </button>
-                    <button id="refresh-btn" class="btn btn-outline-primary btn-lg ms-2" onclick="refreshStatus()">
-                        <i class="fas fa-sync"></i> Refresh Status
-                    </button>
-                    <button class="btn btn-outline-secondary btn-lg ms-2" onclick="checkHealth()">
-                        <i class="fas fa-heartbeat"></i> Check LLM Health
-                    </button>
-                </div>
-            </div>
-        </div>
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/modules/patch-review.css') }}" rel="stylesheet">
+<style>
+.repair-card {
+    transition: transform 0.2s;
+}
+.repair-card:hover {
+    transform: translateY(-2px);
+}
+.diff-line-add {
+    background-color: #d4edda;
+    color: #155724;
+    padding: 2px 4px;
+}
+.diff-line-remove {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 2px 4px;
+}
+.score-bar {
+    height: 8px;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.score-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
+    transition: width 0.3s;
+}
+</style>
+{% endblock %}
 
-        <!-- Live Progress Section -->
-        <div class="row mb-4" id="progress-section" style="display: none;">
-            <div class="col-12">
-                <div class="stat-card">
-                    <h5><i class="fas fa-spinner fa-spin"></i> AI Repair in Progress</h5>
-                    <div id="progress-log" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.9rem; background-color: #f8f9fa; padding: 1rem; border-radius: 5px;">
-                        <!-- Progress logs will appear here -->
-                    </div>
-                    <div class="mt-3">
-                        <div class="progress" style="height: 25px;">
-                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">
-                                <span id="progress-text">0%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-brain text-warning"></i>
+        AI-Assisted Repair Dashboard
+      </h2>
+      <p class="text-muted mb-0">Stage 2: Complex vulnerability repair with AI analysis</p>
+    </div>
+    <div>
+      <a href="{{ url_for('patch_review', scan_id=scan_id) }}" class="btn btn-outline-secondary me-2">
+        <i class="fas fa-arrow-left"></i> Back to Stage 1
+      </a>
+      <a href="{{ url_for('commit_dashboard', scan_id=scan_id) }}" class="btn btn-success">
+        <i class="fas fa-code-branch"></i> Next: Commit
+      </a>
+    </div>
+  </div>
 
-        <!-- Metrics -->
-        {% if metrics and metrics.summary %}
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="stat-card">
-                    <h5><i class="fas fa-chart-line"></i> Performance Metrics</h5>
-                    <div class="row mt-3">
-                        <div class="col-md-4">
-                            <p><strong>Average Time per Repair:</strong> {{ metrics.summary.average_time_per_repair|round(2) }}s</p>
-                        </div>
-                        <div class="col-md-4">
-                            <p><strong>Total Time:</strong> {{ metrics.total_time_seconds|round(2) }}s</p>
-                        </div>
-                        <div class="col-md-4">
-                            <p><strong>Success Rate:</strong> {{ metrics.summary.success_rate|round(1) }}%</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+  <!-- Quick Stats Dashboard -->
+  <div class="row mb-3">
+    <div class="col-md-3">
+      <div class="card border-warning h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+          <h3 class="text-warning mb-0">{{ total_vulnerabilities }}</h3>
+          <small class="text-muted">Stage 2 Vulnerabilities</small>
         </div>
-        {% endif %}
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-success h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+          <h3 class="text-success mb-0">{{ completed_repairs }}</h3>
+          <small class="text-muted">Repairs Completed</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-danger h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-times-circle fa-2x text-danger mb-2"></i>
+          <h3 class="text-danger mb-0">{{ failed_repairs }}</h3>
+          <small class="text-muted">Repairs Failed</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-info h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-clock fa-2x text-info mb-2"></i>
+          <h3 class="text-info mb-0">{{ pending_repairs }}</h3>
+          <small class="text-muted">Pending Repair</small>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        <!-- Repairs List -->
-        <div class="row">
-            <div class="col-12">
-                <div class="stat-card">
-                    <h5><i class="fas fa-list"></i> Repair Results</h5>
-                    <div id="repairs-list">
-                        {% if repair_results and repair_results.repairs %}
-                            {% for repair in repair_results.repairs %}
-                            <div class="repair-card">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <div class="flex-grow-1">
-                                        <h6>
-                                            <i class="fas fa-bug"></i> {{ repair.crash_id }}
-                                            <span class="status-badge status-{{ repair.status }}">
-                                                {{ repair.status|upper }}
-                                            </span>
-                                        </h6>
-                                        
-                                        {% if repair.status == 'completed' and repair.best_patch %}
-                                        <p class="mb-2">
-                                            <strong>File:</strong> {{ repair.best_patch.file }}<br>
-                                            <strong>Patch Type:</strong> {{ repair.best_patch.type|title }}<br>
-                                            <strong>Changes:</strong> +{{ repair.best_patch.lines_added }} -{{ repair.best_patch.lines_removed }}
-                                        </p>
-                                        
-                                        <!-- Score Bar -->
-                                        {% set score_percent = (repair.best_patch.score * 100)|round|int %}
-                                        <div class="mb-2">
-                                            <small class="text-muted">Validation Score: {{ score_percent }}%</small>
-                                            <div class="score-bar">
-                                                <div class="score-fill score-fill-{{ loop.index }}" data-score="{{ score_percent }}"></div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Patch Preview -->
-                                        <div class="patch-preview">
-                                            <pre class="mb-0">{{ repair.best_patch.diff[:500] }}{% if repair.best_patch.diff|length > 500 %}...{% endif %}</pre>
-                                        </div>
-                                        
-                                        <!-- Actions -->
-                                        <div class="mt-3">
-                                            <button class="btn btn-sm btn-success" onclick="applyPatch('{{ scan_id }}', '{{ repair.crash_id }}')">
-                                                <i class="fas fa-check"></i> Apply Patch
-                                            </button>
-                                            <button class="btn btn-sm btn-primary" onclick="downloadPatch('{{ scan_id }}', '{{ repair.crash_id }}')">
-                                                <i class="fas fa-download"></i> Download
-                                            </button>
-                                            <button class="btn btn-sm btn-info" onclick="viewPatchDetails('{{ scan_id }}', '{{ repair.crash_id }}')">
-                                                <i class="fas fa-eye"></i> View Details
-                                            </button>
-                                        </div>
-                                        {% elif repair.status == 'failed' %}
-                                        <p class="text-danger mb-0">
-                                            <i class="fas fa-exclamation-circle"></i> {{ repair.error if repair.error else 'Repair failed' }}
-                                        </p>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="text-center py-5">
-                                <i class="fas fa-robot fa-3x text-muted mb-3"></i>
-                                <p class="text-muted">No repair results yet. Click "Start AI Repair" to begin.</p>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
+  <!-- Main Content Layout - 3 Columns -->
+  <div class="row">
+    <!-- Left Column: Vulnerabilities -->
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header bg-warning text-dark">
+          <h6 class="mb-0">
+            <i class="fas fa-bug"></i> Stage 2 Vulnerabilities ({{ total_vulnerabilities }})
+          </h6>
         </div>
+        <div class="card-body p-0" style="max-height: 700px; overflow-y: auto;">
+          {% if vulnerabilities %}
+            <div class="list-group list-group-flush">
+              {% for vuln in vulnerabilities %}
+              <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <div class="flex-grow-1">
+                    <div class="d-flex align-items-center mb-1">
+                      <i class="fas fa-bug text-danger me-2"></i>
+                      <strong class="text-dark">{{ vuln.file }}</strong>
+                      <span class="text-muted mx-1">:</span>
+                      <span class="text-muted">{{ vuln.line }}</span>
+                    </div>
+                    <p class="mb-1 small text-muted">{{ vuln.message[:80] }}{% if vuln.message|length > 80 %}...{% endif %}</p>
+                    <div>
+                      <span class="badge bg-warning text-dark me-1" style="font-size: 0.7rem;">{{ vuln.severity | upper }}</span>
+                      <span class="badge bg-secondary" style="font-size: 0.7rem;">CWE-{{ vuln.cwe }}</span>
+                    </div>
+                  </div>
+                  <div class="text-end ms-2" style="min-width: 100px;">
+                    {% if vuln.repair_status == 'completed' %}
+                      <span class="badge bg-success">
+                        <i class="fas fa-check"></i> Repaired
+                      </span>
+                    {% elif vuln.repair_status == 'failed' %}
+                      <span class="badge bg-danger">
+                        <i class="fas fa-times"></i> Failed
+                      </span>
+                    {% else %}
+                      <button class="btn btn-warning btn-sm" onclick="startAIRepair('{{ vuln.id }}')">
+                        <i class="fas fa-robot"></i> Repair
+                      </button>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="p-4 text-center">
+              <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+              <h6 class="text-muted mb-2">No Stage 2 Vulnerabilities</h6>
+              <p class="small text-muted">All complex vulnerabilities have been addressed</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
     </div>
 
-    <!-- Patch Details Modal -->
-    <div class="modal fade" id="patchModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Patch Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="patch-modal-body">
-                    <!-- Content loaded dynamically -->
-                </div>
-            </div>
+    <!-- Middle Column: AI Repairs -->
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header bg-success text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-robot"></i> AI-Generated Repairs ({{ completed_repairs }})
+          </h6>
         </div>
+        <div class="list-group list-group-flush" style="max-height: 700px; overflow-y: auto;">
+          {% if repairs %}
+            {% for repair in repairs %}
+            <div class="list-group-item repair-card">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center mb-1">
+                    <i class="fas fa-check-circle text-success me-2"></i>
+                    <strong class="text-dark small">{{ repair.file }}</strong>
+                    <span class="text-muted mx-1">:</span>
+                    <span class="text-muted small">{{ repair.line }}</span>
+                  </div>
+                  <div class="mb-2">
+                    <span class="badge bg-success small">{{ (repair.confidence * 100) | int }}% confidence</span>
+                    <span class="badge bg-info small ms-1">{{ repair.repair_method }}</span>
+                  </div>
+                  
+                  <!-- Confidence Score Bar -->
+                  <div class="score-bar mb-2">
+                    <div class="score-fill" style="width: {{ (repair.confidence * 100) | int }}%"></div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- AI Analysis Summary -->
+              <p class="mb-2 small text-success">
+                <i class="fas fa-brain me-1"></i>{{ repair.description[:100] if repair.description else 'AI-generated security fix' }}{% if repair.description and repair.description|length > 100 %}...{% endif %}
+              </p>
+              
+              <!-- Diff Preview -->
+              <details class="mb-2">
+                <summary class="btn btn-sm btn-outline-secondary">View Code Changes</summary>
+                <div class="bg-light p-2 rounded mt-2">
+                  {% if repair.original_code %}
+                  <div class="diff-line-remove small mb-1">
+                    <strong>- Before:</strong> {{ repair.original_code[:100] }}{% if repair.original_code|length > 100 %}...{% endif %}
+                  </div>
+                  {% endif %}
+                  {% if repair.patched_code %}
+                  <div class="diff-line-add small">
+                    <strong>+ After:</strong> {{ repair.patched_code[:100] }}{% if repair.patched_code|length > 100 %}...{% endif %}
+                  </div>
+                  {% endif %}
+                </div>
+              </details>
+
+              <!-- Actions -->
+              <div class="btn-group btn-group-sm w-100">
+                <button class="btn btn-success" onclick="applyRepair('{{ repair.id }}')">
+                  <i class="fas fa-check"></i> Apply
+                </button>
+                <button class="btn btn-outline-secondary" onclick="downloadRepair('{{ repair.id }}')">
+                  <i class="fas fa-download"></i>
+                </button>
+                <button class="btn btn-outline-danger" onclick="rejectRepair('{{ repair.id }}')">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="p-4 text-center">
+              <i class="fas fa-robot fa-4x text-muted mb-3"></i>
+              <h6 class="text-muted mb-2">No AI Repairs Yet</h6>
+              <p class="small text-muted mb-3">Start AI repair from the vulnerability list</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
     </div>
 
-    <!-- Data for JavaScript -->
-    <div id="page-data" 
-         data-scan-id="{{ scan_id }}"
-         data-has-repair-results="{{ 'true' if repair_results else 'false' }}"
-         style="display: none;">
+    <!-- Right Column: Info & Controls -->
+    <div class="col-lg-4">
+      <!-- AI Repair Categories -->
+      <div class="card mb-3">
+        <div class="card-header bg-warning text-dark">
+          <h6 class="mb-0">
+            <i class="fas fa-list"></i> Vulnerability Types
+          </h6>
+        </div>
+        <div class="list-group list-group-flush">
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-warning small">Buffer Overflow</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-120/121/122 • Context-aware</small>
+            </div>
+            <span class="badge bg-warning text-dark rounded-pill">{{ buffer_overflow_count }}</span>
+          </div>
+          
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-warning small">Format String</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-134 • Dynamic analysis</small>
+            </div>
+            <span class="badge bg-warning text-dark rounded-pill">{{ format_string_count }}</span>
+          </div>
+          
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-warning small">Race Condition</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-362 • Multi-threading</small>
+            </div>
+            <span class="badge bg-warning text-dark rounded-pill">{{ race_condition_count }}</span>
+          </div>
+          
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-warning small">Other Complex</div>
+              <small class="text-muted" style="font-size: 0.7rem;">Various CWEs • AI analysis</small>
+            </div>
+            <span class="badge bg-warning text-dark rounded-pill">{{ other_count }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch Actions -->
+      <div class="card mb-3">
+        <div class="card-header bg-primary text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-bolt"></i> Batch Actions
+          </h6>
+        </div>
+        <div class="card-body">
+          <button class="btn btn-warning btn-block mb-2" onclick="repairAllPending()">
+            <i class="fas fa-robot"></i> Repair All Pending
+          </button>
+          <button class="btn btn-success btn-block mb-2" onclick="applyAllRepairs()">
+            <i class="fas fa-check-double"></i> Apply All Repairs
+          </button>
+          <button class="btn btn-outline-secondary btn-block" onclick="exportRepairs()">
+            <i class="fas fa-download"></i> Export All
+          </button>
+        </div>
+      </div>
+
+      <!-- Info Panel - Real-time Logs -->
+      <div class="card">
+        <div class="card-header bg-dark text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-terminal"></i> Agent Activity Log
+            <span id="log-status" class="badge bg-success ms-2">Live</span>
+          </h6>
+        </div>
+        <div class="card-body p-0">
+          <div id="repair-logs" style="height: 600px; overflow-y: auto; background-color: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; font-size: 12px; padding: 15px; white-space: pre-wrap;">
+            <div class="text-muted">Waiting for repair to start...</div>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        const pageData = document.getElementById('page-data');
-        const scanId = pageData.getAttribute('data-scan-id');
-        const hasRepairResults = pageData.getAttribute('data-has-repair-results') === 'true';
+<script>
+const scanId = '{{ scan_id }}';
+let logPollInterval = null;
+let lastLogLength = 0;
 
-        // Set score bar widths from data attributes
-        document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('.score-fill').forEach(function(el) {
-                const score = el.getAttribute('data-score');
-                if (score) {
-                    el.style.width = score + '%';
-                }
-            });
-        });
+// Auto-scroll to bottom of logs
+function scrollLogsToBottom() {
+  const logsDiv = document.getElementById('repair-logs');
+  logsDiv.scrollTop = logsDiv.scrollHeight;
+}
 
-        function startRepair() {
-            const btn = document.getElementById('start-repair-btn');
-            const progressSection = document.getElementById('progress-section');
-            const progressLog = document.getElementById('progress-log');
-            
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loading-spinner"></span> Starting...';
-            progressSection.style.display = 'block';
-            
-            // Add initial log
-            addProgressLog('🚀 Initializing AI repair system...');
-            addProgressLog('🔍 Loading vulnerabilities...');
-
-            fetch(`/api/repair/start/${scanId}`, {
-                method: 'POST'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'started') {
-                    addProgressLog(`✅ Repair started for ${data.vulnerabilities_queued} vulnerabilities`);
-                    addProgressLog('🤖 AI agents are analyzing vulnerabilities...');
-                    addProgressLog('');
-                    addProgressLog('📊 Progress:');
-                    
-                    // Start polling for progress
-                    startProgressPolling();
-                } else if (data.status === 'error') {
-                    addProgressLog(`❌ Error: ${data.message}`);
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-magic"></i> Start AI Repair';
-                } else {
-                    addProgressLog(`ℹ️ ${data.message}`);
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-magic"></i> Start AI Repair';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                addProgressLog(`❌ Failed to start repair: ${error}`);
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-magic"></i> Start AI Repair';
-            });
+// Poll for log updates
+function startLogPolling() {
+  if (logPollInterval) {
+    clearInterval(logPollInterval);
+  }
+  
+  logPollInterval = setInterval(() => {
+    fetch(`/api/repair/logs/${scanId}`)
+      .then(response => response.json())
+      .then(data => {
+        const logsDiv = document.getElementById('repair-logs');
+        const statusBadge = document.getElementById('log-status');
+        
+        if (data.logs && data.logs.length > lastLogLength) {
+          // Format logs with colors
+          const formattedLogs = data.logs
+            .replace(/\[(\d{2}:\d{2}:\d{2})\]/g, '<span style="color: #569cd6;">[$1]</span>')
+            .replace(/✓/g, '<span style="color: #4ec9b0;">✓</span>')
+            .replace(/✗/g, '<span style="color: #f48771;">✗</span>')
+            .replace(/🤖/g, '<span style="color: #dcdcaa;">🤖</span>')
+            .replace(/🔍/g, '<span style="color: #4fc1ff;">🔍</span>')
+            .replace(/🎉/g, '<span style="color: #4ec9b0;">🎉</span>')
+            .replace(/💾/g, '<span style="color: #c586c0;">💾</span>')
+            .replace(/⚠/g, '<span style="color: #ce9178;">⚠</span>')
+            .replace(/→/g, '<span style="color: #808080;">→</span>')
+            .replace(/Analyzer Agent/g, '<span style="color: #4fc1ff; font-weight: bold;">Analyzer Agent</span>')
+            .replace(/Generator Agent/g, '<span style="color: #dcdcaa; font-weight: bold;">Generator Agent</span>')
+            .replace(/Validator Agent/g, '<span style="color: #4ec9b0; font-weight: bold;">Validator Agent</span>')
+            .replace(/ERROR/g, '<span style="color: #f48771; font-weight: bold;">ERROR</span>')
+            .replace(/SUCCESS/g, '<span style="color: #4ec9b0; font-weight: bold;">SUCCESS</span>');
+          
+          logsDiv.innerHTML = formattedLogs;
+          lastLogLength = data.logs.length;
+          scrollLogsToBottom();
         }
-
-        function addProgressLog(message) {
-            const progressLog = document.getElementById('progress-log');
-            const timestamp = new Date().toLocaleTimeString();
-            progressLog.innerHTML += `[${timestamp}] ${message}\n`;
-            progressLog.scrollTop = progressLog.scrollHeight;
+        
+        // Update status badge
+        if (data.status === 'completed') {
+          statusBadge.className = 'badge bg-success ms-2';
+          statusBadge.textContent = 'Completed';
+          clearInterval(logPollInterval);
+          
+          // Show completion message but don't reload
+          if (!document.getElementById('completion-notice')) {
+            const notice = document.createElement('div');
+            notice.id = 'completion-notice';
+            notice.className = 'alert alert-success mt-3';
+            notice.innerHTML = '<i class="fas fa-check-circle"></i> <strong>Repair completed!</strong> Scroll down to see the results in the AI-Generated Repairs section. <button class="btn btn-sm btn-success ms-2" onclick="location.reload()">Refresh Page</button>';
+            document.querySelector('.container-fluid').insertBefore(notice, document.querySelector('.row').nextSibling);
+          }
+        } else if (data.status === 'failed') {
+          statusBadge.className = 'badge bg-danger ms-2';
+          statusBadge.textContent = 'Failed';
+          clearInterval(logPollInterval);
+        } else if (data.status === 'running') {
+          statusBadge.className = 'badge bg-warning ms-2';
+          statusBadge.textContent = 'Running';
         }
+      })
+      .catch(error => {
+        console.error('Error fetching logs:', error);
+      });
+  }, 1000); // Poll every second for real-time updates
+}
 
-        let pollInterval = null;
-        let lastVulnCount = 0;
-
-        function startProgressPolling() {
-            if (pollInterval) clearInterval(pollInterval);
-            
-            pollInterval = setInterval(() => {
-                fetch(`/api/repair/status/${scanId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'completed' || data.status === 'failed') {
-                        clearInterval(pollInterval);
-                        
-                        if (data.status === 'completed') {
-                            const summary = data.summary || {};
-                            addProgressLog('');
-                            addProgressLog('✅ AI Repair completed!');
-                            addProgressLog(`📈 Results: ${summary.successful || 0} successful, ${summary.failed || 0} failed`);
-                            updateProgressBar(100, 'Completed');
-                        } else {
-                            addProgressLog('❌ Repair process failed');
-                            updateProgressBar(100, 'Failed');
-                        }
-                        
-                        // Reload page after 2 seconds
-                        setTimeout(() => {
-                            location.reload();
-                        }, 2000);
-                    } else if (data.repairs) {
-                        // Update progress based on completed repairs
-                        const total = data.total_vulnerabilities || 1;
-                        const completed = data.repairs.filter(r => r.status === 'completed' || r.status === 'failed').length;
-                        const progress = Math.round((completed / total) * 100);
-                        
-                        updateProgressBar(progress, `${completed}/${total} vulnerabilities processed`);
-                        
-                        // Log new completions
-                        if (completed > lastVulnCount) {
-                            const newRepairs = data.repairs.slice(lastVulnCount);
-                            newRepairs.forEach(repair => {
-                                if (repair.status === 'completed') {
-                                    addProgressLog(`✅ ${repair.crash_id}: Generated ${repair.patches_generated || 0} patches`);
-                                } else if (repair.status === 'failed') {
-                                    addProgressLog(`❌ ${repair.crash_id}: Failed - ${repair.error || 'Unknown error'}`);
-                                }
-                            });
-                            lastVulnCount = completed;
-                        }
-                    }
-                })
-                .catch(error => {
-                    console.error('Polling error:', error);
-                });
-            }, 2000); // Poll every 2 seconds
+// Start polling on page load if repair is in progress or has logs
+window.addEventListener('DOMContentLoaded', () => {
+  // Check if repair logs exist
+  fetch(`/api/repair/logs/${scanId}`)
+    .then(response => response.json())
+    .then(data => {
+      const logsDiv = document.getElementById('repair-logs');
+      const statusBadge = document.getElementById('log-status');
+      
+      // If logs exist, display them
+      if (data.logs && data.logs.length > 0) {
+        // Format and display existing logs
+        const formattedLogs = data.logs
+          .replace(/\[(\d{2}:\d{2}:\d{2})\]/g, '<span style="color: #569cd6;">[$1]</span>')
+          .replace(/✓/g, '<span style="color: #4ec9b0;">✓</span>')
+          .replace(/✗/g, '<span style="color: #f48771;">✗</span>')
+          .replace(/🤖/g, '<span style="color: #dcdcaa;">🤖</span>')
+          .replace(/🔍/g, '<span style="color: #4fc1ff;">🔍</span>')
+          .replace(/🎉/g, '<span style="color: #4ec9b0;">🎉</span>')
+          .replace(/💾/g, '<span style="color: #c586c0;">💾</span>')
+          .replace(/⚠/g, '<span style="color: #ce9178;">⚠</span>')
+          .replace(/→/g, '<span style="color: #808080;">→</span>')
+          .replace(/Analyzer Agent/g, '<span style="color: #4fc1ff; font-weight: bold;">Analyzer Agent</span>')
+          .replace(/Generator Agent/g, '<span style="color: #dcdcaa; font-weight: bold;">Generator Agent</span>')
+          .replace(/Validator Agent/g, '<span style="color: #4ec9b0; font-weight: bold;">Validator Agent</span>')
+          .replace(/ERROR/g, '<span style="color: #f48771; font-weight: bold;">ERROR</span>')
+          .replace(/SUCCESS/g, '<span style="color: #4ec9b0; font-weight: bold;">SUCCESS</span>');
+        
+        logsDiv.innerHTML = formattedLogs;
+        lastLogLength = data.logs.length;
+        scrollLogsToBottom();
+        
+        // Update status badge
+        if (data.status === 'completed') {
+          statusBadge.className = 'badge bg-success ms-2';
+          statusBadge.textContent = 'Completed';
+        } else if (data.status === 'failed') {
+          statusBadge.className = 'badge bg-danger ms-2';
+          statusBadge.textContent = 'Failed';
+        } else if (data.status === 'running') {
+          statusBadge.className = 'badge bg-warning ms-2';
+          statusBadge.textContent = 'Running';
+          // Start polling if still running
+          startLogPolling();
+        } else {
+          statusBadge.className = 'badge bg-info ms-2';
+          statusBadge.textContent = 'Ready';
         }
+      }
+    });
+});
 
-        function updateProgressBar(percentage, text) {
-            const progressBar = document.getElementById('progress-bar');
-            const progressText = document.getElementById('progress-text');
-            progressBar.style.width = percentage + '%';
-            progressText.textContent = text || (percentage + '%');
-        }
+// Start AI repair for a vulnerability
+function startAIRepair(vulnId) {
+  console.log('Starting AI repair for vulnerability:', vulnId);
+  
+  if (!confirm('Start AI-assisted repair for this vulnerability?\n\nThis will analyze the vulnerability and generate patches using AI.')) {
+    return;
+  }
+  
+  // Show loading state
+  const btn = event.target.closest('button');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+  
+  // Use existing /api/repair/start endpoint
+  fetch(`/api/repair/start/${scanId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'started') {
+      alert(`AI repair started!\n\nProcessing ${data.vulnerabilities_queued} vulnerabilities.\n\nWatch the Agent Activity Log for real-time progress.`);
+      
+      // Start log polling
+      startLogPolling();
+    } else {
+      alert('Error: ' + (data.message || 'Failed to start repair'));
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-robot"></i> Repair';
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error starting AI repair: ' + error);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-robot"></i> Repair';
+  });
+}
 
-        function refreshStatus() {
-            fetch(`/api/repair/status/${scanId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.status !== 'not_started') {
-                    // Reload page to show updated results
-                    location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-        }
+// Apply a repair
+function applyRepair(repairId) {
+  if (!confirm('Apply this AI-generated repair?\n\nThis will modify the source code.')) {
+    return;
+  }
+  
+  // Use existing /api/repair/apply endpoint
+  fetch(`/api/repair/apply/${scanId}/${repairId}`, {
+    method: 'POST'
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'success') {
+      alert(`Repair applied successfully!\n\nFile: ${data.file}`);
+      location.reload();
+    } else {
+      alert('Error: ' + (data.message || 'Failed to apply repair'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error applying repair: ' + error);
+  });
+}
 
-        function applyPatch(scanId, crashId) {
-            if (!confirm('Are you sure you want to apply this patch? This will modify the source code.')) {
-                return;
-            }
+// Download repair
+function downloadRepair(repairId) {
+  // Use existing /api/repair/download endpoint
+  window.location.href = `/api/repair/download/${scanId}/${repairId}`;
+}
 
-            fetch(`/api/repair/apply/${scanId}/${crashId}`, {
-                method: 'POST'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    alert('Patch applied successfully to ' + data.file);
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to apply patch: ' + error);
-            });
-        }
+// Reject repair (mark as rejected in UI)
+function rejectRepair(repairId) {
+  if (!confirm('Reject this AI-generated repair?\n\nThis will hide it from the list.')) {
+    return;
+  }
+  
+  // For now, just hide it (no backend endpoint for rejection yet)
+  const repairCard = event.target.closest('.list-group-item');
+  if (repairCard) {
+    repairCard.style.display = 'none';
+    alert('Repair rejected (hidden from view)');
+  }
+}
 
-        function downloadPatch(scanId, crashId) {
-            window.location.href = `/api/repair/download/${scanId}/${crashId}`;
-        }
+// Batch repair all pending
+function repairAllPending() {
+  if (!confirm('Start AI repair for all pending vulnerabilities?\n\nThis may take several minutes.')) {
+    return;
+  }
+  
+  // Use existing /api/repair/start endpoint (it processes all Stage 2 vulnerabilities)
+  fetch(`/api/repair/start/${scanId}`, {
+    method: 'POST'
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'started') {
+      alert(`Batch repair started!\n\nProcessing ${data.vulnerabilities_queued} vulnerabilities.\n\nWatch the Agent Activity Log for real-time progress.`);
+      
+      // Start log polling
+      startLogPolling();
+    } else {
+      alert('Error: ' + (data.message || 'Batch repair failed'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error in batch repair: ' + error);
+  });
+}
 
-        function viewPatchDetails(scanId, crashId) {
-            fetch(`/api/repair/patch/${scanId}/${crashId}`)
-            .then(response => response.json())
-            .then(data => {
-                const modalBody = document.getElementById('patch-modal-body');
-                modalBody.innerHTML = `
-                    <h6>Crash ID: ${data.crash_id}</h6>
-                    <p><strong>Status:</strong> ${data.status}</p>
-                    <p><strong>Patches Generated:</strong> ${data.patches_generated}</p>
-                    ${data.best_patch ? `
-                        <h6 class="mt-3">Best Patch</h6>
-                        <p><strong>Type:</strong> ${data.best_patch.type}</p>
-                        <p><strong>File:</strong> ${data.best_patch.file}</p>
-                        <p><strong>Score:</strong> ${(data.best_patch.score * 100).toFixed(0)}%</p>
-                        <pre class="patch-preview">${data.best_patch.diff}</pre>
-                    ` : '<p>No patch available</p>'}
-                `;
-                const modal = new bootstrap.Modal(document.getElementById('patchModal'));
-                modal.show();
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to load patch details: ' + error);
-            });
-        }
+// Apply all repairs
+function applyAllRepairs() {
+  if (!confirm('Apply all AI-generated repairs?\n\nThis will modify multiple source files.')) {
+    return;
+  }
+  
+  // Get all repair IDs from the page
+  const repairCards = document.querySelectorAll('.repair-card');
+  const repairIds = Array.from(repairCards).map(card => {
+    const applyBtn = card.querySelector('button[onclick^="applyRepair"]');
+    if (applyBtn) {
+      const match = applyBtn.getAttribute('onclick').match(/applyRepair\('([^']+)'\)/);
+      return match ? match[1] : null;
+    }
+    return null;
+  }).filter(id => id !== null);
+  
+  if (repairIds.length === 0) {
+    alert('No repairs to apply');
+    return;
+  }
+  
+  let appliedCount = 0;
+  let failedCount = 0;
+  
+  // Apply each repair sequentially
+  const applyNext = (index) => {
+    if (index >= repairIds.length) {
+      alert(`Batch apply completed!\n\nApplied: ${appliedCount}\nFailed: ${failedCount}`);
+      location.reload();
+      return;
+    }
+    
+    fetch(`/api/repair/apply/${scanId}/${repairIds[index]}`, {
+      method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'success') {
+        appliedCount++;
+      } else {
+        failedCount++;
+      }
+      applyNext(index + 1);
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      failedCount++;
+      applyNext(index + 1);
+    });
+  };
+  
+  applyNext(0);
+}
 
-        function checkHealth() {
-            fetch('/api/repair/health')
-            .then(response => response.json())
-            .then(data => {
-                let message = `Status: ${data.status}\n\nProviders:\n`;
-                for (const [provider, healthy] of Object.entries(data.providers)) {
-                    message += `- ${provider}: ${healthy ? '✓ Healthy' : '✗ Unavailable'}\n`;
-                }
-                message += `\n${data.message}`;
-                alert(message);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to check health: ' + error);
-            });
-        }
-
-        // Auto-refresh every 30 seconds if repairs are in progress
-        if (!hasRepairResults) {
-            setInterval(() => {
-                refreshStatus();
-            }, 30000);
-        }
-    </script>
-</body>
-</html>
+// Export repairs
+function exportRepairs() {
+  // Download repair results JSON
+  window.location.href = `/scans/${scanId}/repair/repair_results.json`;
+}
+</script>
+{% endblock %}

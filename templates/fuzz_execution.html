@@ -486,7 +486,7 @@
                     </div>
                     <div class="config-field">
                         <label>Runtime per Target (minutes)</label>
-                        <input type="number" id="runtimeMinutes" value="5" min="1" max="60">
+                        <input type="number" id="runtimeMinutes" value="1" min="0.1" max="60" step="0.1">
                     </div>
                 </div>
             </div>
@@ -921,15 +921,50 @@
         }
 
         function showCrashAnalysis(targetName) {
-            // Open crash analysis in a modal or new page
             fetch(`/api/fuzz/crashes/${scanId}/${targetName}/analyze`)
                 .then(r => r.json())
                 .then(data => {
-                    if (data.analysis) {
-                        alert(`Crash Analysis for ${targetName}:\n\n${data.analysis}`);
-                    } else {
-                        alert('No detailed analysis available for this crash.');
-                    }
+                    // Build modal HTML
+                    const existing = document.getElementById('crashModal');
+                    if (existing) existing.remove();
+
+                    const modal = document.createElement('div');
+                    modal.id = 'crashModal';
+                    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+                    
+                    const inputHex = data.crash_input_hex || '';
+                    const inputText = data.crash_input_text || '';
+                    const inputSize = data.crash_input_size || 0;
+                    
+                    modal.innerHTML = `
+                        <div style="background:white;border-radius:10px;padding:30px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;position:relative;">
+                            <button onclick="document.getElementById('crashModal').remove()" style="position:absolute;top:10px;right:15px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+                            <h3 style="margin-bottom:15px;">🔥 Crash Analysis: ${targetName}</h3>
+                            
+                            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:15px;margin-bottom:15px;">
+                                <strong>💥 Crash-Inducing Input</strong>
+                                <div style="margin-top:10px;">
+                                    <div style="font-size:12px;color:#666;margin-bottom:4px;">Size: ${inputSize} byte${inputSize !== 1 ? 's' : ''}</div>
+                                    <div style="font-family:monospace;background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:4px;font-size:13px;word-break:break-all;">
+                                        ${inputHex ? `<div style="color:#9cdcfe;">HEX: ${inputHex}</div>` : ''}
+                                        ${inputText ? `<div style="color:#ce9178;margin-top:4px;">TXT: ${inputText}</div>` : '<div style="color:#888;">[ empty / null input ]</div>'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:6px;padding:15px;margin-bottom:15px;">
+                                <strong>📋 Analysis</strong>
+                                <pre style="margin-top:10px;font-size:13px;white-space:pre-wrap;word-break:break-word;">${data.analysis || 'No analysis available'}</pre>
+                            </div>
+
+                            <div style="background:#d1ecf1;border:1px solid #bee5eb;border-radius:6px;padding:15px;">
+                                <strong>🛡️ What this means</strong>
+                                <p style="margin-top:8px;font-size:13px;">This input was enough to crash the function. An attacker could use this exact input to exploit the vulnerability in production.</p>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
                 })
                 .catch(err => {
                     alert('Error loading crash analysis: ' + err);

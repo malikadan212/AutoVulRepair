@@ -29,19 +29,21 @@ STAGE1_CATEGORIES = {
     
     # Category 3: Dead/Ineffective Code (MSC12-C / CWE-561, CWE-1164)
     # DISABLED by default - only 20-40% satisfaction rate
+    # Note: variableScope moved to Stage 2 (requires code restructuring)
     'dead_code': {
         'cwes': ['561', '1164', '398'],
-        'cppcheck_ids': ['unusedFunction', 'unusedVariable', 'unreadVariable', 'variableScope'],
+        'cppcheck_ids': ['unusedFunction', 'unusedVariable', 'unreadVariable'],
         'priority': 2,
         'enabled': False,  # Disabled by default
         'success_rate': 0.30
     },
     
-    # Category 4: Integer Overflow (CWE-190 / CWE-191)
+    # Category 4: Integer Overflow (CWE-190 / CWE-191 / CWE-197)
     # Based on IntRepair paper - deterministic pattern-based repairs
+    # Now includes: addition, multiplication, subtraction underflow, shift, truncation
     'integer_overflow': {
-        'cwes': ['190', '191'],
-        'cppcheck_ids': ['integerOverflow'],
+        'cwes': ['190', '191', '197'],
+        'cppcheck_ids': ['integerOverflow', 'signedIntegerOverflow', 'unsignedIntegerOverflow'],
         'priority': 15,
         'enabled': True,
         'success_rate': 0.90
@@ -56,25 +58,71 @@ STAGE1_CATEGORIES = {
         'priority': 16,
         'enabled': True,
         'success_rate': 0.85
+    },
+    
+    # Category 6: Buffer Overflow (CWE-120, CWE-121, CWE-122, CWE-788)
+    # Based on buffer overflow scanner and fixer
+    'buffer_overflow': {
+        'cwes': ['120', '121', '122', '788', '119', '477'],
+        'cppcheck_ids': [
+            'bufferAccessOutOfBounds', 'arrayIndexOutOfBounds',
+            'bufferOverflow', 'bufferOverflowCalled',
+            'getsCalled',           # gets() is always unsafe
+            'strcpyCalled',         # strcpy without bounds
+            'strcatCalled',         # strcat without bounds
+            'sprintfCalled',        # sprintf without bounds
+            'obsoleteFunctions',    # deprecated unsafe functions
+        ],
+        'priority': 17,
+        'enabled': True,
+        'success_rate': 0.80
+    },
+    
+    # Category 7: Format String (CWE-134)
+    # Handles direct variable as format string (80% of cases)
+    # Routes complex dynamic format construction to Stage 2
+    'format_string': {
+        'cwes': ['134'],
+        'cppcheck_ids': ['invalidPrintfArgType_sint', 'invalidPrintfArgType_uint', 'invalidPrintfArgType_s'],
+        'priority': 14,
+        'enabled': True,
+        'success_rate': 0.85
+    },
+    
+    # Category 8: Use-After-Free (CWE-416) - CETS Instrumentation
+    # Handles intra-procedural UAF with lock/key mechanism
+    # Routes inter-procedural cases to Stage 2
+    'use_after_free': {
+        'cwes': ['416'],
+        'cppcheck_ids': ['deallocuse', 'useAfterFree'],
+        'priority': 11,
+        'enabled': True,
+        'success_rate': 0.75
+    },
+    
+    # Category 9: Dangerous API (CWE-676)
+    # Replaces dangerous/deprecated APIs with safer alternatives
+    # Extends API-REP pattern from buffer overflow
+    'dangerous_api': {
+        'cwes': ['676'],
+        'cppcheck_ids': ['dangerousFunction', 'obsoleteFunctions'],
+        'priority': 13,
+        'enabled': True,
+        'success_rate': 0.88
     }
 }
 
 # Vulnerabilities that should NOT be auto-repaired (route to Stage 2 AI)
 STAGE2_ONLY = {
-    'buffer_overflow': {
-        'cwes': ['121', '122', '788'],
-        'cppcheck_ids': ['bufferAccessOutOfBounds', 'arrayIndexOutOfBounds'],
-        'reason': 'Non-local repair required'
-    },
-    'format_string': {
-        'cwes': ['134'],
-        'cppcheck_ids': ['invalidPrintfArgType_sint', 'invalidPrintfArgType_uint'],
-        'reason': 'Requires understanding calling convention'
-    },
     'race_condition': {
         'cwes': ['362'],
         'cppcheck_ids': ['raceAfterInterlockedDecrement'],
         'reason': 'Multi-threading complexity'
+    },
+    'code_quality': {
+        'cwes': ['398'],  # CWE-398: Indicator of Poor Code Quality
+        'cppcheck_ids': ['variableScope'],
+        'reason': 'Requires code restructuring and context analysis'
     }
 }
 

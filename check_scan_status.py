@@ -5,8 +5,9 @@ from src.services.scan_service import ScanService
 from src.repositories.scan_repository import ScanRepository
 from src.models.scan_v2 import DatabaseManager
 import os
+from src.config.database import get_secure_database_url
 
-DATABASE_URL = 'postgresql://autovulrepair:autovulrepair_secure_password_2024@localhost:5432/autovulrepair'
+DATABASE_URL = get_secure_database_url()
 db_manager = DatabaseManager(DATABASE_URL)
 scan_repository = ScanRepository(db_manager, use_database=True)
 scan_service = ScanService(scan_repository)

@@ -16,10 +16,10 @@ sys.path.insert(0, project_root)
 from src.workers.job_worker import celery_app
 
 if __name__ == '__main__':
-    # Start worker with correct queues
+    # Start worker with correct queues - including health_queue and maintenance_queue
     celery_app.worker_main([
         'worker', 
         '--loglevel=info', 
         '--pool=solo', 
-        '--queues=scan_queue,fuzzing_queue,celery'
+        '--queues=scan_queue,fuzzing_queue,celery,health_queue,maintenance_queue'
     ])

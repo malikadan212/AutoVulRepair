@@ -39,6 +39,12 @@ def patch_dashboard(scan_id):
             scan = results['scan']
             vulnerabilities = results['findings']
             
+            # Filter out false positives from patch generation
+            vulnerabilities = [
+                v for v in vulnerabilities 
+                if not v.get('metadata_json', {}).get('is_false_positive', False)
+            ]
+            
             # Load existing patches if any
             scans_dir = os.getenv('SCANS_DIR', './scans')
             patches_file = os.path.join(scans_dir, scan_id, 'patches.json')
@@ -476,3 +482,219 @@ def export_patches(scan_id):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# PATCH BATCH ROUTES (NEW)
+# ============================================================================
+
+from src.services.patch_batch_service import PatchBatchService
+
+@app.route('/api/scans/<scan_id>/patch-batch/status', methods=['GET'])
+def get_patch_batch_status(scan_id):
+    """
+    Get current patch batch status for a scan
+    
+    Returns:
+        JSON with batch status including stage completion and patch counts
+    """
+    try:
+        batch_service = PatchBatchService()
+        status = batch_service.get_batch_status(scan_id)
+        
+        if not status:
+            return jsonify({
+                'error': 'No patch batch found',
+                'scan_id': scan_id
+            }), 404
+        
+        # Calculate progress percentage
+        total_vulns = status['stage1_vulnerabilities_count'] + status['stage2_vulnerabilities_count']
+        total_patches = status['stage1_patches_count'] + status['stage2_patches_count']
+        
+        if total_vulns > 0:
+            progress_percent = int((total_patches / total_vulns) * 100)
+        else:
+            progress_percent = 0
+        
+        return jsonify({
+            'batch_id': status['id'],
+            'scan_id': status['scan_id'],
+            'status': status['status'],
+            'stage1': {
+                'complete': status['stage1_complete'],
+                'vulnerabilities_count': status['stage1_vulnerabilities_count'],
+                'patches_count': status['stage1_patches_count'],
+                'completed_at': status['stage1_completed_at'].isoformat() if status['stage1_completed_at'] else None
+            },
+            'stage2': {
+                'complete': status['stage2_complete'],
+                'vulnerabilities_count': status['stage2_vulnerabilities_count'],
+                'patches_count': status['stage2_patches_count'],
+                'completed_at': status['stage2_completed_at'].isoformat() if status['stage2_completed_at'] else None
+            },
+            'total_patches_count': status['total_patches_count'],
+            'all_ready': status['all_ready'],
+            'progress_percent': progress_percent,
+            'applied_at': status['applied_at'].isoformat() if status['applied_at'] else None,
+            'commit_sha': status['commit_sha'],
+            'pr_url': status['pr_url'],
+            'branch_name': status['branch_name']
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting patch batch status: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/patch-batches/<batch_id>/patches', methods=['GET'])
+def get_batch_patches(batch_id):
+    """
+    Get all patches in a batch
+    
+    Query params:
+        stage: Optional filter by stage (1 or 2)
+    
+    Returns:
+        JSON with list of patches
+    """
+    try:
+        stage = request.args.get('stage', type=int)
+        
+        batch_service = PatchBatchService()
+        patches = batch_service.get_batch_patches(batch_id, stage=stage)
+        
+        # Convert to JSON-serializable format
+        patches_json = []
+        for patch in patches:
+            patch_dict = dict(patch)
+            if patch_dict.get('created_at'):
+                patch_dict['created_at'] = patch_dict['created_at'].isoformat()
+            patches_json.append(patch_dict)
+        
+        return jsonify({
+            'batch_id': batch_id,
+            'patches': patches_json,
+            'count': len(patches_json)
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting batch patches: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/patch-batches/<batch_id>/apply', methods=['POST'])
+def apply_patch_batch(batch_id):
+    """
+    Apply all patches in a batch
+    
+    Request body:
+        {
+            "selected_patch_ids": ["id1", "id2", ...],  // Optional
+            "create_pr": true  // Optional, default true
+        }
+    
+    Returns:
+        JSON with application result
+    """
+    try:
+        data = request.json or {}
+        selected_patch_ids = data.get('selected_patch_ids')
+        create_pr = data.get('create_pr', True)
+        
+        # Get current user ID (adjust based on your auth system)
+        user_id = getattr(current_user, 'id', 'system')
+        
+        batch_service = PatchBatchService()
+        
+        result = batch_service.apply_batch(
+            batch_id=batch_id,
+            user_id=user_id,
+            selected_patch_ids=selected_patch_ids,
+            create_pr=create_pr
+        )
+        
+        return jsonify({
+            'success': True,
+            'batch_id': batch_id,
+            'commit_sha': result['commit_sha'],
+            'pr_url': result['pr_url'],
+            'branch_name': result['branch_name'],
+            'patches_applied': result['patches_applied'],
+            'files_modified': result['files_modified'],
+            'modified_files': result['modified_files']
+        })
+    
+    except Exception as e:
+        logger.error(f"Error applying patch batch: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/patches/<patch_id>/select', methods=['POST'])
+def update_patch_selection(patch_id):
+    """
+    Update whether a patch is selected for application
+    
+    Request body:
+        {
+            "selected": true/false
+        }
+    
+    Returns:
+        JSON with success status
+    """
+    try:
+        data = request.json or {}
+        selected = data.get('selected', True)
+        
+        batch_service = PatchBatchService()
+        batch_service.update_patch_selection(patch_id, selected)
+        
+        return jsonify({
+            'success': True,
+            'patch_id': patch_id,
+            'selected': selected
+        })
+    
+    except Exception as e:
+        logger.error(f"Error updating patch selection: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/scans/<scan_id>/generate-patches', methods=['POST'])
+def trigger_patch_generation(scan_id):
+    """
+    Trigger patch generation for a scan (both Stage 1 and Stage 2)
+    
+    Returns:
+        JSON with batch ID and status
+    """
+    try:
+        # This will be called by the scan completion handler
+        # For now, return the batch status
+        batch_service = PatchBatchService()
+        status = batch_service.get_batch_status(scan_id)
+        
+        if not status:
+            return jsonify({
+                'error': 'No patch batch found. Patches may not have been generated yet.'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'batch_id': status['id'],
+            'status': status['status']
+        })
+    
+    except Exception as e:
+        logger.error(f"Error triggering patch generation: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

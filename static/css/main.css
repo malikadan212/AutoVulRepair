@@ -141,6 +141,31 @@ body {
   padding: 0.35em 0.65em;
 }
 
+/* Custom badge styling for better visibility */
+.badge-danger {
+  background-color: #f8d7da !important;
+  color: #721c24 !important;
+  border: 1px solid #f5c6cb;
+}
+
+.badge-success {
+  background-color: #d4edda !important;
+  color: #155724 !important;
+  border: 1px solid #c3e6cb;
+}
+
+.badge-warning {
+  background-color: #fff3cd !important;
+  color: #856404 !important;
+  border: 1px solid #ffeaa7;
+}
+
+.badge-info {
+  background-color: #d1ecf1 !important;
+  color: #0c5460 !important;
+  border: 1px solid #bee5eb;
+}
+
 /* ============================================
    Buttons
    ============================================ */

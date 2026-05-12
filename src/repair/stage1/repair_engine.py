@@ -3,6 +3,7 @@ Stage 1 Repair Engine
 Coordinates rule-based repairs for auto-repairable vulnerabilities
 """
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from .uninitialized_var import UninitializedVarRepair
 from .dead_code import DeadCodeRepair
 from .integer_overflow import IntegerOverflowFixer
 from .memfix.memfix_repair import MemFixRepair
+from .buffer_overflow import BufferOverflowFixer
+from .format_string import FormatStringRepair
+from .use_after_free_cets import UseAfterFreeRepair
+from .dangerous_api import DangerousAPIRepair
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,10 @@ class Stage1RepairEngine:
         self.dead_code_repair = DeadCodeRepair()
         self.integer_overflow_repair = IntegerOverflowFixer()
         self.memfix_repair = MemFixRepair()
+        self.buffer_overflow_repair = BufferOverflowFixer(mode="API-REP")  # Use API replacement mode
+        self.format_string_repair = FormatStringRepair()
+        self.use_after_free_repair = UseAfterFreeRepair()
+        self.dangerous_api_repair = DangerousAPIRepair()
         
         logger.info(f"Stage1RepairEngine initialized (dead_code={enable_dead_code})")
     
@@ -105,6 +114,14 @@ class Stage1RepairEngine:
                 patch = self.integer_overflow_repair.generate_patch(vuln, source_code, source_file)
             elif category == 'memory_dealloc':
                 patch = self.memfix_repair.generate_patch(vuln, source_code, source_file)
+            elif category == 'buffer_overflow':
+                patch = self._generate_buffer_overflow_patch(vuln, source_code, source_file)
+            elif category == 'format_string':
+                patch = self.format_string_repair.generate_patch(vuln, source_code, source_file)
+            elif category == 'use_after_free':
+                patch = self.use_after_free_repair.generate_patch(vuln, source_code, source_file)
+            elif category == 'dangerous_api':
+                patch = self.dangerous_api_repair.generate_patch(vuln, source_code, source_file)
             else:
                 logger.error(f"Unknown Stage 1 category: {category}")
                 return None
@@ -125,6 +142,93 @@ class Stage1RepairEngine:
         except Exception as e:
             logger.error(f"Error generating patch for {vuln.get('id')}: {e}", exc_info=True)
             return None
+    
+    def _generate_buffer_overflow_patch(
+        self,
+        vuln: Dict[str, Any],
+        source_code: str,
+        source_file: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Adapter for buffer overflow repair module.
+        Cppcheck sometimes reports the function signature or a comment line rather
+        than the actual unsafe API call.  We scan forward from the reported line
+        (up to 20 lines, staying within the function) to find the real call.
+        """
+        import uuid
+        from .buffer_overflow import BufferOverflowScanner
+
+        line_num = vuln.get('line', 0)
+        lines = source_code.split('\n')
+
+        if line_num < 1 or line_num > len(lines):
+            logger.error(f"Invalid line number {line_num} for buffer overflow")
+            return None
+
+        scanner = BufferOverflowScanner()
+
+        # Try the reported line first, then scan forward if it's a comment/signature
+        target_line_num = None
+        scanned_vuln = None
+
+        for offset in range(0, 21):
+            candidate_num = line_num + offset
+            if candidate_num > len(lines):
+                break
+            candidate = lines[candidate_num - 1]
+
+            # Stop at closing brace (end of function)
+            if offset > 0 and re.match(r'^\s*\}\s*$', candidate):
+                break
+
+            result = scanner.scan_line(candidate, candidate_num)
+            if result and result.get('status') != 'false_positive':
+                target_line_num = candidate_num
+                scanned_vuln = result
+                if offset > 0:
+                    logger.info(
+                        f"Buffer overflow: Cppcheck reported line {line_num} "
+                        f"(comment/signature); actual call found at line {candidate_num}"
+                    )
+                break
+
+        if not scanned_vuln:
+            logger.warning(f"Buffer overflow scanner did not detect vulnerability at line {line_num} or nearby")
+            return None
+
+        # Generate patch using the fixer
+        patch_data = self.buffer_overflow_repair.generate_patch(scanned_vuln)
+        if not patch_data:
+            return None
+
+        import difflib
+        original = patch_data.get('original', lines[target_line_num - 1])
+        repaired = patch_data.get('repaired', lines[target_line_num - 1])
+
+        original_lines = original.split('\n')
+        repaired_lines = repaired.split('\n')
+
+        diff = '\n'.join(difflib.unified_diff(
+            original_lines,
+            repaired_lines,
+            fromfile=source_file,
+            tofile=source_file,
+            lineterm=''
+        ))
+
+        return {
+            'patch_id': str(uuid.uuid4()),
+            'vulnerability_id': vuln.get('finding_id') or vuln.get('id', ''),
+            'file': source_file,
+            'line': target_line_num,
+            'original': original,
+            'repaired': repaired,
+            'diff': diff,
+            'description': f"Buffer overflow fix at line {target_line_num} using {self.buffer_overflow_repair.mode} mode",
+            'confidence': 0.80,
+            'api': scanned_vuln.get('api', 'unknown'),
+            'needs_my_vsnprintf': patch_data.get('needs_my_vsnprintf', False)
+        }
     
     def batch_repair(
         self,

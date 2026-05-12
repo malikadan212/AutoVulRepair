@@ -108,6 +108,16 @@ def process_scan_task(self, scan_id: str, scan_data: Dict[str, Any]) -> Dict[str
             'processing_time': result.get('processing_time', 0)
         })
         
+        # Trigger patch generation after scan completes
+        try:
+            from src.services.patch_generation_service import PatchGenerationService
+            patch_gen_service = PatchGenerationService()
+            patch_result = patch_gen_service.generate_all_patches(scan_id)
+            logger.info(f"Patch generation initiated for scan {scan_id}: {patch_result}")
+        except Exception as patch_error:
+            logger.error(f"Failed to initiate patch generation for scan {scan_id}: {patch_error}")
+            # Don't fail the scan if patch generation fails
+        
         logger.info(f"Scan processing completed for scan_id: {scan_id}")
         return result
         
@@ -291,8 +301,3 @@ celery_app.conf.beat_schedule = {
         'schedule': 60,  # Run every minute
     },
 }
-
-
-if __name__ == '__main__':
-    # Start the worker
-    celery_app.start()

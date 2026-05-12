@@ -121,6 +121,7 @@ class StaticFinding(Base):
     cwe = Column(String(20))
     cvss_score = Column(DECIMAL(3,1))
     exploitability_score = Column(DECIMAL(3,1))
+    metadata_json = Column(JSONB, default={})  # For false positive detection and other metadata
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
     
     # Relationships
@@ -128,7 +129,7 @@ class StaticFinding(Base):
     patches = relationship("RepairPatch", back_populates="finding")
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             'id': str(self.id),
             'scan_id': self.scan_id,
             'rule_id': self.rule_id,
@@ -143,8 +144,16 @@ class StaticFinding(Base):
             'cwe': self.cwe,
             'cvss_score': float(self.cvss_score) if self.cvss_score else None,
             'exploitability_score': float(self.exploitability_score) if self.exploitability_score else None,
+            'metadata_json': self.metadata_json if self.metadata_json else {},
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+        # Extract tool and analysis_method from metadata for convenience
+        if self.metadata_json:
+            if 'tool' in self.metadata_json:
+                result['tool'] = self.metadata_json['tool']
+            if 'analysis_method' in self.metadata_json:
+                result['analysis_method'] = self.metadata_json['analysis_method']
+        return result
 
 
 class FuzzPlan(Base):

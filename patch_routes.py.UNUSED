@@ -1,0 +1,39 @@
+"""
+⚠️⚠️⚠️ THIS FILE IS NOT USED ⚠️⚠️⚠️
+
+This file contains EXAMPLE CODE for patch routes but is NOT imported in app.py.
+The actual patch routes are implemented directly in app.py.
+
+This file was kept for reference but should be considered DEPRECATED.
+
+If you want to use these routes:
+1. Import this file in app.py
+2. Register the routes with the Flask app
+3. Test thoroughly before deploying
+
+Current Status: UNUSED - Example code only
+Date Marked: May 9, 2026
+"""
+
+# Original content below (for reference only)
+# ============================================
+
+import logging
+
+from flask import render_template, request, jsonify, flash, redirect, url_for
+from ai_patch_generator import AIPatchGenerator
+import os
+import json
+
+# Initialize patch generator (add near top of app.py)
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if GEMINI_API_KEY:
+    patch_generator = AIPatchGenerator(gemini_api_key=GEMINI_API_KEY, index_name='cve-full')
+    logger.info("✓ AI Patch Generator initialized")
+else:
+    patch_generator = None
+    logger.warning("⚠ GEMINI_API_KEY not set - Patching features disabled")
+
+
+# ... rest of original file content ...
+# (This is example code - not actually used)

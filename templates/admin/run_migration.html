@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Database Migration</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Database Migration: Add metadata_json Column</h1>
+    <p>This will add the <code>metadata_json</code> column to the <code>static_findings</code> table.</p>
+    <p>This column is required for false positive detection functionality.</p>
+    
+    <button class="button" onclick="runMigration()" id="migrateBtn">
+        Run Migration
+    </button>
+    
+    <div id="result"></div>
+    
+    <script>
+        function runMigration() {
+            const btn = document.getElementById('migrateBtn');
+            const resultDiv = document.getElementById('result');
+            
+            btn.disabled = true;
+            btn.textContent = 'Running migration...';
+            resultDiv.innerHTML = '';
+            
+            fetch('/api/system/add-metadata-column', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = 'Run Migration';
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <h3>✅ Success!</h3>
+                        <p>${data.message}</p>
+                        ${data.already_existed ? '<p><em>The column already existed in the database.</em></p>' : '<p><em>The column has been added to the database.</em></p>'}
+                        <p><strong>You can now use the false positive detection feature!</strong></p>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <h3>❌ Error</h3>
+                        <p>${data.error}</p>
+                        ${data.traceback ? `<pre style="overflow: auto; max-height: 300px;">${data.traceback}</pre>` : ''}
+                    `;
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.textContent = 'Run Migration';
+                
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p>Failed to run migration: ${error}</p>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>

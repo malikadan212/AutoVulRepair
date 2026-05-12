@@ -568,8 +568,9 @@ class ScanService:
                 analyzer = CppcheckAnalyzer()
                 
                 if not analyzer.is_available():
-                    logger.warning("[SCAN] Cppcheck analyzer not available, falling back to pattern analysis")
-                    return self._fallback_pattern_analysis(source_dir)
+                    error_msg = "Cppcheck is not available. Docker is not running or Cppcheck is not installed."
+                    logger.error(f"[SCAN] {error_msg}")
+                    raise RuntimeError(error_msg)
                 
                 # Run real Cppcheck analysis - ALWAYS run fresh analysis, don't reuse old results
                 logger.info("[SCAN] Running fresh Cppcheck analysis (not reusing old results)")
@@ -577,13 +578,20 @@ class ScanService:
                 
                 # Convert to our findings format
                 for vuln in vulnerabilities:
+                    # Build metadata with CWE name if available
+                    metadata = {
+                        'tool': vuln.get('tool', 'cppcheck')
+                    }
+                    if vuln.get('cwe_name'):
+                        metadata['cwe_name'] = vuln.get('cwe_name')
+                    
                     finding = {
                         'finding_id': vuln.get('id', str(uuid.uuid4())),
                         'rule_id': vuln.get('rule_id', 'unknown'),
                         'severity': vuln.get('severity', 'medium'),
                         'confidence': 'high',
                         'message': vuln.get('description', ''),
-                        'cwe': '',  # Cppcheck doesn't provide CWE directly
+                        'cwe': vuln.get('cwe', ''),  # CWE from analyzer mapping
                         'file_path': vuln.get('file', ''),
                         'file': os.path.basename(vuln.get('file', '')),
                         'line_number': vuln.get('line', 0),
@@ -592,7 +600,9 @@ class ScanService:
                         'column': 1,
                         'function_name': '',
                         'function': '',
-                        'priority_score': 7.0 if vuln.get('severity') == 'high' else 5.0
+                        'priority_score': vuln.get('priority_score', 5.0),
+                        'cvss_score': vuln.get('priority_score', 5.0),  # Store as cvss_score for database
+                        'metadata': metadata  # Add metadata with CWE name
                     }
                     findings.append(finding)
                 
@@ -601,8 +611,7 @@ class ScanService:
                 
             except Exception as e:
                 logger.error(f"[SCAN] Error running real Cppcheck analysis: {e}")
-                logger.info("[SCAN] Falling back to pattern analysis")
-                return self._fallback_pattern_analysis(source_dir)
+                raise RuntimeError(f"Cppcheck analysis failed: {e}")
         
         elif analysis_tool == 'codeql':
             try:
@@ -613,8 +622,9 @@ class ScanService:
                 analyzer = CodeQLAnalyzer()
                 
                 if not analyzer.is_available():
-                    logger.warning("[SCAN] CodeQL analyzer not available, falling back to pattern analysis")
-                    return self._fallback_pattern_analysis(source_dir)
+                    error_msg = "CodeQL is not available. Docker is not running or CodeQL is not installed."
+                    logger.error(f"[SCAN] {error_msg}")
+                    raise RuntimeError(error_msg)
                 
                 # Run real CodeQL analysis
                 vulnerabilities, patches = analyzer.analyze(source_dir, 'local_path')
@@ -645,13 +655,13 @@ class ScanService:
                 
             except Exception as e:
                 logger.error(f"[SCAN] Error running real CodeQL analysis: {e}")
-                logger.info("[SCAN] Falling back to pattern analysis")
-                return self._fallback_pattern_analysis(source_dir)
+                raise RuntimeError(f"CodeQL analysis failed: {e}")
         
         else:
-            # For other tools, use pattern-based analysis
-            logger.info(f"[SCAN] Unknown analysis tool '{analysis_tool}', using pattern analysis")
-            return self._fallback_pattern_analysis(source_dir)
+            # Unknown tool - fail with clear error
+            error_msg = f"Unknown analysis tool '{analysis_tool}'. Supported tools: cppcheck, codeql"
+            logger.error(f"[SCAN] {error_msg}")
+            raise RuntimeError(error_msg)
         
         return findings
     
@@ -689,7 +699,7 @@ class ScanService:
                                 'finding_id': f'{filename}_bufferoverflow_{line_num}',
                                 'rule_id': 'bufferAccessOutOfBounds',
                                 'severity': 'error',
-                                'confidence': 'high',
+                                'confidence': 'low',  # Changed from 'high' to 'low' for fallback
                                 'message': f'Potential buffer overflow in {line.strip()}',
                                 'cwe': '120',
                                 'file': filename,
@@ -697,7 +707,9 @@ class ScanService:
                                 'line': line_num,
                                 'column': 1,
                                 'function': 'unknown',
-                                'priority_score': 9.0
+                                'priority_score': 9.0,
+                                'tool': 'Pattern-Based Fallback',  # Add tool marker
+                                'analysis_method': 'pattern_matching'  # Add analysis method
                             })
                         
                         # Memory leak patterns
@@ -706,7 +718,7 @@ class ScanService:
                                 'finding_id': f'{filename}_memleak_{line_num}',
                                 'rule_id': 'memleak',
                                 'severity': 'error',
-                                'confidence': 'medium',
+                                'confidence': 'low',  # Changed from 'medium' to 'low' for fallback
                                 'message': f'Potential memory leak: {line.strip()}',
                                 'cwe': '401',
                                 'file': filename,
@@ -714,7 +726,9 @@ class ScanService:
                                 'line': line_num,
                                 'column': 1,
                                 'function': 'unknown',
-                                'priority_score': 8.0
+                                'priority_score': 8.0,
+                                'tool': 'Pattern-Based Fallback',  # Add tool marker
+                                'analysis_method': 'pattern_matching'  # Add analysis method
                             })
                         
                         # Null pointer dereference
@@ -723,7 +737,7 @@ class ScanService:
                                 'finding_id': f'{filename}_nullpointer_{line_num}',
                                 'rule_id': 'nullPointer',
                                 'severity': 'error',
-                                'confidence': 'high',
+                                'confidence': 'low',  # Changed from 'high' to 'low' for fallback
                                 'message': f'Potential null pointer dereference: {line.strip()}',
                                 'cwe': '476',
                                 'file': filename,
@@ -731,7 +745,9 @@ class ScanService:
                                 'line': line_num,
                                 'column': 1,
                                 'function': 'unknown',
-                                'priority_score': 9.0
+                                'priority_score': 9.0,
+                                'tool': 'Pattern-Based Fallback',  # Add tool marker
+                                'analysis_method': 'pattern_matching'  # Add analysis method
                             })
                 
                 except Exception as e:
@@ -751,8 +767,13 @@ class ScanService:
                 'line': 1,
                 'column': 1,
                 'function': 'main',
-                'priority_score': 5.0
+                'priority_score': 5.0,
+                'tool': 'Pattern-Based Fallback',  # Add tool marker
+                'analysis_method': 'pattern_matching'  # Add analysis method
             })
+        
+        logger.warning(f"[SCAN] Using pattern-based fallback analysis - {len(findings)} findings generated")
+        logger.warning("[SCAN] For accurate results, ensure Cppcheck/CodeQL/Docker are properly configured")
         
         return findings
     

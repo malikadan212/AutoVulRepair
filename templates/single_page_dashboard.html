@@ -1,72 +1,95 @@
 {% extends 'layout.html' %}
 
-{% block title %}Security Dashboard{% endblock %}
+{% block extra_css %}
+<style>
+/* GitHub Integration Tabs */
+.nav-pills .nav-link {
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.nav-pills .nav-link.active {
+    background-color: #667eea;
+}
+
+.nav-pills .nav-link:not(.active):hover {
+    background-color: #f8f9fa;
+}
+
+.github-tab-pane {
+    animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Compact scrollbar for repo/PR lists */
+#repo-health-cards::-webkit-scrollbar,
+#pr-activity-feed::-webkit-scrollbar {
+    width: 4px;
+}
+
+#repo-health-cards::-webkit-scrollbar-thumb,
+#pr-activity-feed::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+}
+
+#repo-health-cards::-webkit-scrollbar-thumb:hover,
+#pr-activity-feed::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid" style="height: 100vh; overflow: hidden;">
-  <!-- Compact Header -->
-  <div class="d-flex justify-content-between align-items-center py-2 mb-2">
-    <div class="d-flex align-items-center">
-      <h4 class="mb-0 mr-3">
-        <i class="fas fa-shield-alt text-primary mr-2"></i>Security Dashboard
-      </h4>
-      {% if user.avatar_url %}
-      <img src="{{ user.avatar_url }}" alt="Avatar" class="rounded-circle mr-2" width="20" height="20">
-      {% endif %}
-      <span class="font-weight-bold mr-2">{{ user.username }}</span>
-      <small class="text-muted">{{ user.created_at.strftime('%b %Y') if user.created_at else 'New' }}</small>
-    </div>
-    <div>
-      <button class="btn btn-primary btn-sm mr-1" onclick="showQuickScan()">
-        <i class="fas fa-plus"></i> Scan
-      </button>
-      <button class="btn btn-outline-secondary btn-sm" onclick="refreshDashboard()">
-        <i class="fas fa-sync-alt" id="refreshIcon"></i>
-      </button>
-    </div>
-  </div>
-
-  <!-- Inline Statistics -->
-  <div class="row mb-2">
-    <div class="col-3">
-      <div class="card border-0 shadow-sm">
-        <div class="card-body text-center py-2">
-          <h5 class="mb-0 text-primary" id="totalScans">{{ stats.total_scans }}</h5>
-          <small class="text-muted">Total Scans</small>
-        </div>
-      </div>
-    </div>
-    <div class="col-3">
-      <div class="card border-0 shadow-sm">
-        <div class="card-body text-center py-2">
-          <h5 class="mb-0 text-success" id="completedScans">{{ stats.completed_scans }}</h5>
-          <small class="text-muted">Completed ({{ stats.success_rate }}%)</small>
-        </div>
-      </div>
-    </div>
-    <div class="col-3">
-      <div class="card border-0 shadow-sm">
-        <div class="card-body text-center py-2">
-          <h5 class="mb-0 text-warning" id="totalVulns">{{ stats.total_vulnerabilities }}</h5>
-          <small class="text-muted">Vulnerabilities</small>
-        </div>
-      </div>
-    </div>
-    <div class="col-3">
-      <div class="card border-0 shadow-sm">
-        <div class="card-body text-center py-2">
-          <h5 class="mb-0 {% if stats.running_scans > 0 %}text-info{% else %}text-secondary{% endif %}" id="runningScans">{{ stats.running_scans }}</h5>
-          <small class="text-muted">{% if stats.running_scans > 0 %}Running{% else %}Idle{% endif %}</small>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Main Content - Fixed Height -->
   <div class="row" style="height: calc(100vh - 140px);">
-    <!-- Recent Scans - Scrollable -->
-    <div class="col-8">
-      <div class="card border-0 shadow-sm h-100">
+    <!-- Left Column: Recent Scans -->
+    <div class="col-4">
+      <!-- Inline Statistics - Full Width Above Recent Scans -->
+      <div class="row mb-2">
+        <div class="col-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-2">
+              <h5 class="mb-0 text-primary" id="totalScans">{{ stats.total_scans }}</h5>
+              <small class="text-muted">Total Scans</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-2">
+              <h5 class="mb-0 text-success" id="completedScans">{{ stats.completed_scans }}</h5>
+              <small class="text-muted">Completed ({{ stats.success_rate }}%)</small>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row mb-2">
+        <div class="col-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-2">
+              <h5 class="mb-0 text-warning" id="totalVulns">{{ stats.total_vulnerabilities }}</h5>
+              <small class="text-muted">Vulnerabilities</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-2">
+              <h5 class="mb-0 {% if stats.running_scans > 0 %}text-info{% else %}text-secondary{% endif %}" id="runningScans">{{ stats.running_scans }}</h5>
+              <small class="text-muted">{% if stats.running_scans > 0 %}Running{% else %}Idle{% endif %}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Recent Scans Table -->
+      <div class="card border-0 shadow-sm" style="height: calc(100% - 160px);">
         <div class="card-header bg-white border-0 py-2">
           <div class="d-flex justify-content-between align-items-center">
             <h6 class="mb-0 font-weight-bold">Recent Scans</h6>
@@ -77,20 +100,26 @@
             </div>
           </div>
         </div>
-        <div class="card-body p-0" style="overflow-y: auto; max-height: calc(100vh - 200px);">
+        <div class="card-body p-0" style="overflow-y: auto; height: calc(100% - 45px);">
           <div id="recentScansList">
             {% for scan in recent_scans %}
             <div class="scan-item d-flex justify-content-between align-items-center px-3 py-2 border-bottom" data-status="{{ scan.status }}">
               <div class="flex-grow-1">
                 <div class="d-flex align-items-center">
                   <i class="fab fa-github text-muted mr-2"></i>
-                  <strong class="mr-2">{{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}</strong>
-                  {% if scan.vulnerabilities_json and scan.vulnerabilities_json|length > 10 %}
-                  <span class="badge badge-danger badge-sm">High</span>
-                  {% elif scan.vulnerabilities_json and scan.vulnerabilities_json|length > 5 %}
-                  <span class="badge badge-warning badge-sm">Med</span>
-                  {% elif scan.vulnerabilities_json and scan.vulnerabilities_json|length > 0 %}
-                  <span class="badge badge-info badge-sm">Low</span>
+                  {% if scan.repo_url %}
+                    {% set repo_name = scan.repo_url.rstrip('/').split('/')[-1].replace('.git', '') %}
+                    <strong class="mr-2 text-dark">{{ repo_name if repo_name else 'Repository' }}</strong>
+                  {% else %}
+                    <strong class="mr-2 text-dark">ZIP Upload</strong>
+                  {% endif %}
+                  {% set vuln_count = scan.vulnerabilities_json|length if scan.vulnerabilities_json else 0 %}
+                  {% if vuln_count > 10 %}
+                  <span class="badge badge-danger badge-sm">High Risk</span>
+                  {% elif vuln_count > 5 %}
+                  <span class="badge badge-warning badge-sm">Medium</span>
+                  {% elif vuln_count > 0 %}
+                  <span class="badge badge-info badge-sm">{{ vuln_count }} Issues</span>
                   {% elif scan.status == 'completed' %}
                   <span class="badge badge-success badge-sm">Clean</span>
                   {% endif %}
@@ -98,7 +127,7 @@
                 <small class="text-muted">
                   {{ scan.created_at.strftime('%b %d, %H:%M') if scan.created_at }} • 
                   {{ scan.analysis_tool.title() }}
-                  {% if scan.vulnerabilities_json %} • {{ scan.vulnerabilities_json|length }} issues{% endif %}
+                  {% if vuln_count > 0 %} • {{ vuln_count }} issues{% endif %}
                 </small>
               </div>
               <div class="text-right">
@@ -150,58 +179,92 @@
       </div>
     </div>
 
-    <!-- Compact Sidebar -->
+    <!-- Middle Column: New Section -->
+    <div class="col-4">
+      <div class="d-flex flex-column" style="gap: 8px;">
+        <!-- Quick Actions -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body py-2">
+            <h6 class="mb-2 font-weight-bold">Quick Actions</h6>
+            <div class="btn-group-vertical btn-group-sm w-100">
+              <a href="{{ url_for('scan') }}" class="btn btn-primary btn-sm mb-1">
+                <i class="fas fa-search mr-1"></i>New Scan
+              </a>
+              <a href="{{ url_for('scan') }}" class="btn btn-outline-secondary btn-sm mb-1">
+                <i class="fas fa-upload mr-1"></i>Upload ZIP
+              </a>
+              <button class="btn btn-outline-info btn-sm mb-1" onclick="exportDashboardReport()">
+                <i class="fas fa-file-export mr-1"></i>Export Report
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="showSettings()">
+                <i class="fas fa-cog mr-1"></i>Settings
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+          <div class="card-body py-2">
+            <h6 class="mb-2 font-weight-bold">
+              <i class="fas fa-robot text-primary mr-1"></i>AI Patch Generator
+            </h6>
+            <div id="aiStatsWidget">
+              <div class="text-center py-1">
+                <i class="fas fa-spinner fa-spin text-muted"></i>
+                <small class="text-muted d-block">Loading...</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+          <div class="card-body py-2">
+            <h6 class="mb-2 font-weight-bold">
+              <i class="fas fa-bug text-warning mr-1"></i>Fuzzing Engine
+            </h6>
+            <div id="fuzzingStatsWidget">
+              <div class="text-center py-1">
+                <i class="fas fa-spinner fa-spin text-muted"></i>
+                <small class="text-muted d-block">Loading...</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar -->
     <div class="col-4">
       <div class="row h-100">
-        <!-- Status Card -->
+        <!-- Top Vulnerabilities -->
         <div class="col-12 mb-2">
           <div class="card border-0 shadow-sm">
             <div class="card-body py-2">
-              {% if stats.critical_vulnerabilities > 5 %}
-              <div class="alert alert-danger py-1 mb-1">
-                <small><strong>High Risk:</strong> {{ stats.critical_vulnerabilities }} critical vulnerabilities</small>
-              </div>
-              {% elif stats.critical_vulnerabilities > 0 %}
-              <div class="alert alert-warning py-1 mb-1">
-                <small><strong>Notice:</strong> {{ stats.critical_vulnerabilities }} critical vulnerabilities</small>
-              </div>
-              {% else %}
-              <div class="alert alert-success py-1 mb-1">
-                <small><strong>All Clear:</strong> No critical vulnerabilities</small>
-              </div>
-              {% endif %}
-              <div class="row text-center">
-                <div class="col-6">
-                  <small class="text-muted d-block">Scanner</small>
-                  <span class="badge badge-success badge-sm">Online</span>
-                </div>
-                <div class="col-6">
-                  <small class="text-muted d-block">Queue</small>
-                  <span class="badge badge-info badge-sm" id="queueStatus">{{ stats.running_scans }} active</span>
+              <h6 class="mb-2 font-weight-bold">
+                <i class="fas fa-fire text-danger mr-1"></i>Top Issues to Fix
+              </h6>
+              <div id="topVulnerabilitiesWidget">
+                <div class="text-center">
+                  <i class="fas fa-spinner fa-spin text-muted"></i>
+                  <small class="text-muted d-block">Loading...</small>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Quick Actions -->
+        <!-- GitHub App Integration -->
         <div class="col-12 mb-2">
           <div class="card border-0 shadow-sm">
             <div class="card-body py-2">
-              <h6 class="mb-2 font-weight-bold">Quick Actions</h6>
-              <div class="btn-group-vertical btn-group-sm w-100">
-                <a href="{{ url_for('scan') }}" class="btn btn-primary btn-sm mb-1">
-                  <i class="fas fa-search mr-1"></i>New Scan
-                </a>
-                <a href="{{ url_for('scan') }}" class="btn btn-outline-secondary btn-sm mb-1">
-                  <i class="fas fa-upload mr-1"></i>Upload ZIP
-                </a>
-                <button class="btn btn-outline-info btn-sm mb-1" onclick="exportDashboardReport()">
-                  <i class="fas fa-file-export mr-1"></i>Export Report
-                </button>
-                <button class="btn btn-outline-secondary btn-sm" onclick="showSettings()">
-                  <i class="fas fa-cog mr-1"></i>Settings
-                </button>
+              <h6 class="mb-2 font-weight-bold">
+                <i class="fab fa-github mr-1"></i>GitHub Integration
+              </h6>
+              <div id="githubAppStatus">
+                <div class="text-center">
+                  <i class="fas fa-spinner fa-spin text-muted"></i>
+                  <small class="text-muted d-block">Loading...</small>
+                </div>
               </div>
             </div>
           </div>
@@ -226,7 +289,7 @@
                   </div>
                   <div class="flex-grow-1">
                     <small class="d-block">
-                      <strong>{{ scan.repo_url.split('/')[-1] if scan.repo_url else 'ZIP Upload' }}</strong>
+                      <strong class="text-dark">{{ scan.repo_url.split('/')[-1].replace('.git', '') if scan.repo_url else 'ZIP Upload' }}</strong>
                     </small>
                     <small class="text-muted">
                       {{ scan.created_at.strftime('%H:%M') if scan.created_at }} • {{ scan.status }}
@@ -252,7 +315,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Quick Scan</h5>
-        <button type="button" class="close" data-dismiss="modal">
+        <button type="button" class="close" data-bs-dismiss="modal">
           <span>&times;</span>
         </button>
       </div>
@@ -272,7 +335,7 @@
         </form>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" onclick="startQuickScan()">
           <i class="fas fa-search"></i> Start Scan
         </button>
@@ -287,7 +350,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Settings</h5>
-        <button type="button" class="close" data-dismiss="modal">
+        <button type="button" class="close" data-bs-dismiss="modal">
           <span>&times;</span>
         </button>
       </div>
@@ -311,8 +374,43 @@
         </form>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GitHub Repositories Modal -->
+<div class="modal fade" id="githubRepositoriesModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="fab fa-github mr-2"></i>GitHub Repositories
+        </h5>
+        <button type="button" class="close" data-bs-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <p class="text-muted">
+            Manage automation settings for your GitHub repositories. 
+            Enable automation to automatically scan repositories on pushes and pull requests.
+          </p>
+        </div>
+        <div id="githubRepositoriesList">
+          <div class="text-center">
+            <i class="fas fa-spinner fa-spin"></i> Loading repositories...
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <a href="/install-github-app" class="btn btn-outline-primary">
+          <i class="fas fa-plus mr-1"></i>Add More Repositories
+        </a>
       </div>
     </div>
   </div>
@@ -330,6 +428,10 @@ function initializeDashboard() {
     loadUserSettings();
     startAutoRefresh();
     initializeFilterButtons();
+    loadGitHubAppStatus();
+    loadTopVulnerabilities();
+    loadAIStats();
+    loadFuzzingStats();
 }
 
 function initializeFilterButtons() {
@@ -340,7 +442,8 @@ function initializeFilterButtons() {
 }
 
 function showQuickScan() {
-    $('#quickScanModal').modal('show');
+    const modal = new bootstrap.Modal(document.getElementById('quickScanModal'));
+    modal.show();
 }
 
 function startQuickScan() {
@@ -367,7 +470,8 @@ function startQuickScan() {
         if (data.error) {
             alert('Error: ' + data.error);
         } else {
-            $('#quickScanModal').modal('hide');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('quickScanModal'));
+            modal.hide();
             window.location.href = data.redirect_url;
         }
     })
@@ -381,7 +485,8 @@ function startQuickScan() {
 }
 
 function showSettings() {
-    $('#settingsModal').modal('show');
+    const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
+    modal.show();
 }
 
 function loadUserSettings() {
@@ -410,7 +515,8 @@ function saveSettings() {
         if (data.error) {
             alert('Error: ' + data.error);
         } else {
-            $('#settingsModal').modal('hide');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
+            modal.hide();
             alert('Settings saved successfully!');
         }
     })
@@ -499,6 +605,686 @@ Report generated by AutoVulRepair DevSecOps Platform
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// Top Vulnerabilities Widget
+function loadTopVulnerabilities() {
+    fetch('/api/dashboard/top-vulnerabilities')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.vulnerabilities) {
+            displayTopVulnerabilities(data.vulnerabilities);
+        } else {
+            document.getElementById('topVulnerabilitiesWidget').innerHTML = 
+                '<small class="text-muted">No vulnerabilities found</small>';
+        }
+    })
+    .catch(error => {
+        console.error('Error loading top vulnerabilities:', error);
+        document.getElementById('topVulnerabilitiesWidget').innerHTML = 
+            '<small class="text-muted">Unable to load</small>';
+    });
+}
+
+function displayTopVulnerabilities(vulnerabilities) {
+    const container = document.getElementById('topVulnerabilitiesWidget');
+    
+    if (vulnerabilities.length === 0) {
+        container.innerHTML = '<small class="text-success">✓ No vulnerabilities found!</small>';
+        return;
+    }
+    
+    let html = '<div style="max-height: 200px; overflow-y: auto;">';
+    vulnerabilities.forEach((vuln, index) => {
+        const riskColor = vuln.risk_score >= 8.0 ? 'danger' : vuln.risk_score >= 5.0 ? 'warning' : 'info';
+        const riskEmoji = vuln.risk_score >= 8.0 ? '🔴' : vuln.risk_score >= 5.0 ? '🟡' : '🟢';
+        
+        html += `
+            <div class="border-bottom py-2">
+                <div class="d-flex justify-content-between align-items-start mb-1">
+                    <small class="font-weight-bold">${index + 1}. ${vuln.name}</small>
+                    <span class="badge badge-${riskColor} badge-sm">${riskEmoji} ${vuln.risk_score.toFixed(1)}</span>
+                </div>
+                <small class="text-muted d-block" style="font-size: 0.7rem;">
+                    ${vuln.cwe} • ${vuln.instances} instance${vuln.instances > 1 ? 's' : ''}
+                </small>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+// AI Stats Widget
+function loadAIStats() {
+    fetch('/api/dashboard/ai-stats')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.stats) {
+            displayAIStats(data.stats);
+        } else {
+            // Show placeholder for no data
+            displayAIStats({
+                total_patches: 0,
+                successful_patches: 0,
+                avg_confidence: 0
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error loading AI stats:', error);
+        // Show placeholder instead of error
+        displayAIStats({
+            total_patches: 0,
+            successful_patches: 0,
+            avg_confidence: 0
+        });
+    });
+}
+
+function displayAIStats(stats) {
+    const container = document.getElementById('aiStatsWidget');
+    
+    const totalPatches = stats.total_patches || 0;
+    const successfulPatches = stats.successful_patches || 0;
+    const successRate = totalPatches > 0 ? ((successfulPatches / totalPatches) * 100).toFixed(1) : 0;
+    const avgConfidence = stats.avg_confidence || 0;
+    
+    if (totalPatches === 0) {
+        container.innerHTML = `
+            <div class="text-center py-1">
+                <i class="fas fa-robot text-muted mb-1"></i>
+                <p class="text-muted small mb-0">No patches generated yet</p>
+                <small class="text-muted" style="font-size: 0.65rem;">AI will generate patches when vulnerabilities are found</small>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <div class="row text-center mb-2">
+            <div class="col-6">
+                <h5 class="mb-0 text-primary">${totalPatches}</h5>
+                <small class="text-muted" style="font-size: 0.7rem;">Patches Generated</small>
+            </div>
+            <div class="col-6">
+                <h5 class="mb-0 text-success">${successRate}%</h5>
+                <small class="text-muted" style="font-size: 0.7rem;">Success Rate</small>
+            </div>
+        </div>
+        <div class="progress" style="height: 8px;">
+            <div class="progress-bar bg-success" role="progressbar" style="width: ${successRate}%" 
+                 aria-valuenow="${successRate}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <small class="text-muted d-block text-center mt-2" style="font-size: 0.7rem;">
+            Avg Confidence: ${avgConfidence.toFixed(1)}%
+        </small>
+    `;
+    
+    container.innerHTML = html;
+}
+
+// Fuzzing Stats Widget
+function loadFuzzingStats() {
+    fetch('/api/dashboard/fuzzing-stats')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.stats) {
+            displayFuzzingStats(data.stats);
+        } else {
+            // Show placeholder for no data
+            displayFuzzingStats({
+                total_tests: 0,
+                crashes_found: 0,
+                coverage_percent: 0,
+                active_targets: 0
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error loading fuzzing stats:', error);
+        // Show placeholder instead of error
+        displayFuzzingStats({
+            total_tests: 0,
+            crashes_found: 0,
+            coverage_percent: 0,
+            active_targets: 0
+        });
+    });
+}
+
+function displayFuzzingStats(stats) {
+    const container = document.getElementById('fuzzingStatsWidget');
+    
+    const totalTests = stats.total_tests || 0;
+    const crashesFound = stats.crashes_found || 0;
+    const coveragePercent = stats.coverage_percent || 0;
+    const activeTargets = stats.active_targets || 0;
+    
+    if (totalTests === 0) {
+        container.innerHTML = `
+            <div class="text-center py-1">
+                <i class="fas fa-bug text-muted mb-1"></i>
+                <p class="text-muted small mb-0">No fuzzing tests run yet</p>
+                <small class="text-muted" style="font-size: 0.65rem;">Fuzzing engine will test code for vulnerabilities</small>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `
+        <div class="row text-center mb-2">
+            <div class="col-6">
+                <h5 class="mb-0 text-warning">${totalTests}</h5>
+                <small class="text-muted" style="font-size: 0.7rem;">Test Cases</small>
+            </div>
+            <div class="col-6">
+                <h5 class="mb-0 ${crashesFound > 0 ? 'text-danger' : 'text-success'}">${crashesFound}</h5>
+                <small class="text-muted" style="font-size: 0.7rem;">Crashes Found</small>
+            </div>
+        </div>
+        <div class="progress" style="height: 8px;">
+            <div class="progress-bar bg-info" role="progressbar" style="width: ${coveragePercent}%" 
+                 aria-valuenow="${coveragePercent}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <small class="text-muted d-block text-center mt-2" style="font-size: 0.7rem;">
+            Code Coverage: ${coveragePercent.toFixed(1)}% • ${activeTargets} active targets
+        </small>
+    `;
+    
+    container.innerHTML = html;
+}
+
+// GitHub App Integration Functions
+function loadGitHubAppStatus() {
+    const statusDiv = document.getElementById('githubAppStatus');
+    
+    fetch('/api/github-app/installations')
+    .then(response => response.json())
+    .then(data => {
+        console.log('GitHub App API response:', data); // Debug log
+        if (data.success && data.installations && data.installations.length > 0) {
+            // User has GitHub App installed
+            console.log('Displaying GitHub App as installed'); // Debug log
+            displayGitHubAppInstalled(data.installations);
+        } else {
+            // User needs to install GitHub App
+            console.log('Displaying GitHub App as not installed'); // Debug log
+            displayGitHubAppNotInstalled();
+        }
+    })
+    .catch(error => {
+        console.error('Error loading GitHub App status:', error);
+        displayGitHubAppError();
+    });
+}
+
+function displayGitHubAppNotInstalled() {
+    const statusDiv = document.getElementById('githubAppStatus');
+    statusDiv.innerHTML = `
+        <div class="text-center">
+            <i class="fab fa-github text-muted mb-2" style="font-size: 1.5rem;"></i>
+            <p class="small text-muted mb-2">Enable automation on your repositories</p>
+            <a href="/install-github-app" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus mr-1"></i>Install GitHub App
+            </a>
+        </div>
+    `;
+}
+
+function displayGitHubAppInstalled(installations) {
+    const statusDiv = document.getElementById('githubAppStatus');
+    const installation = installations[0]; // Use first installation
+    
+    console.log('Installation data:', installation); // Debug log
+    
+    // Show total repositories, not just enabled ones
+    const repoCount = installation.total_repositories || 0;
+    const enabledCount = installation.enabled_repositories || 0;
+    
+    statusDiv.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="d-flex align-items-center">
+                <i class="fab fa-github text-success mr-2"></i>
+                <small class="text-success font-weight-bold">Connected</small>
+            </div>
+            <span class="badge badge-success badge-sm text-dark" style="background-color: #d4edda;">${repoCount} repos</span>
+        </div>
+        
+        <!-- Compact Tabs -->
+        <ul class="nav nav-pills nav-fill mb-2" style="font-size: 0.75rem;">
+            <li class="nav-item">
+                <a class="nav-link active py-1 px-2" id="tab-overview" href="#" onclick="switchGitHubTab('overview'); return false;">Overview</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link py-1 px-2" id="tab-repos" href="#" onclick="switchGitHubTab('repos'); return false;">Repos</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link py-1 px-2" id="tab-schedule" href="#" onclick="switchGitHubTab('schedule'); return false;">Schedule</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link py-1 px-2" id="tab-prs" href="#" onclick="switchGitHubTab('prs'); return false;">PRs</a>
+            </li>
+        </ul>
+        
+        <!-- Tab Content -->
+        <div id="github-tab-content">
+            <div id="content-overview" class="github-tab-pane">
+                <div class="btn-group-vertical btn-group-sm w-100">
+                    <button class="btn btn-outline-secondary btn-sm mb-1" onclick="showGitHubRepositories()">
+                        <i class="fas fa-list mr-1"></i>Manage Repos (${enabledCount} enabled)
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="triggerRepositoryScan()">
+                        <i class="fas fa-play mr-1"></i>Scan Repository
+                    </button>
+                </div>
+            </div>
+            
+            <div id="content-repos" class="github-tab-pane" style="display: none;">
+                <div id="repo-health-cards">
+                    <small class="text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</small>
+                </div>
+            </div>
+            
+            <div id="content-schedule" class="github-tab-pane" style="display: none;">
+                <div id="schedule-settings">
+                    <small class="text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</small>
+                </div>
+            </div>
+            
+            <div id="content-prs" class="github-tab-pane" style="display: none;">
+                <div id="pr-activity-feed">
+                    <small class="text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Load repository health data
+    loadRepositoryHealth();
+    
+    // Load schedule settings
+    loadScheduleSettings();
+    
+    // Load PR activity
+    loadPRActivity();
+}
+
+function switchGitHubTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.nav-pills .nav-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+    
+    // Update tab content
+    document.querySelectorAll('.github-tab-pane').forEach(pane => {
+        pane.style.display = 'none';
+    });
+    document.getElementById(`content-${tabName}`).style.display = 'block';
+}
+
+function loadRepositoryHealth() {
+    fetch('/api/github-app/repositories')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.repositories) {
+            displayRepositoryHealth(data.repositories);
+        }
+    })
+    .catch(error => {
+        console.error('Error loading repository health:', error);
+    });
+}
+
+function displayRepositoryHealth(repositories) {
+    const container = document.getElementById('repo-health-cards');
+    
+    if (repositories.length === 0) {
+        container.innerHTML = '<small class="text-muted">No repositories found</small>';
+        return;
+    }
+    
+    let html = '<div style="max-height: 200px; overflow-y: auto;">';
+    repositories.forEach(repo => {
+        const lastScan = repo.last_scanned_at ? new Date(repo.last_scanned_at).toLocaleDateString() : 'Never';
+        const scanStatus = repo.last_scan_status || 'unknown';
+        const statusIcon = scanStatus === 'completed' ? '✓' : scanStatus === 'failed' ? '✗' : '○';
+        const statusColor = scanStatus === 'completed' ? 'success' : scanStatus === 'failed' ? 'danger' : 'secondary';
+        
+        html += `
+            <div class="border-bottom py-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div style="flex: 1; min-width: 0;">
+                        <small class="font-weight-bold d-block text-truncate">${repo.name}</small>
+                        <small class="text-muted d-block" style="font-size: 0.7rem;">
+                            <span class="text-${statusColor}">${statusIcon}</span> ${lastScan}
+                        </small>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm py-0 px-1" style="font-size: 0.7rem;" 
+                            onclick="triggerRepositoryScanSpecific('${repo.full_name}')" title="Scan Now">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function loadScheduleSettings() {
+    fetch('/api/github-app/repositories')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.repositories) {
+            displayScheduleSettings(data.repositories);
+        }
+    })
+    .catch(error => {
+        console.error('Error loading schedule settings:', error);
+    });
+}
+
+function displayScheduleSettings(repositories) {
+    const container = document.getElementById('schedule-settings');
+    
+    if (repositories.length === 0) {
+        container.innerHTML = '<small class="text-muted">No repositories to configure</small>';
+        return;
+    }
+    
+    let html = '<div style="max-height: 200px; overflow-y: auto;">';
+    repositories.forEach(repo => {
+        const settings = repo.settings || {};
+        const scanSchedule = settings.scan_schedule || 'manual';
+        const autoScanOnPush = repo.auto_scan_on_push ? 'checked' : '';
+        const autoCreatePRs = repo.auto_create_prs ? 'checked' : '';
+        
+        html += `
+            <div class="border-bottom py-2">
+                <small class="font-weight-bold d-block mb-1">${repo.name}</small>
+                
+                <div class="mb-1">
+                    <small class="text-muted d-block" style="font-size: 0.7rem;">Scan Schedule</small>
+                    <select class="form-control form-control-sm" style="font-size: 0.75rem;" 
+                            onchange="updateRepoSchedule('${repo.full_name}', this.value)">
+                        <option value="manual" ${scanSchedule === 'manual' ? 'selected' : ''}>Manual Only</option>
+                        <option value="on_push" ${scanSchedule === 'on_push' ? 'selected' : ''}>On Every Push</option>
+                        <option value="daily" ${scanSchedule === 'daily' ? 'selected' : ''}>Daily</option>
+                        <option value="weekly" ${scanSchedule === 'weekly' ? 'selected' : ''}>Weekly</option>
+                    </select>
+                </div>
+                
+                <div class="d-flex justify-content-between" style="font-size: 0.7rem;">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" 
+                               id="auto-scan-${repo.repository_id}" ${autoScanOnPush}
+                               onchange="updateRepoSetting('${repo.full_name}', 'auto_scan_on_push', this.checked)">
+                        <label class="custom-control-label" for="auto-scan-${repo.repository_id}">
+                            Auto-scan PRs
+                        </label>
+                    </div>
+                    
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" 
+                               id="auto-pr-${repo.repository_id}" ${autoCreatePRs}
+                               onchange="updateRepoSetting('${repo.full_name}', 'auto_create_prs', this.checked)">
+                        <label class="custom-control-label" for="auto-pr-${repo.repository_id}">
+                            Auto-create PRs
+                        </label>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function updateRepoSchedule(repoFullName, schedule) {
+    fetch(`/api/github-app/repository/${encodeURIComponent(repoFullName)}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            settings: {
+                scan_schedule: schedule
+            }
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log(`Updated scan schedule for ${repoFullName} to ${schedule}`);
+        } else {
+            alert('Error updating schedule: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating schedule:', error);
+        alert('Error updating schedule');
+    });
+}
+
+function updateRepoSetting(repoFullName, setting, value) {
+    const payload = {};
+    payload[setting] = value;
+    
+    fetch(`/api/github-app/repository/${encodeURIComponent(repoFullName)}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log(`Updated ${setting} for ${repoFullName} to ${value}`);
+        } else {
+            alert('Error updating setting: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating setting:', error);
+        alert('Error updating setting');
+    });
+}
+
+function loadPRActivity() {
+    fetch('/api/github-app/pull-requests')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            displayPRActivity(data.pull_requests || []);
+        } else {
+            displayPRActivity([]);
+        }
+    })
+    .catch(error => {
+        console.error('Error loading PR activity:', error);
+        displayPRActivity([]);
+    });
+}
+
+function displayPRActivity(pullRequests) {
+    const container = document.getElementById('pr-activity-feed');
+    
+    if (pullRequests.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-2">
+                <small class="text-muted d-block mb-2">No automated PRs yet</small>
+                <small class="text-muted" style="font-size: 0.7rem;">
+                    PRs will appear here when AutoVulRepair creates fix PRs
+                </small>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '<div style="max-height: 200px; overflow-y: auto;">';
+    pullRequests.forEach(pr => {
+        const statusIcon = pr.state === 'open' ? '●' : pr.state === 'merged' ? '✓' : '✗';
+        const statusColor = pr.state === 'open' ? 'success' : pr.state === 'merged' ? 'primary' : 'secondary';
+        
+        html += `
+            <div class="border-bottom py-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div style="flex: 1; min-width: 0;">
+                        <small class="d-block text-truncate">
+                            <span class="text-${statusColor}">${statusIcon}</span>
+                            <a href="${pr.html_url}" target="_blank" class="text-dark">${pr.title}</a>
+                        </small>
+                        <small class="text-muted d-block" style="font-size: 0.7rem;">
+                            ${pr.repository} • ${pr.fixes_count || 0} fixes
+                        </small>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function displayGitHubAppError() {
+    const statusDiv = document.getElementById('githubAppStatus');
+    statusDiv.innerHTML = `
+        <div class="text-center">
+            <i class="fas fa-exclamation-triangle text-warning mb-2"></i>
+            <p class="small text-muted mb-2">Unable to load GitHub status</p>
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadGitHubAppStatus()">
+                <i class="fas fa-retry mr-1"></i>Retry
+            </button>
+        </div>
+    `;
+}
+
+function showGitHubRepositories() {
+    // Open repositories management modal using Bootstrap 5 vanilla JS
+    const modal = new bootstrap.Modal(document.getElementById('githubRepositoriesModal'));
+    modal.show();
+    loadGitHubRepositories();
+}
+
+function loadGitHubRepositories() {
+    const reposList = document.getElementById('githubRepositoriesList');
+    reposList.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading repositories...</div>';
+    
+    fetch('/api/github-app/repositories')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            displayGitHubRepositories(data.repositories);
+        } else {
+            reposList.innerHTML = '<div class="text-center text-danger">Error loading repositories</div>';
+        }
+    })
+    .catch(error => {
+        console.error('Error loading repositories:', error);
+        reposList.innerHTML = '<div class="text-center text-danger">Error loading repositories</div>';
+    });
+}
+
+function displayGitHubRepositories(repositories) {
+    const reposList = document.getElementById('githubRepositoriesList');
+    
+    if (repositories.length === 0) {
+        reposList.innerHTML = '<div class="text-center text-muted">No repositories found</div>';
+        return;
+    }
+    
+    let html = '';
+    repositories.forEach(repo => {
+        // Use repository_id or full_name as unique identifier
+        const repoId = repo.repository_id || repo.full_name.replace('/', '-');
+        html += `
+            <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
+                <div>
+                    <strong>${repo.full_name}</strong>
+                    <br>
+                    <small class="text-muted">
+                        ${repo.language || 'Unknown'} • 
+                        ${repo.private ? 'Private' : 'Public'}
+                    </small>
+                </div>
+                <div class="text-right">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" 
+                               id="automation-${repoId}" 
+                               ${repo.automation_enabled ? 'checked' : ''}
+                               onchange="toggleRepositoryAutomation('${repo.full_name}', this.checked)">
+                        <label class="custom-control-label" for="automation-${repoId}"></label>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm mt-1" 
+                            onclick="triggerRepositoryScanSpecific('${repo.full_name}')">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    reposList.innerHTML = html;
+}
+
+function toggleRepositoryAutomation(repoFullName, enabled) {
+    fetch(`/api/github-app/repository/${encodeURIComponent(repoFullName)}/automation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert('Error updating automation settings');
+            // Revert checkbox
+            document.getElementById(`automation-${repoFullName.replace('/', '-')}`).checked = !enabled;
+        }
+    })
+    .catch(error => {
+        console.error('Error toggling automation:', error);
+        alert('Error updating automation settings');
+    });
+}
+
+function triggerRepositoryScan() {
+    // Show repository selection modal or trigger scan for default repo
+    showGitHubRepositories();
+}
+
+function triggerRepositoryScanSpecific(repoFullName) {
+    const button = event.target;
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch(`/api/github-app/repository/${encodeURIComponent(repoFullName)}/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Scan started for ${repoFullName}`);
+            const modal = bootstrap.Modal.getInstance(document.getElementById('githubRepositoriesModal'));
+            modal.hide();
+            // Refresh dashboard to show new scan
+            refreshDashboard();
+        } else {
+            alert('Error starting scan: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error starting scan:', error);
+        alert('Error starting scan');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
 }
 
 window.addEventListener('beforeunload', function() {

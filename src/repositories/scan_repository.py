@@ -358,10 +358,18 @@ class ScanRepository:
             return False
     
     def _store_static_findings_db(self, scan_id: str, findings: List[Dict[str, Any]]) -> bool:
-        """Store static findings in database"""
+        """Store static findings in database with automatic false positive detection"""
         session = self.db_manager.get_session()
         try:
+            # First, store all findings
             for finding_data in findings:
+                # Store tool and analysis_method in metadata
+                metadata = finding_data.get('metadata_json', {})
+                if 'tool' not in metadata and 'tool' in finding_data:
+                    metadata['tool'] = finding_data.get('tool')
+                if 'analysis_method' not in metadata and 'analysis_method' in finding_data:
+                    metadata['analysis_method'] = finding_data.get('analysis_method')
+                
                 finding = StaticFinding(
                     scan_id=scan_id,
                     rule_id=finding_data.get('rule_id', 'unknown'),
@@ -375,11 +383,20 @@ class ScanRepository:
                     description=finding_data.get('description'),
                     cwe=finding_data.get('cwe'),
                     cvss_score=finding_data.get('cvss_score'),
-                    exploitability_score=finding_data.get('exploitability_score')
+                    exploitability_score=finding_data.get('exploitability_score'),
+                    metadata_json=metadata
                 )
                 session.add(finding)
             
             session.commit()
+            
+            # Now run automatic false positive detection
+            try:
+                self._detect_false_positives_automatically(scan_id, session)
+            except Exception as fp_error:
+                print(f"Warning: False positive detection failed: {fp_error}")
+                # Don't fail the whole operation if FP detection fails
+            
             return True
         except Exception as e:
             session.rollback()
@@ -387,6 +404,87 @@ class ScanRepository:
             return False
         finally:
             session.close()
+    
+    def _detect_false_positives_automatically(self, scan_id: str, session):
+        """Automatically detect false positives after storing findings"""
+        try:
+            import sys
+            import os
+            # Ensure /app is in the path for worker processes
+            app_path = '/app'
+            if app_path not in sys.path and os.path.exists(app_path):
+                sys.path.insert(0, app_path)
+            
+            from src.analysis.false_positive_detector import FalsePositiveDetector
+            from sqlalchemy.orm.attributes import flag_modified
+        except ImportError as e:
+            print(f"[AUTO-FP] Failed to import FalsePositiveDetector: {e}")
+            print(f"[AUTO-FP] sys.path: {sys.path}")
+            return  # Skip false positive detection if import fails
+        
+        print(f"[AUTO-FP] Running automatic false positive detection for scan {scan_id}")
+        
+        # Get all findings for this scan
+        findings = session.query(StaticFinding).filter(StaticFinding.scan_id == scan_id).all()
+        
+        # Get source files
+        source_files = {}
+        sources = session.query(ScanSource).filter(ScanSource.scan_id == scan_id).all()
+        for source in sources:
+            source_files[source.file_path] = source.file_content
+        
+        # Run detection
+        detector = FalsePositiveDetector()
+        fp_count = 0
+        
+        for finding in findings:
+            # Get source code for this file
+            source_code = source_files.get(finding.file_path, '')
+            
+            # Get the actual line content
+            if source_code and finding.line_number > 0:
+                lines = source_code.split('\n')
+                if finding.line_number <= len(lines):
+                    line_content = lines[finding.line_number - 1]
+                else:
+                    line_content = finding.message
+            else:
+                line_content = finding.message
+            
+            # Debug logging for CWE-561 findings
+            if finding.cwe == 'CWE-561':
+                print(f"[AUTO-FP] Checking CWE-561 finding:")
+                print(f"  - file_path: {finding.file_path}")
+                print(f"  - message: {finding.message}")
+                print(f"  - line_content: {line_content[:100]}")
+                print(f"  - rule_id: {finding.rule_id}")
+            
+            # Check if it's a false positive
+            fp_result = detector.is_false_positive(
+                line_content=line_content,
+                rule_id=finding.rule_id,
+                cwe=finding.cwe or '',
+                source_code=source_code,
+                line_number=finding.line_number,
+                file_path=finding.file_path,
+                message=finding.message
+            )
+            
+            # Update finding with false positive info
+            if fp_result['is_false_positive']:
+                metadata = dict(finding.metadata_json) if finding.metadata_json else {}
+                metadata['is_false_positive'] = True
+                metadata['false_positive_reason'] = fp_result['reason']
+                metadata['false_positive_confidence'] = fp_result['confidence']
+                metadata['false_positive_category'] = fp_result['category']
+                
+                finding.metadata_json = metadata
+                flag_modified(finding, 'metadata_json')
+                fp_count += 1
+        
+        session.commit()
+        print(f"[AUTO-FP] Detected {fp_count} false positives out of {len(findings)} findings")
+
     
     def _store_static_findings_legacy(self, scan_id: str, findings: List[Dict[str, Any]]) -> bool:
         """Store static findings using legacy file system"""

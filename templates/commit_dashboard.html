@@ -1,0 +1,638 @@
+{% extends 'layout.html' %}
+
+{% block title %}Commit Dashboard{% endblock %}
+
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/modules/patch-review.css') }}" rel="stylesheet">
+<style>
+.patch-card {
+    transition: all 0.2s;
+    border-left: 4px solid transparent;
+}
+.patch-card.selected {
+    border-left-color: #28a745;
+    background-color: #f0f9f4;
+}
+.patch-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.diff-viewer {
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+.diff-line-add {
+    background-color: #d4edda;
+    color: #155724;
+    padding: 2px 4px;
+    display: block;
+}
+.diff-line-remove {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 2px 4px;
+    display: block;
+}
+.diff-line-context {
+    color: #6c757d;
+    padding: 2px 4px;
+    display: block;
+}
+.commit-preview {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    border-radius: 4px;
+    padding: 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    max-height: 600px;
+    overflow-y: auto;
+}
+.stage-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2>
+        <i class="fas fa-code-branch text-success"></i>
+        Commit Dashboard
+      </h2>
+      <p class="text-muted mb-0">Review and commit all patches (Stage 1 + Stage 2)</p>
+    </div>
+    <div>
+      <a href="{{ url_for('repair_dashboard', scan_id=scan_id) }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Stage 2
+      </a>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card border-primary">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-file-code fa-2x text-primary mb-2"></i>
+          <h3 class="text-primary mb-0" id="total-patches">{{ total_patches }}</h3>
+          <small class="text-muted">Total Patches</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-info">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-check-square fa-2x text-info mb-2"></i>
+          <h3 class="text-info mb-0" id="selected-count">0</h3>
+          <small class="text-muted">Selected for Commit</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-warning">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-layer-group fa-2x text-warning mb-2"></i>
+          <h3 class="text-warning mb-0">{{ stage1_count }}</h3>
+          <small class="text-muted">Stage 1 Patches</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-success">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-robot fa-2x text-success mb-2"></i>
+          <h3 class="text-success mb-0">{{ stage2_count }}</h3>
+          <small class="text-muted">Stage 2 Patches</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="row">
+    <!-- Left: Patch List -->
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">
+            <i class="fas fa-list"></i> Available Patches
+          </h6>
+          <div>
+            <button class="btn btn-sm btn-light" onclick="selectAll()">
+              <i class="fas fa-check-double"></i> Select All
+            </button>
+            <button class="btn btn-sm btn-outline-light" onclick="deselectAll()">
+              <i class="fas fa-times"></i> Clear
+            </button>
+          </div>
+        </div>
+        <div class="card-body p-0" style="max-height: 700px; overflow-y: auto;">
+          {% if patches %}
+            <div class="list-group list-group-flush">
+              {% for patch in patches %}
+              <div class="list-group-item patch-card" id="patch-{{ patch.id }}" onclick="togglePatch('{{ patch.id }}')">
+                <div class="d-flex align-items-start">
+                  <div class="form-check me-3">
+                    <input class="form-check-input patch-checkbox" type="checkbox" id="check-{{ patch.id }}" 
+                           data-patch-id="{{ patch.id }}" onchange="updateSelection()">
+                  </div>
+                  <div class="flex-grow-1">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <strong class="text-dark">{{ patch.file }}</strong>
+                        <span class="text-muted">:{{ patch.line }}</span>
+                      </div>
+                      <div>
+                        {% if patch.stage == 1 %}
+                          <span class="badge bg-warning text-dark stage-badge">Stage 1</span>
+                        {% else %}
+                          <span class="badge bg-success stage-badge">Stage 2</span>
+                        {% endif %}
+                        <span class="badge bg-info stage-badge">{{ (patch.confidence * 100) | int }}%</span>
+                      </div>
+                    </div>
+                    <p class="mb-1 small text-muted">{{ patch.description[:80] }}{% if patch.description|length > 80 %}...{% endif %}</p>
+                    <small class="text-muted">
+                      <i class="fas fa-wrench"></i> {{ patch.repair_method }}
+                    </small>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="p-4 text-center">
+              <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+              <h6 class="text-muted">No patches available</h6>
+              <p class="small text-muted">Generate patches from Stage 1 or Stage 2 first</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="card mt-3">
+        <div class="card-body">
+          <button class="btn btn-success btn-lg w-100 mb-2" onclick="applySelectedPatches()" id="apply-btn">
+            <i class="fas fa-check"></i> Apply Selected Patches
+          </button>
+          <button class="btn btn-info btn-lg w-100 mb-2" onclick="viewPatchedFiles()" id="view-btn" disabled>
+            <i class="fas fa-file-code"></i> View Patched Files
+          </button>
+          <button class="btn btn-primary btn-lg w-100" onclick="commitPatches()" id="commit-btn" disabled>
+            <i class="fas fa-code-branch"></i> Create Git Commit
+          </button>
+          <small class="text-muted d-block mt-2 text-center">
+            <i class="fas fa-info-circle"></i> Apply patches first, then commit
+          </small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Commit Preview -->
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header bg-dark text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-eye"></i> Commit Preview
+          </h6>
+        </div>
+        <div class="card-body p-0">
+          <div class="commit-preview" id="commit-preview">
+            <div class="text-muted text-center py-5">
+              <i class="fas fa-code-branch fa-3x mb-3"></i>
+              <p>Select patches to see commit preview</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commit Message -->
+      <div class="card mt-3">
+        <div class="card-header bg-secondary text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-comment"></i> Commit Message
+          </h6>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label for="commit-title" class="form-label">Title</label>
+            <input type="text" class="form-control font-monospace" id="commit-title" 
+                   placeholder="fix: Apply security patches from AutoVulRepair" maxlength="72">
+            <small class="form-text text-muted"><span id="title-chars">0</span>/72 characters</small>
+          </div>
+          <div class="mb-0">
+            <label for="commit-body" class="form-label">Description (optional)</label>
+            <textarea class="form-control font-monospace" id="commit-body" rows="4" 
+                      placeholder="Additional details about the fixes..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const scanId = '{{ scan_id }}';
+const patches = {{ patches_json | safe }};
+let selectedPatches = new Set();
+let appliedPatches = new Set();
+
+// Toggle patch selection
+function togglePatch(patchId) {
+  const checkbox = document.getElementById(`check-${patchId}`);
+  checkbox.checked = !checkbox.checked;
+  updateSelection();
+}
+
+// Update selection state
+function updateSelection() {
+  selectedPatches.clear();
+  
+  document.querySelectorAll('.patch-checkbox:checked').forEach(cb => {
+    const patchId = cb.dataset.patchId;
+    selectedPatches.add(patchId);
+    document.getElementById(`patch-${patchId}`).classList.add('selected');
+  });
+  
+  document.querySelectorAll('.patch-checkbox:not(:checked)').forEach(cb => {
+    const patchId = cb.dataset.patchId;
+    document.getElementById(`patch-${patchId}`).classList.remove('selected');
+  });
+  
+  // Update count
+  document.getElementById('selected-count').textContent = selectedPatches.size;
+  
+  // Update commit preview
+  updateCommitPreview();
+}
+
+// Select all patches
+function selectAll() {
+  document.querySelectorAll('.patch-checkbox').forEach(cb => {
+    cb.checked = true;
+  });
+  updateSelection();
+}
+
+// Deselect all patches
+function deselectAll() {
+  document.querySelectorAll('.patch-checkbox').forEach(cb => {
+    cb.checked = false;
+  });
+  updateSelection();
+}
+
+// Update commit preview
+function updateCommitPreview() {
+  const preview = document.getElementById('commit-preview');
+  
+  if (selectedPatches.size === 0) {
+    preview.innerHTML = `
+      <div class="text-muted text-center py-5">
+        <i class="fas fa-code-branch fa-3x mb-3"></i>
+        <p>Select patches to see commit preview</p>
+      </div>
+    `;
+    return;
+  }
+  
+  // Build commit preview
+  let html = '<div style="color: #569cd6;">commit <span style="color: #dcdcaa;">[pending]</span></div>';
+  html += '<div style="color: #808080;">Author: AutoVulRepair &lt;noreply@autovulrepair.com&gt;</div>';
+  html += '<div style="color: #808080;">Date: ' + new Date().toLocaleString() + '</div>';
+  html += '<div style="margin: 15px 0; color: #d4d4d4;">';
+  html += '    ' + document.getElementById('commit-title').value + '\n';
+  const body = document.getElementById('commit-body').value;
+  if (body) {
+    html += '\n    ' + body.replace(/\n/g, '\n    ');
+  }
+  html += '</div>';
+  
+  html += '<div style="color: #4ec9b0; margin-top: 20px;">Files changed: ' + selectedPatches.size + '</div>';
+  html += '<div style="border-top: 1px solid #404040; margin: 10px 0;"></div>';
+  
+  // Show diffs for selected patches
+  selectedPatches.forEach(patchId => {
+    const patch = patches.find(p => p.id === patchId);
+    if (patch) {
+      html += `<div style="color: #dcdcaa; margin-top: 15px;">diff --git a/${patch.file} b/${patch.file}</div>`;
+      html += `<div style="color: #808080;">--- a/${patch.file}</div>`;
+      html += `<div style="color: #808080;">+++ b/${patch.file}</div>`;
+      
+      // Parse and display diff
+      const diffLines = patch.patch_diff.split('\n');
+      diffLines.forEach(line => {
+        if (line.startsWith('@@')) {
+          html += `<div style="color: #4fc1ff;">${escapeHtml(line)}</div>`;
+        } else if (line.startsWith('+') && !line.startsWith('+++')) {
+          html += `<div style="color: #4ec9b0;">${escapeHtml(line)}</div>`;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          html += `<div style="color: #f48771;">${escapeHtml(line)}</div>`;
+        } else if (!line.startsWith('---') && !line.startsWith('+++')) {
+          html += `<div style="color: #808080;">${escapeHtml(line)}</div>`;
+        }
+      });
+    }
+  });
+  
+  preview.innerHTML = html;
+}
+
+// Escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Apply selected patches
+function applySelectedPatches() {
+  if (selectedPatches.size === 0) {
+    alert('Please select at least one patch to apply');
+    return;
+  }
+  
+  if (!confirm(`Apply ${selectedPatches.size} patch(es) to source code?`)) {
+    return;
+  }
+  
+  const btn = document.getElementById('apply-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Applying...';
+  
+  // Apply patches sequentially
+  const patchIds = Array.from(selectedPatches);
+  let applied = 0;
+  let failed = 0;
+  const errors = [];
+  
+  const applyNext = (index) => {
+    if (index >= patchIds.length) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-check"></i> Apply Selected Patches';
+      
+      let message = `Patches applied!\n\nSuccess: ${applied}\nFailed: ${failed}`;
+      if (errors.length > 0 && errors.length <= 3) {
+        message += '\n\nErrors:\n' + errors.join('\n');
+      }
+      alert(message);
+      
+      if (applied > 0) {
+        appliedPatches = new Set([...appliedPatches, ...patchIds.filter((_, i) => i < applied)]);
+        document.getElementById('commit-btn').disabled = false;
+        document.getElementById('view-btn').disabled = false;
+      }
+      
+      return;
+    }
+    
+    const patchId = patchIds[index];
+    const patch = patches.find(p => p.id === patchId);
+    
+    if (!patch) {
+      console.error('Patch not found:', patchId);
+      failed++;
+      errors.push(`Patch ${patchId}: not found`);
+      applyNext(index + 1);
+      return;
+    }
+    
+    // Use the new apply-by-id endpoint that works with database patch UUIDs
+    fetch(`/api/patch/apply-by-id/${scanId}/${patchId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(data => {
+          throw new Error(data.error || data.message || `HTTP ${response.status}`);
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (data.status === 'success') {
+        applied++;
+        console.log(`Applied patch ${patchId}:`, data);
+      } else {
+        failed++;
+        const errorMsg = data.message || data.error || 'Unknown error';
+        errors.push(`${patch.file}:${patch.line}: ${errorMsg}`);
+        console.error(`Failed to apply patch ${patchId}:`, data);
+      }
+      applyNext(index + 1);
+    })
+    .catch(error => {
+      console.error('Error applying patch:', patchId, error);
+      failed++;
+      errors.push(`${patch.file}:${patch.line}: ${error.message}`);
+      applyNext(index + 1);
+    });
+  };
+  
+  applyNext(0);
+}
+
+// View patched files
+function viewPatchedFiles() {
+  if (appliedPatches.size === 0) {
+    alert('No patches have been applied yet');
+    return;
+  }
+  
+  const files = new Set();
+  appliedPatches.forEach(patchId => {
+    const patch = patches.find(p => p.id === patchId);
+    if (patch) files.add(patch.file);
+  });
+  
+  if (files.size === 0) { alert('No files to view'); return; }
+  
+  const preview = document.getElementById('commit-preview');
+  preview.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin fa-2x" style="color:#d4d4d4;"></i><p class="mt-2" style="color:#d4d4d4;">Loading files...</p></div>';
+  
+  const filePromises = Array.from(files).map(file => 
+    fetch(`/api/file/view/${scanId}/${file}`).then(r => r.json())
+  );
+  
+  Promise.all(filePromises).then(results => {
+    let html = '';
+    results.forEach(data => {
+      if (data.error) {
+        html += `<div style="color:#f48771;padding:10px;">Error: ${data.error}</div>`;
+        return;
+      }
+      html += `<div style="margin-bottom:20px;">`;
+      html += `<div style="background:#2d2d2d;padding:8px 12px;border-radius:4px 4px 0 0;display:flex;justify-content:space-between;align-items:center;">`;
+      html += `<span style="color:#dcdcaa;font-weight:bold;"><i class="fas fa-file-code"></i> ${data.file}</span>`;
+      html += `<span style="color:#808080;font-size:11px;">${data.lines} lines</span>`;
+      html += `</div>`;
+      html += `<div style="background:#1e1e1e;border:1px solid #404040;border-radius:0 0 4px 4px;max-height:500px;overflow:auto;">`;
+      const lines = data.content.split('\n');
+      lines.forEach((line, index) => {
+        // Preserve leading whitespace by converting spaces/tabs before highlighting
+        const leadingWhitespace = line.match(/^(\s*)/)[1];
+        const indentHtml = leadingWhitespace
+          .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
+          .replace(/ /g, '&nbsp;');
+        const trimmedLine = line.slice(leadingWhitespace.length);
+        const highlighted = trimmedLine ? syntaxHighlight(trimmedLine) : '';
+        html += `<div style="display:flex;line-height:1.6;min-height:1.6em;">`;
+        html += `<span style="color:#4a4a4a;padding:0 8px;user-select:none;min-width:42px;text-align:right;border-right:1px solid #333;font-family:monospace;font-size:12px;flex-shrink:0;">${index+1}</span>`;
+        html += `<span style="padding:0 12px;font-family:'Courier New',monospace;font-size:12px;color:#d4d4d4;white-space:nowrap;">${indentHtml}${highlighted}&nbsp;</span>`;
+        html += `</div>`;
+      });
+      html += `</div></div>`;
+    });
+    preview.innerHTML = html;
+  }).catch(error => {
+    preview.innerHTML = `<div style="color:#f48771;padding:20px;">Error loading files: ${error.message}</div>`;
+  });
+}
+
+// C/C++ syntax highlighting - runs on UNESCAPED text, returns safe HTML
+function syntaxHighlight(rawLine) {
+  // Tokenize the line to avoid overlapping replacements
+  const tokens = [];
+  let remaining = rawLine;
+  
+  // Extract comments first (highest priority)
+  const commentIdx = remaining.indexOf('//');
+  let comment = '';
+  if (commentIdx !== -1) {
+    comment = remaining.slice(commentIdx);
+    remaining = remaining.slice(0, commentIdx);
+  }
+  
+  // Split remaining into parts: strings vs code
+  const parts = [];
+  const strRegex = /(["'])(?:(?=(\\?))\2.)*?\1/g;
+  let lastIdx = 0;
+  let match;
+  while ((match = strRegex.exec(remaining)) !== null) {
+    if (match.index > lastIdx) {
+      parts.push({ type: 'code', text: remaining.slice(lastIdx, match.index) });
+    }
+    parts.push({ type: 'string', text: match[0] });
+    lastIdx = match.index + match[0].length;
+  }
+  if (lastIdx < remaining.length) {
+    parts.push({ type: 'code', text: remaining.slice(lastIdx) });
+  }
+  
+  // Highlight each part
+  let result = parts.map(part => {
+    if (part.type === 'string') {
+      return `<span style="color:#ce9178;">${escapeHtml(part.text)}</span>`;
+    }
+    // Code part - apply keyword highlighting
+    let code = escapeHtml(part.text);
+    // Preprocessor
+    code = code.replace(/^(#\w+)/gm, '<span style="color:#c586c0;">$1</span>');
+    // Type keywords
+    code = code.replace(/\b(void|int|char|float|double|bool|unsigned|size_t|struct|class|new|delete|nullptr|NULL|true|false|FILE|return|if|else|for|while|sizeof)\b/g,
+      '<span style="color:#569cd6;">$1</span>');
+    // Function calls
+    code = code.replace(/\b(printf|fprintf|sprintf|snprintf|strcpy|strncpy|strcat|strncat|strlen|memset|memcpy|malloc|calloc|free|fopen|fclose|abort|gets|fgets)\b/g,
+      '<span style="color:#dcdcaa;">$1</span>');
+    // Numbers
+    code = code.replace(/\b(\d+[UuLl]*)\b/g, '<span style="color:#b5cea8;">$1</span>');
+    return code;
+  }).join('');
+  
+  // Append comment
+  if (comment) {
+    result += `<span style="color:#6a9955;">${escapeHtml(comment)}</span>`;
+  }
+  
+  return result;
+}
+
+// Create git commit
+function commitPatches() {
+  if (appliedPatches.size === 0) {
+    alert('Please apply patches first');
+    return;
+  }
+  
+  const title = document.getElementById('commit-title').value.trim();
+  if (!title) {
+    alert('Please enter a commit title');
+    return;
+  }
+  
+  if (!confirm('Create git commit with applied patches?')) {
+    return;
+  }
+  
+  const btn = document.getElementById('commit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Committing...';
+  
+  const body = document.getElementById('commit-body').value.trim();
+  const message = body ? `${title}\n\n${body}` : title;
+  
+  fetch(`/api/commit-all-patches/${scanId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: message,
+      patch_ids: Array.from(appliedPatches)
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-code-branch"></i> Create Git Commit';
+    
+    if (data.success) {
+      alert(`Commit created successfully!\n\nCommit SHA: ${data.commit_sha}\nFiles changed: ${data.files_changed}`);
+      
+      // Show success message
+      const preview = document.getElementById('commit-preview');
+      preview.innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+          <h5 style="color: #4ec9b0;">Commit Created Successfully!</h5>
+          <p style="color: #d4d4d4;">SHA: <span style="color: #dcdcaa;">${data.commit_sha}</span></p>
+          <p style="color: #808080;">Files changed: ${data.files_changed}</p>
+        </div>
+      `;
+    } else {
+      alert('Error creating commit: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error creating commit: ' + error);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-code-branch"></i> Create Git Commit';
+  });
+}
+
+// Update commit preview when message changes
+document.getElementById('commit-title').addEventListener('input', function() {
+  document.getElementById('title-chars').textContent = this.value.length;
+  updateCommitPreview();
+});
+document.getElementById('commit-body').addEventListener('input', updateCommitPreview);
+
+// Initialize
+document.getElementById('commit-title').value = 'fix: Apply security patches from AutoVulRepair';
+document.getElementById('title-chars').textContent = document.getElementById('commit-title').value.length;
+updateSelection();
+</script>
+{% endblock %}

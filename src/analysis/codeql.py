@@ -8,7 +8,7 @@ import json
 import subprocess
 import tempfile
 import shutil
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -239,9 +239,29 @@ class CodeQLAnalyzer:
                 sarif_data = json.load(f)
             
             for run in sarif_data.get('runs', []):
+                # Get rule metadata for CWE mapping
+                rules_metadata = {}
+                tool_component = run.get('tool', {}).get('driver', {})
+                for rule in tool_component.get('rules', []):
+                    rule_id = rule.get('id', '')
+                    cwe_id = self._extract_cwe_from_rule(rule)
+                    if cwe_id:
+                        rules_metadata[rule_id] = cwe_id
+                
                 for result in run.get('results', []):
                     rule_id = result.get('ruleId', 'unknown')
                     message = result.get('message', {}).get('text', 'No description')
+                    
+                    # Extract CWE from multiple possible locations
+                    cwe_id = None
+                    
+                    # 1. Check if we have it from rule metadata
+                    if rule_id in rules_metadata:
+                        cwe_id = rules_metadata[rule_id]
+                    
+                    # 2. Check result properties for CWE tags
+                    if not cwe_id:
+                        cwe_id = self._extract_cwe_from_result(result)
                     
                     # Get location info
                     locations = result.get('locations', [])
@@ -272,7 +292,8 @@ class CodeQLAnalyzer:
                         'line': line_num,
                         'message': message,
                         'function': 'unknown',  # CodeQL doesn't always provide function names
-                        'tool': 'CodeQL'
+                        'tool': 'CodeQL',
+                        'cwe': cwe_id  # Add extracted CWE ID
                     }
                     
                     vulnerabilities.append(vulnerability)
@@ -321,6 +342,61 @@ class CodeQLAnalyzer:
             return 'Path Traversal'
         else:
             return 'Security Issue'
+    
+    def _extract_cwe_from_rule(self, rule: Dict[str, Any]) -> Optional[str]:
+        """Extract CWE ID from CodeQL rule metadata"""
+        # Check properties.tags for CWE references
+        properties = rule.get('properties', {})
+        tags = properties.get('tags', [])
+        
+        for tag in tags:
+            if isinstance(tag, str) and 'cwe' in tag.lower():
+                # Extract CWE number from tags like "external/cwe/cwe-119"
+                import re
+                match = re.search(r'cwe[/-](\d+)', tag, re.IGNORECASE)
+                if match:
+                    return f'CWE-{match.group(1)}'
+        
+        # Check properties.precision or other metadata
+        problem_severity = properties.get('problem.severity', '')
+        security_severity = properties.get('security-severity', '')
+        
+        # Some rules have CWE in their metadata
+        for key, value in properties.items():
+            if 'cwe' in key.lower() and isinstance(value, (str, int)):
+                if isinstance(value, int):
+                    return f'CWE-{value}'
+                elif isinstance(value, str) and value.isdigit():
+                    return f'CWE-{value}'
+        
+        return None
+    
+    def _extract_cwe_from_result(self, result: Dict[str, Any]) -> Optional[str]:
+        """Extract CWE ID from CodeQL result properties"""
+        # Check result-level properties
+        properties = result.get('properties', {})
+        
+        # Look for CWE in tags
+        tags = properties.get('tags', [])
+        for tag in tags:
+            if isinstance(tag, str) and 'cwe' in tag.lower():
+                import re
+                match = re.search(r'cwe[/-](\d+)', tag, re.IGNORECASE)
+                if match:
+                    return f'CWE-{match.group(1)}'
+        
+        # Check for CWE in other property fields
+        for key, value in properties.items():
+            if 'cwe' in key.lower():
+                if isinstance(value, int):
+                    return f'CWE-{value}'
+                elif isinstance(value, str):
+                    import re
+                    match = re.search(r'(\d+)', value)
+                    if match:
+                        return f'CWE-{match.group(1)}'
+        
+        return None
     
     def _generate_patch_content(self, vulnerability: Dict[str, Any]) -> str:
         """Generate patch content based on vulnerability type"""

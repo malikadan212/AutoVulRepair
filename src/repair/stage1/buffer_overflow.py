@@ -14,14 +14,15 @@ class BufferOverflowScanner:
     API_PATTERNS = {
         'strcpy': r'\bstrcpy\s*\(([^,]+),\s*([^)]+)\)',
         'strncpy': r'\bstrncpy\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
-        'memcpy': r'\bmemcpy\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
-        'memmove': r'\bmemmove\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
-        'memset': r'\bmemset\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
+        'memcpy': r'\bmemcpy\s*\(([^,]+),\s*([^,]+),\s*(.+?)\s*\)\s*;',
+        'memmove': r'\bmemmove\s*\(([^,]+),\s*([^,]+),\s*(.+?)\s*\)\s*;',
+        'memset': r'\bmemset\s*\(([^,]+),\s*([^,]+),\s*(.+?)\s*\)\s*;',
         'snprintf': r'\bsnprintf\s*\(([^,]+),\s*([^,]+)(.+)\)',
         'vsnprintf': r'\bvsnprintf\s*\(([^,]+),\s*([^,]+)(.+)\)',
         'strcat': r'\bstrcat\s*\(([^,]+),\s*([^)]+)\)',
         'strncat': r'\bstrncat\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
         'sprintf': r'\bsprintf\s*\(([^,]+),\s*([^,]+)([^)]*)\)',
+        'gets': r'\bgets\s*\(([^)]+)\)',
         'fgets': r'\bfgets\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
         'fread': r'\bfread\s*\(([^,]+),\s*([^,]+),\s*([^,]+),\s*([^)]+)\)',
         'read': r'\bread\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
@@ -81,8 +82,8 @@ class BufferOverflowScanner:
         if match_array:
             buf = match_array.group(1).strip()
             idx = match_array.group(2).strip()
-            # If idx is variable block, constraint: i * sizeof(buf[0]) >= sizeof(buf)
-            constraint = f"{idx}*sizeof({buf}[0]) >= sizeof({buf})"
+            # Constraint: index must be < array size
+            constraint = f"{idx} >= (sizeof({buf}) / sizeof({buf}[0]))"
             vulnerabilities.append({
                 'api': 'array_access',
                 'line': line_num,
@@ -97,7 +98,7 @@ class BufferOverflowScanner:
         if match_ptr:
             buf = match_ptr.group(1).strip()
             idx = match_ptr.group(2).strip()
-            constraint = f"{idx}*sizeof({buf}[0]) >= sizeof({buf})"
+            constraint = f"{idx} >= (sizeof({buf}) / sizeof({buf}[0]))"
             vulnerabilities.append({
                 'api': 'pointer_access',
                 'line': line_num,
@@ -153,6 +154,19 @@ class BufferOverflowScanner:
             # sprintf format length computation using MY_vsnprintf
             constraint = f"MY_vsnprintf({format_str}{args}) >= sizeof({dest})"
             
+        elif api == 'gets':
+            dest = match.group(1).strip()
+            constraint = f"1"  # gets is always unsafe
+            return {
+                'api': api,
+                'line': line_num,
+                'dest': dest,
+                'constraint': constraint,
+                'status': 'vulnerable',
+                'original': line,
+                'match': match.groups()
+            }
+            
         elif api == 'fgets':
             dest = match.group(1).strip()
             num = match.group(2).strip()
@@ -187,7 +201,7 @@ class BufferOverflowFixer:
     Fixer for Buffer Overflow vulnerabilities.
     Modes: "default", "API-REP", "extend"
     """
-    def __init__(self, mode: str = "default"):
+    def __init__(self, mode: str = "API-REP"):
         if mode not in ["default", "API-REP", "extend"]:
             raise ValueError("Invalid mode. Must be 'default', 'API-REP', or 'extend'.")
         self.mode = mode
@@ -214,8 +228,6 @@ class BufferOverflowFixer:
         needs_my_vsnprintf = False
 
         if self.mode == "extend":
-            # Buffer extension strategy
-            # Flag for manual buffer size configuration at the declaration site
             target_line = vuln.get('decl_line', vuln.get('line'))
             return {
                 'line': target_line,
@@ -223,18 +235,18 @@ class BufferOverflowFixer:
                 'dest': dest
             }
         elif self.mode == "API-REP":
-            # Replace with safer API or fallback to boundary check
             safe_api_replacement = self._get_safe_api_replacement(api, dest, original, match)
             if safe_api_replacement:
-                repaired_lines = [safe_api_replacement]
+                repaired_lines = safe_api_replacement.split('\n')
             else:
-                # Fallback to boundary check (default mode behaviour)
                 chk_lines, needs_my_vsnprintf = self._get_boundary_check(api, dest, original, constraint, match)
                 repaired_lines = chk_lines
         elif self.mode == "default":
-            # Insert boundary check before the vulnerable line
             chk_lines, needs_my_vsnprintf = self._get_boundary_check(api, dest, original, constraint, match)
             repaired_lines = chk_lines
+
+        if not repaired_lines:
+            return None
 
         return {
             'line': vuln['line'],
@@ -246,22 +258,28 @@ class BufferOverflowFixer:
     def _get_safe_api_replacement(self, api: str, dest: str, original: str, match: tuple) -> Optional[str]:
         """
         Return replacement safe API string, or None if no direct safe API exists.
-        Only strcpy, strcat, and sprintf have a direct safe API replacement options.
         """
         indent = original[:len(original) - len(original.lstrip())]
         
         if api == 'strcpy':
             src = match[1].strip()
-            return f"{indent}strncpy({dest}, {src}, sizeof({dest}));"
+            return f"{indent}strncpy({dest}, {src}, sizeof({dest}) - 1);\n{indent}{dest}[sizeof({dest}) - 1] = '\\0';"
         elif api == 'strcat':
             src = match[1].strip()
-            return f"{indent}snprintf({dest} + strlen({dest}), sizeof({dest}) - strlen({dest}), \"%s\", {src});"
+            return f"{indent}strncat({dest}, {src}, sizeof({dest}) - strlen({dest}) - 1);"
         elif api == 'sprintf':
             format_str = match[1].strip()
             args = match[2].strip() if len(match) > 2 else ""
-            return f"{indent}snprintf({dest}, sizeof({dest}), {format_str}{args});"
+            # Remove leading comma from args if present
+            args = args.lstrip(', ').strip()
+            sep = ", " if args else ""
+            return f"{indent}snprintf({dest}, sizeof({dest}), {format_str}{sep}{args});"
+        elif api == 'gets':
+            # gets has no match groups for dest - extract from original
+            m = re.search(r'gets\s*\(\s*(\w+)\s*\)', original)
+            buf = m.group(1) if m else dest
+            return f"{indent}fgets({buf}, sizeof({buf}), stdin);"
         
-        # APIs without Safer API Option: fallback to boundary check
         return None
 
     def _get_boundary_check(self, api: str, dest: str, original: str, constraint: str, match: tuple) -> Tuple[List[str], bool]:
@@ -271,7 +289,7 @@ class BufferOverflowFixer:
         """
         indent = original[:len(original) - len(original.lstrip())]
         needs_my_vsnprintf = False
-        
+
         if api == 'sprintf':
             format_str = match[1].strip()
             args = match[2].strip() if len(match) > 2 else ""
@@ -281,7 +299,15 @@ class BufferOverflowFixer:
                 f"{indent}if (MY_vsnprintf({format_str}{args}) >= sizeof({dest})) {{ /* terminate */ return; }}",
                 original.strip()
             ], needs_my_vsnprintf
-            
+
+        if api in ('array_access', 'pointer_access'):
+            # The constraint is "i >= (sizeof(array) / sizeof(array[0]))"
+            # Extract the index variable name (left side of >=)
+            idx = constraint.split('>=')[0].strip()
+            array_size_expr = f"(sizeof({dest}) / sizeof({dest}[0]))"
+            boundary_logic = f"{indent}if ({idx} >= {array_size_expr}) {{ break; }}"
+            return [boundary_logic, original.strip()], needs_my_vsnprintf
+
         boundary_logic = f"{indent}if ({constraint}) {{ /* terminate */ return; }}"
         return [boundary_logic, original.strip()], needs_my_vsnprintf
 

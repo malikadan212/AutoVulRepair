@@ -1,6 +1,24 @@
 """
-Repair Orchestrator
-LangGraph workflow that coordinates all repair agents
+Repair Orchestrator - INTERACTIVE REPAIR SYSTEM
+
+⚠️ USE CASE: Real-time interactive AI repair with live feedback
+⚠️ USED BY: Flask routes in app.py (/api/repair/start/<scan_id>)
+⚠️ NOT FOR: Batch processing (use ai_patch_generator.py instead)
+
+This is the INTERACTIVE SYSTEM for user-driven AI repair.
+For automated batch processing, use ai_patch_generator.py
+
+LangGraph workflow that coordinates all repair agents with:
+- Multi-agent architecture (Analyzer, Generator, Validator)
+- Multi-provider LLM support (Groq + Gemini)
+- Real-time logging and progress updates
+- Sophisticated error handling and retries
+
+Architecture:
+- LangGraph state machine
+- Multi-agent coordination
+- Live streaming logs
+- Used in Flask routes for real-time UI
 """
 import logging
 from typing import Dict, Any, Optional

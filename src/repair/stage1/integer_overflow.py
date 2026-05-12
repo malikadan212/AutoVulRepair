@@ -9,45 +9,85 @@ logger = logging.getLogger(__name__)
 class IntegerOverflowScanner:
     """
     Scanner for integer overflow vulnerabilities.
+    
+    Supports:
+    - Addition overflow (CWE-190)
+    - Multiplication overflow (CWE-190)
+    - Subtraction underflow (CWE-191) - NEW
+    - Left shift overflow (CWE-190) - NEW
+    - Truncation/narrowing cast (CWE-197) - NEW
     """
     BOUNDS = {
-        'char': ('CHAR_MAX', '-CHAR_MAX'),
-        'short': ('SHRT_MAX', '-SHRT_MAX'),
+        'char': ('CHAR_MAX', 'CHAR_MIN'),
+        'short': ('SHRT_MAX', 'SHRT_MIN'),
         'int': ('INT_MAX', 'INT_MIN'),
-        'int64_t': ('LLONG_MAX', '-LLONG_MAX'),
-        'long long': ('LLONG_MAX', '-LLONG_MAX'),
+        'int64_t': ('LLONG_MAX', 'LLONG_MIN'),
+        'long long': ('LLONG_MAX', 'LLONG_MIN'),
         'unsigned int': ('UINT_MAX', '0'),
-        'unsigned long': ('ULONG_MAX', '0')
+        'unsigned long': ('ULONG_MAX', '0'),
+        'unsigned char': ('UCHAR_MAX', '0'),
+        'unsigned short': ('USHRT_MAX', '0')
     }
 
     def __init__(self):
-        # We look for binary assignments: type x = s1 op s2;
-        # Support basic types optionally leading the assignment
-        self.statement_pattern = re.compile(
-            r'^(\s*)(?:(?:unsigned\s+|long\s+)*\w+\s+)?(\w+)\s*=\s*(.+?)\s*([+\-*\/&|><]+)\s*(.+?);'
+        # Pattern 1: Binary operations (addition, subtraction, multiplication)
+        self.binary_op_pattern = re.compile(
+            r'^(\s*)(?:(?:unsigned\s+|long\s+)*\w+\s+)?(\w+)\s*=\s*(.+?)\s*([+\-*])\s*(.+?);'
+        )
+        
+        # Pattern 2: Left shift operations
+        self.shift_pattern = re.compile(
+            r'^(\s*)(?:(?:unsigned\s+|long\s+)*\w+\s+)?(\w+)\s*=\s*(.+?)\s*<<\s*(.+?);'
+        )
+        
+        # Pattern 3: Narrowing cast (type conversion)
+        self.cast_pattern = re.compile(
+            r'^(\s*)(?:unsigned\s+|signed\s+)?(char|short|int)\s+(\w+)\s*=\s*\((?:unsigned\s+|signed\s+)?(char|short|int)\)\s*(.+?);'
         )
 
     def scan_line(self, line: str, line_num: int, source_code: str = "") -> Optional[Dict[str, Any]]:
-        if any(op in line for op in ['>>', '<<', '-', 'trunc']):
-            # Explicitly unsupported per Implementation note 12
-            match = self.statement_pattern.search(line)
-            if match and match.group(4) in ('-', '>>', '<<'):
-                return {'line': line_num, 'status': 'unsupported_operation'}
-
-        match = self.statement_pattern.search(line)
-        if not match:
-            return None
-
+        """
+        Scan a line for integer overflow vulnerabilities
+        
+        Detects:
+        1. Addition overflow
+        2. Multiplication overflow
+        3. Subtraction underflow (NEW)
+        4. Left shift overflow (NEW)
+        5. Truncation/narrowing cast (NEW)
+        """
+        # Try Pattern 1: Binary operations (addition, subtraction, multiplication)
+        match = self.binary_op_pattern.search(line)
+        if match:
+            return self._scan_binary_op(match, line, line_num, source_code)
+        
+        # Try Pattern 2: Left shift
+        match = self.shift_pattern.search(line)
+        if match:
+            return self._scan_shift(match, line, line_num, source_code)
+        
+        # Try Pattern 3: Narrowing cast
+        match = self.cast_pattern.search(line)
+        if match:
+            return self._scan_cast(match, line, line_num, source_code)
+        
+        return None
+    
+    def _scan_binary_op(
+        self,
+        match: re.Match,
+        line: str,
+        line_num: int,
+        source_code: str
+    ) -> Optional[Dict[str, Any]]:
+        """Scan binary operations: addition, subtraction, multiplication"""
         indent = match.group(1)
         result_var = match.group(2)
         s1 = match.group(3).strip()
         op = match.group(4).strip()
         s2 = match.group(5).strip()
 
-        if op not in ('+', '*'):
-            return {'line': line_num, 'status': 'no_repair_proposed'}
-
-        # Detect integer type (search backward)
+        # Detect integer type
         int_type = self._detect_type(line, result_var, source_code, line_num)
         max_bound, min_bound = self.BOUNDS.get(int_type, ('INT_MAX', 'INT_MIN'))
 
@@ -57,8 +97,10 @@ class IntegerOverflowScanner:
         s2_const = self._get_const(s2)
         
         precondition = None
+        operation_type = None
 
         if op == '+':
+            operation_type = 'addition_overflow'
             if is_s1_var and is_s2_var:
                 precondition = f"({s1} > {max_bound} - {s2}) || ({s1} < {min_bound} - {s2})"
             elif is_s1_var and s2_const is not None and s2_const > 0:
@@ -68,7 +110,27 @@ class IntegerOverflowScanner:
             else:
                 return {'line': line_num, 'status': 'no_repair_proposed'}
 
+        elif op == '-':
+            # NEW: Subtraction underflow (CWE-191)
+            operation_type = 'subtraction_underflow'
+            if is_s1_var and is_s2_var:
+                # General case: check if s2 > s1 (for unsigned) or underflow (for signed)
+                if 'unsigned' in int_type:
+                    precondition = f"({s2} > {s1})"
+                else:
+                    precondition = f"({s1} < {min_bound} + {s2}) || ({s1} > {max_bound} + {s2})"
+            elif is_s1_var and s2_const is not None:
+                if 'unsigned' in int_type and s2_const > 0:
+                    precondition = f"({s1} < {s2})"
+                elif s2_const > 0:
+                    precondition = f"({s1} < {min_bound} + {s2})"
+                else:
+                    return {'line': line_num, 'status': 'no_repair_proposed'}
+            else:
+                return {'line': line_num, 'status': 'no_repair_proposed'}
+
         elif op == '*':
+            operation_type = 'multiplication_overflow'
             if is_s1_var and is_s2_var and s1 == s2:
                 # Two equal variables
                 precondition = f"({s1} > 0 && {s1} >= sqrt({max_bound})) || ({s1} < 0 && {s1} < -sqrt({max_bound}))"
@@ -94,10 +156,93 @@ class IntegerOverflowScanner:
         return {
             'line': line_num,
             'status': 'vulnerable',
+            'operation_type': operation_type,
             'precondition': precondition,
             'original': line.strip(),
-            'indent': indent
+            'indent': indent,
+            'int_type': int_type
         }
+    
+    def _scan_shift(
+        self,
+        match: re.Match,
+        line: str,
+        line_num: int,
+        source_code: str
+    ) -> Optional[Dict[str, Any]]:
+        """Scan left shift operations for overflow"""
+        indent = match.group(1)
+        result_var = match.group(2)
+        value = match.group(3).strip()
+        shift_amount = match.group(4).strip()
+        
+        # Detect integer type
+        int_type = self._detect_type(line, result_var, source_code, line_num)
+        
+        # Calculate bit width
+        bit_width = self._get_bit_width(int_type)
+        
+        # Precondition: shift amount must be in valid range [0, bit_width)
+        precondition = f"({shift_amount} >= {bit_width} || {shift_amount} < 0)"
+        
+        return {
+            'line': line_num,
+            'status': 'vulnerable',
+            'operation_type': 'shift_overflow',
+            'precondition': precondition,
+            'original': line.strip(),
+            'indent': indent,
+            'int_type': int_type,
+            'bit_width': bit_width
+        }
+    
+    def _scan_cast(
+        self,
+        match: re.Match,
+        line: str,
+        line_num: int,
+        source_code: str
+    ) -> Optional[Dict[str, Any]]:
+        """Scan narrowing casts for truncation"""
+        indent = match.group(1)
+        target_type = match.group(2)  # char, short, int
+        result_var = match.group(3)
+        source_type = match.group(4)  # char, short, int
+        value = match.group(5).strip()
+        
+        # Check if this is actually a narrowing cast
+        type_sizes = {'char': 1, 'short': 2, 'int': 4}
+        if type_sizes.get(target_type, 4) >= type_sizes.get(source_type, 4):
+            # Not a narrowing cast
+            return None
+        
+        # Get bounds for target type
+        max_bound, min_bound = self.BOUNDS.get(target_type, ('INT_MAX', 'INT_MIN'))
+        
+        # Precondition: value must fit in target type
+        precondition = f"({value} > {max_bound} || {value} < {min_bound})"
+        
+        return {
+            'line': line_num,
+            'status': 'vulnerable',
+            'operation_type': 'truncation',
+            'precondition': precondition,
+            'original': line.strip(),
+            'indent': indent,
+            'target_type': target_type,
+            'source_type': source_type
+        }
+    
+    def _get_bit_width(self, int_type: str) -> int:
+        """Get bit width for integer type"""
+        if 'char' in int_type:
+            return 8
+        elif 'short' in int_type:
+            return 16
+        elif 'long long' in int_type or 'int64' in int_type:
+            return 64
+        else:  # int, long
+            return 32
 
     def _detect_type(self, line: str, var_name: str, source_code: str, line_num: int) -> str:
         # Check current line
@@ -166,6 +311,11 @@ class IntegerOverflowFixer:
         
         original_line = lines[line_num - 1]
         
+        # IDEMPOTENCY: skip if already wrapped in overflow check
+        if 'Integer overflow detected' in original_line or 'abort()' in original_line or 'if (' in original_line:
+            logger.info(f"Line {line_num} already has overflow check, skipping")
+            return None
+        
         # Use the scanner to analyze the line
         scanner = IntegerOverflowScanner()
         scan_result = scanner.scan_line(original_line, line_num, source_code)
@@ -184,10 +334,27 @@ class IntegerOverflowFixer:
             return None
         
         # Generate repaired code
+        operation_type = scan_result.get('operation_type', 'overflow')
+        
         repaired_lines = []
         repaired_lines.append(f"{indent}if ({precondition}) {{")
-        repaired_lines.append(f"{indent}    // Integer overflow detected - abort")
-        repaired_lines.append(f"{indent}    fprintf(stderr, \"Integer overflow detected at line {line_num}\\n\");")
+        
+        # Customize error message based on operation type
+        if operation_type == 'subtraction_underflow':
+            repaired_lines.append(f"{indent}    // Subtraction underflow detected - abort")
+            repaired_lines.append(f"{indent}    fprintf(stderr, \"Subtraction underflow at line {line_num}\\n\");")
+        elif operation_type == 'shift_overflow':
+            bit_width = scan_result.get('bit_width', 32)
+            repaired_lines.append(f"{indent}    // Shift overflow detected - abort")
+            repaired_lines.append(f"{indent}    fprintf(stderr, \"Shift amount out of range [0, {bit_width}) at line {line_num}\\n\");")
+        elif operation_type == 'truncation':
+            target_type = scan_result.get('target_type', 'int')
+            repaired_lines.append(f"{indent}    // Truncation/narrowing cast overflow - abort")
+            repaired_lines.append(f"{indent}    fprintf(stderr, \"Value does not fit in {target_type} at line {line_num}\\n\");")
+        else:
+            repaired_lines.append(f"{indent}    // Integer overflow detected - abort")
+            repaired_lines.append(f"{indent}    fprintf(stderr, \"Integer overflow detected at line {line_num}\\n\");")
+        
         repaired_lines.append(f"{indent}    abort();")
         repaired_lines.append(f"{indent}}} else {{")
         repaired_lines.append(f"{indent}    {original}")
@@ -211,10 +378,11 @@ class IntegerOverflowFixer:
             'original': original_line.strip(),
             'repaired': repaired_code,
             'diff': diff,
-            'description': f"Add integer overflow check at line {line_num}",
+            'description': f"Add {operation_type.replace('_', ' ')} check at line {line_num}",
             'confidence': 0.90,
             'requires_acr_header': False,
-            'precondition': precondition
+            'precondition': precondition,
+            'operation_type': operation_type
         }
     
     def _generate_diff(

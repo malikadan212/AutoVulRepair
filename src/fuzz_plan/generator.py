@@ -11,6 +11,7 @@ Implements FR1-FR4:
 """
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Set, Optional
@@ -251,8 +252,11 @@ class FuzzPlanGenerator:
         # Group by target key
         target_groups = defaultdict(list)
         for finding in findings:
-            file_stem = finding.get('file_stem', 'unknown')
-            function = finding.get('function', 'unknown')
+            file_stem = finding.get('file_stem') or Path(finding.get('file') or finding.get('file_path', 'unknown')).stem
+            function = finding.get('function') or finding.get('function_name', '')
+            line_num = finding.get('line') or finding.get('line_number', 0)
+            if not function:
+                function = f"line_{line_num}" if line_num else 'unknown'
             target_key = f"{file_stem}::{function}"
             target_groups[target_key].append(finding)
         
@@ -373,93 +377,114 @@ class FuzzPlanGenerator:
     def extract_signature_from_source(self, finding: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Extract function signature from source file if available
-        
-        Args:
-            finding: Finding dictionary with source file and function name
-            
-        Returns:
-            Signature dictionary or None if extraction fails
         """
         if not self.source_dir:
             return None
-        
-        source_file = finding.get('file', '')
-        function_name = finding.get('function', '')
-        
-        if not source_file or not function_name:
+
+        source_file = finding.get('file') or finding.get('file_path', '')
+        function_name = finding.get('function') or finding.get('function_name', '')
+        line_num = finding.get('line') or finding.get('line_number', 0)
+
+        if not source_file:
             return None
-        
-        # Construct source file path
-        # The source_file in findings is typically an absolute path like "/source/test.cpp"
-        # We need to map this to the actual source directory
-        
-        # Try multiple strategies to find the source file:
-        # 1. Just the filename (for flat structures)
-        # 2. Relative path from /source/ (for nested structures)
-        # 3. Search recursively in source_dir
-        
+
+        # Find the source file on disk
         source_path = None
-        
-        # Strategy 1: Just filename
         source_filename = Path(source_file).name
         candidate = Path(self.source_dir) / source_filename
         if candidate.exists():
             source_path = candidate
         else:
-            # Strategy 2: Extract relative path after /source/
             if '/source/' in source_file:
                 relative_part = source_file.split('/source/', 1)[1]
                 candidate = Path(self.source_dir) / relative_part
                 if candidate.exists():
                     source_path = candidate
-            
-            # Strategy 3: Search recursively (slower but more thorough)
             if source_path is None:
                 for root, dirs, files in os.walk(self.source_dir):
                     if source_filename in files:
-                        candidate = Path(root) / source_filename
-                        source_path = candidate
+                        source_path = Path(root) / source_filename
                         break
-        
+
         if source_path is None or not source_path.exists():
-            print(f"[FUZZ_PLAN] Source file not found: {source_file} (searched in {self.source_dir})")
+            print(f"[FUZZ_PLAN] Source file not found: {source_file}")
             return None
-        
+
         try:
-            # Read source file
             with open(source_path, 'r', encoding='utf-8', errors='ignore') as f:
                 source_code = f.read()
-            
-            # Extract signature
+
+            # If function name is a fallback (line_NNN) or empty, find the
+            # enclosing function by scanning backwards from the line number
+            is_fallback = (not function_name or
+                           re.match(r'^line_\d+$', function_name) or
+                           function_name == 'unknown_function')
+
+            if is_fallback and line_num:
+                function_name = self._find_enclosing_function(source_code, line_num)
+                if function_name:
+                    print(f"[FUZZ_PLAN] Resolved line {line_num} → function '{function_name}'")
+
+            if not function_name:
+                return None
+
             signature = self.signature_extractor.extract_function_signature(
-                source_code,
-                function_name
+                source_code, function_name
             )
-            
+
             if signature:
-                print(f"[FUZZ_PLAN] Extracted signature for {function_name}: {signature.return_type} {signature.function_name}(...)")
+                print(f"[FUZZ_PLAN] Extracted signature: {signature.return_type} {signature.function_name}(...)")
                 return signature.to_dict()
             else:
                 print(f"[FUZZ_PLAN] Could not extract signature for {function_name}")
                 return None
-                
+
         except Exception as e:
-            print(f"[FUZZ_PLAN] Error extracting signature for {function_name}: {e}")
+            print(f"[FUZZ_PLAN] Error extracting signature: {e}")
             return None
+
+    def _find_enclosing_function(self, source_code: str, line_num: int) -> Optional[str]:
+        """
+        Scan backwards from line_num to find the name of the enclosing function.
+        Returns the function name string or None.
+        """
+        lines = source_code.split('\n')
+        # Pattern: optional modifiers + return type + function_name + (
+        func_pattern = re.compile(
+            r'^\s*(?:static\s+|inline\s+|extern\s+|virtual\s+|const\s+)*'
+            r'(?:[\w:*&<>]+\s+)+(\w+)\s*\('
+        )
+        # Scan backwards from the reported line
+        for i in range(min(line_num - 1, len(lines) - 1), max(0, line_num - 200), -1):
+            line = lines[i]
+            # Skip comments, preprocessor, closing braces
+            stripped = line.strip()
+            if not stripped or stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('#'):
+                continue
+            m = func_pattern.match(line)
+            if m:
+                name = m.group(1)
+                # Skip keywords that look like function names
+                if name not in ('if', 'for', 'while', 'switch', 'return', 'else',
+                                'do', 'case', 'catch', 'try', 'new', 'delete'):
+                    return name
+        return None
     
     def validate_finding(self, finding: Dict[str, Any]) -> bool:
         """Validate that finding has all required fields"""
-        required_fields = ['rule_id', 'file', 'file_stem', 'function', 
-                          'severity', 'confidence', 'line', 'message']
-        
+        # Only truly required fields - function and file_stem can be derived
+        required_fields = ['rule_id', 'severity', 'message']
+
         for field in required_fields:
-            if field not in finding:
+            if field not in finding or not finding[field]:
                 print(f"[FUZZ_PLAN] Warning: Finding missing required field '{field}', skipping")
                 return False
-            if not finding[field]:  # Check for empty values
-                print(f"[FUZZ_PLAN] Warning: Finding has empty '{field}', skipping")
-                return False
-        
+
+        # Must have at least a file or line number to be useful
+        if not finding.get('file') and not finding.get('file_path') and not finding.get('line'):
+            print(f"[FUZZ_PLAN] Warning: Finding has no location info, skipping")
+            return False
+
         return True
     
     def generate_target_metadata(self, finding: Dict[str, Any]) -> Dict[str, Any]:
@@ -467,35 +492,44 @@ class FuzzPlanGenerator:
         # Validate finding first
         if not self.validate_finding(finding):
             return None
-        
+
+        # Derive file and file_stem from whichever field is available
+        source_file = finding.get('file') or finding.get('file_path', '')
+        file_stem = finding.get('file_stem') or Path(source_file).stem if source_file else 'unknown'
+
+        # Derive line number from whichever field is available
+        line_num = finding.get('line') or finding.get('line_number', 0)
+        col_num = finding.get('column') or finding.get('column_number', 0)
+
+        # Function may be empty - use a placeholder derived from file+line
+        function = finding.get('function') or finding.get('function_name', '')
+        if not function:
+            function = f"line_{line_num}" if line_num else 'unknown_function'
+
         bug_class = self.infer_bug_class(finding.get('rule_id', 'unknown'))
         sanitizers = self.select_sanitizers(bug_class)
         seeds = self.select_seeds(bug_class)
         dictionaries = self.select_dictionaries(bug_class)
         priority = self.calculate_priority(finding)
         harness_type = self.infer_harness_type(finding, bug_class)
-        
-        # Safe access with defaults
-        file_stem = finding.get('file_stem', 'unknown')
-        function = finding.get('function', 'unknown_function')
-        
+
         # Handle multi-bug suffix for unique target IDs (Issue #6)
         multi_bug_suffix = finding.get('_multi_bug_suffix', '')
         target_id = f"{file_stem}_{function}{multi_bug_suffix}"
-        
+
         target = {
             'target_id': target_id,
-            'source_file': finding.get('file', ''),
+            'source_file': source_file,
             'file_stem': file_stem,
             'function_name': function,
             'bug_class': bug_class,
             'rule_id': finding.get('rule_id', 'unknown'),
             'severity': finding.get('severity', 'unknown'),
             'confidence': finding.get('confidence', 'medium'),
-            'line_number': finding.get('line', 0),
-            'column_number': finding.get('column', 0),
+            'line_number': line_num,
+            'column_number': col_num,
             'message': finding.get('message', 'No message'),
-            'cwe': finding.get('cwe', ''),
+            'cwe': finding.get('cwe', '').replace('CWE-', '') if finding.get('cwe', '').startswith('CWE-') else finding.get('cwe', ''),
             'sanitizers': sanitizers,
             'seed_directories': seeds,
             'dictionaries': dictionaries,
@@ -509,6 +543,10 @@ class FuzzPlanGenerator:
             signature = self.extract_signature_from_source(finding)
             if signature:
                 target['function_signature'] = signature
+                # Update function_name with the real resolved name if it was a fallback
+                if re.match(r'^line_\d+$', function) or function == 'unknown_function':
+                    target['function_name'] = signature['function_name']
+                    target['target_id'] = f"{file_stem}_{signature['function_name']}{multi_bug_suffix}"
             else:
                 target['signature_status'] = 'not_extracted'
         else:

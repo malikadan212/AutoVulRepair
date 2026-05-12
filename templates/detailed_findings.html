@@ -116,6 +116,11 @@
         {% if analysis_tool %}
         <small>
           Analysis Tool: <strong>{{ analysis_tool|upper }}</strong>
+          {% if analysis_method == 'pattern_matching' %}
+          <span class="badge bg-warning text-dark ms-2" title="Pattern-based fallback analysis - install Cppcheck/CodeQL for accurate results">
+            <i class="fas fa-exclamation-triangle"></i> Fallback Mode
+          </span>
+          {% endif %}
           {% if repo_url %}
           <span class="mx-2">|</span>
           Repository: <a href="{{ repo_url }}" target="_blank">{{ repo_url }}</a>
@@ -219,35 +224,57 @@
 
   <!-- Summary Stats -->
   <div class="row mb-4">
-    <div class="col-md-3">
-      <div class="card border-danger">
-        <div class="card-body text-center">
-          <h3 class="text-danger" id="high-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'high')|list|length }}</h3>
-          <p class="card-text">High Issues</p>
+    <div class="col-md-2">
+      <div class="card border-danger h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-skull fa-2x text-danger mb-2"></i>
+          <h3 class="text-danger mb-0" id="critical-count">{{ critical_count|default(0) }}</h3>
+          <small class="text-muted">Critical</small>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card border-warning">
-        <div class="card-body text-center">
-          <h3 class="text-warning" id="medium-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'medium')|list|length }}</h3>
-          <p class="card-text">Medium Issues</p>
+    <div class="col-md-2">
+      <div class="card border-danger h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-exclamation-triangle fa-2x text-danger mb-2"></i>
+          <h3 class="text-danger mb-0" id="high-count">{{ high_count|default(0) }}</h3>
+          <small class="text-muted">High</small>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card border-info">
-        <div class="card-body text-center">
-          <h3 class="text-info" id="low-count">{{ vulnerabilities|selectattr('severity', 'equalto', 'low')|list|length }}</h3>
-          <p class="card-text">Low Issues</p>
+    <div class="col-md-2">
+      <div class="card border-warning h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-exclamation-circle fa-2x text-warning mb-2"></i>
+          <h3 class="text-warning mb-0" id="medium-count">{{ medium_count|default(0) }}</h3>
+          <small class="text-muted">Medium</small>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card border-success">
-        <div class="card-body text-center">
-          <h3 class="text-success" id="total-count">{{ vulnerabilities|length }}</h3>
-          <p class="card-text">Total Found</p>
+    <div class="col-md-2">
+      <div class="card border-info h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-info-circle fa-2x text-info mb-2"></i>
+          <h3 class="text-info mb-0" id="low-count">{{ low_count|default(0) }}</h3>
+          <small class="text-muted">Low</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card border-secondary h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-filter fa-2x text-secondary mb-2"></i>
+          <h3 class="text-secondary mb-0" id="false-positive-count">{{ false_positive_count|default(0) }}</h3>
+          <small class="text-muted">Auto-Filtered</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card border-success h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-list fa-2x text-success mb-2"></i>
+          <h3 class="text-success mb-0" id="total-count">{{ vulnerabilities|length }}</h3>
+          <small class="text-muted">Total</small>
         </div>
       </div>
     </div>
@@ -274,13 +301,24 @@
       
       <div class="card-header d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center">
+          {% if vuln.metadata_json and vuln.metadata_json.get('is_false_positive') %}
+          <span class="badge bg-secondary me-2" title="Non-executable code automatically filtered">
+            <i class="fas fa-filter"></i> AUTO-FILTERED
+          </span>
+          {% endif %}
           <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %} me-2">
             {{ vuln.severity|upper }}
           </span>
           <h6 class="mb-0">{{ vuln.description }}</h6>
         </div>
         <div class="d-flex align-items-center">
+          {% if vuln.tool == 'Pattern-Based Fallback' %}
+          <span class="badge bg-warning text-dark me-2" title="Pattern-based detection - may have false positives">
+            <i class="fas fa-exclamation-triangle"></i> {{ vuln.tool }}
+          </span>
+          {% else %}
           <span class="badge bg-secondary me-2">{{ vuln.tool }}</span>
+          {% endif %}
           <button class="btn btn-sm btn-outline-primary" type="button" aria-expanded="false" onclick="toggleDetails('{{ vuln.id }}')">
             <i class="fas fa-chevron-down" id="toggle-{{ vuln.id }}"></i>
           </button>
@@ -313,6 +351,11 @@
               <span class="badge bg-{% if vuln.severity == 'high' %}danger{% elif vuln.severity == 'medium' %}warning{% else %}info{% endif %}">
                 {{ "%.1f"|format(vuln.cvss_score) }}
               </span>
+              {% if vuln.confidence == 'low' %}
+              <span class="badge bg-warning text-dark ms-1" title="Low confidence - pattern-based detection">
+                <i class="fas fa-question-circle"></i> Low Confidence
+              </span>
+              {% endif %}
             </p>
           </div>
         </div>
@@ -320,6 +363,17 @@
         <!-- Detailed Information (Collapsible) -->
         <div class="collapse" id="details-{{ vuln.id }}">
           <hr>
+          
+          {% if vuln.metadata_json and vuln.metadata_json.get('is_false_positive') %}
+          <div class="alert alert-info mb-4">
+            <h6><i class="fas fa-info-circle"></i> Auto-Filtered Finding</h6>
+            <p class="mb-0">
+              <strong>Reason:</strong> {{ vuln.metadata_json.get('false_positive_reason') }}<br>
+              <strong>Confidence:</strong> {{ (vuln.metadata_json.get('false_positive_confidence', 0) * 100)|int }}%<br>
+              <strong>Category:</strong> {{ vuln.metadata_json.get('false_positive_category', 'unknown')|replace('_', ' ')|title }}
+            </p>
+          </div>
+          {% endif %}
           
           <!-- Code Context -->
           <div class="mb-4">
@@ -664,6 +718,34 @@ function analyzeCrashes(targetName) {
 function downloadCrashes(targetName) {
   if (!scanId || !targetName) return;
   window.location.href = '/api/fuzz/crashes/' + scanId + '/' + targetName + '/download';
+}
+
+/* Detect false positives */
+function detectFalsePositives() {
+  const btn = document.getElementById('detectFalsePositivesBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+  
+  fetch('/api/scan/' + scanId + '/detect-false-positives', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'}
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      alert('Analysis Complete!\n\nTotal: ' + data.total_findings + '\nReal Vulnerabilities: ' + data.real_vulnerabilities + '\nFalse Positives: ' + data.false_positives + '\n\nReloading page...');
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-filter"></i> Detect False Positives';
+    }
+  })
+  .catch(error => {
+    alert('Error: ' + error);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-filter"></i> Detect False Positives';
+  });
 }
 
 /* ---------- Polling for scan status ---------- */

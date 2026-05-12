@@ -564,6 +564,9 @@
                         📝 MD
                     </button>
                 </div>
+                <button class="btn btn-primary" onclick="generateFuzzPlan()" title="Regenerate Fuzz Plan">
+                    🔄 Regenerate
+                </button>
                 <a href="#" class="btn btn-success" onclick="generateHarnesses(); return false;">
                     Generate Harnesses →
                 </a>
@@ -806,7 +809,7 @@
                         <span class="detail-label">CWE</span>
                         <span class="detail-value">
                             {% if target.cwe %}
-                            <span class="badge badge-cwe">CWE-{{ target.cwe }}</span>
+                            <span class="badge badge-cwe">{{ target.cwe if target.cwe.startswith('CWE-') else 'CWE-' + target.cwe }}</span>
                             {% else %}
                             N/A
                             {% endif %}
@@ -958,9 +961,17 @@
         const TARGET_COUNT = parseInt(configData.dataset.targetCount);
 
         function generateFuzzPlan() {
-            document.getElementById('noPlanMessage').style.display = 'none';
-            document.getElementById('loadingMessage').style.display = 'block';
-            
+            const noMsg = document.getElementById('noPlanMessage');
+            const loadMsg = document.getElementById('loadingMessage');
+            if (noMsg) noMsg.style.display = 'none';
+            if (loadMsg) loadMsg.style.display = 'block';
+
+            // Disable the regenerate button to prevent double clicks
+            document.querySelectorAll('button[onclick="generateFuzzPlan()"]').forEach(b => {
+                b.disabled = true;
+                b.textContent = '⏳ Generating...';
+            });
+
             // Check if advanced fuzzing options are enabled
             const enableIntegration = document.getElementById('enableIntegration')?.checked || false;
             const enableRaceCondition = document.getElementById('enableRaceCondition')?.checked || false;
@@ -996,14 +1007,22 @@
                         window.location.reload();
                     } else {
                         alert('Error: ' + (data.error || 'Unknown error'));
-                        document.getElementById('noPlanMessage').style.display = 'block';
-                        document.getElementById('loadingMessage').style.display = 'none';
+                        if (noMsg) noMsg.style.display = 'block';
+                        if (loadMsg) loadMsg.style.display = 'none';
+                        document.querySelectorAll('button[onclick="generateFuzzPlan()"]').forEach(b => {
+                            b.disabled = false;
+                            b.textContent = '🔄 Regenerate';
+                        });
                     }
                 })
                 .catch(error => {
                     alert('Error generating fuzz plan: ' + error);
-                    document.getElementById('noPlanMessage').style.display = 'block';
-                    document.getElementById('loadingMessage').style.display = 'none';
+                    if (noMsg) noMsg.style.display = 'block';
+                    if (loadMsg) loadMsg.style.display = 'none';
+                    document.querySelectorAll('button[onclick="generateFuzzPlan()"]').forEach(b => {
+                        b.disabled = false;
+                        b.textContent = '🔄 Regenerate';
+                    });
                 });
         }
 

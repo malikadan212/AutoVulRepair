@@ -1,0 +1,3746 @@
+{
+  "tables": {
+    "crash_artifacts": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "execution_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "filename",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "crash_type",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "file_size",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "crash_data",
+          "data_type": "bytea",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bytea"
+        },
+        {
+          "column_name": "stack_trace",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "sanitizer_output",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "severity",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "exploitability",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "crash_artifacts_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "execution_id",
+          "foreign_table_name": "fuzz_executions",
+          "foreign_column_name": "id",
+          "constraint_name": "crash_artifacts_execution_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24714_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24714_2_not_null",
+          "check_clause": "execution_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24714_3_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24714_4_not_null",
+          "check_clause": "filename IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24714_6_not_null",
+          "check_clause": "file_size IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "crash_artifacts_pkey",
+          "indexdef": "CREATE UNIQUE INDEX crash_artifacts_pkey ON public.crash_artifacts USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "16 kB",
+        "table_size": "0 bytes",
+        "indexes_size": "16 kB"
+      },
+      "row_count": 0
+    },
+    "fuzz_campaigns": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "runtime_minutes",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "total_targets",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "targets_executed",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "total_executions",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "total_crashes",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "started_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "completed_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "total_time_seconds",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "metadata_json",
+          "data_type": "jsonb",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "jsonb"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "fuzz_campaigns_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans_v2",
+          "foreign_column_name": "scan_id",
+          "constraint_name": "fuzz_campaigns_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24644_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24644_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24644_3_not_null",
+          "check_clause": "runtime_minutes IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24644_4_not_null",
+          "check_clause": "total_targets IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "fuzz_campaigns_pkey",
+          "indexdef": "CREATE UNIQUE INDEX fuzz_campaigns_pkey ON public.fuzz_campaigns USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "16 kB",
+        "table_size": "0 bytes",
+        "indexes_size": "16 kB"
+      },
+      "row_count": 0
+    },
+    "fuzz_executions": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "campaign_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "target_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "target_name",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "runtime_seconds",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 8,
+          "numeric_scale": 2,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "exit_code",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "executions_count",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "crashes_found",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "coverage_stats",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "fuzzer_output",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "fuzz_executions_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "campaign_id",
+          "foreign_table_name": "fuzz_campaigns",
+          "foreign_column_name": "id",
+          "constraint_name": "fuzz_executions_campaign_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        },
+        {
+          "column_name": "target_id",
+          "foreign_table_name": "fuzz_targets",
+          "foreign_column_name": "id",
+          "constraint_name": "fuzz_executions_target_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24697_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24697_2_not_null",
+          "check_clause": "campaign_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24697_3_not_null",
+          "check_clause": "target_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24697_4_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24697_5_not_null",
+          "check_clause": "target_name IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24697_6_not_null",
+          "check_clause": "status IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "fuzz_executions_pkey",
+          "indexdef": "CREATE UNIQUE INDEX fuzz_executions_pkey ON public.fuzz_executions USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "16 kB",
+        "table_size": "0 bytes",
+        "indexes_size": "16 kB"
+      },
+      "row_count": 0
+    },
+    "fuzz_plans": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "version",
+          "data_type": "character varying",
+          "character_maximum_length": 10,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "total_targets",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "generated_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "metadata_json",
+          "data_type": "jsonb",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "jsonb"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "fuzz_plans_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans_v2",
+          "foreign_column_name": "scan_id",
+          "constraint_name": "fuzz_plans_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24632_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24632_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24632_4_not_null",
+          "check_clause": "total_targets IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "fuzz_plans_pkey",
+          "indexdef": "CREATE UNIQUE INDEX fuzz_plans_pkey ON public.fuzz_plans USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "32 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "24 kB"
+      },
+      "row_count": 2
+    },
+    "fuzz_targets": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "plan_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "target_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "function_name",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "file_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "line_number",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "bug_class",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "priority",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 4,
+          "numeric_scale": 2,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "harness_type",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "sanitizers",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "seeds",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "dictionaries",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "function_signature",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "fuzz_targets_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "plan_id",
+          "foreign_table_name": "fuzz_plans",
+          "foreign_column_name": "id",
+          "constraint_name": "fuzz_targets_plan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24656_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_2_not_null",
+          "check_clause": "plan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_3_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_4_not_null",
+          "check_clause": "target_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_5_not_null",
+          "check_clause": "function_name IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_6_not_null",
+          "check_clause": "file_path IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_7_not_null",
+          "check_clause": "line_number IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_8_not_null",
+          "check_clause": "bug_class IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_9_not_null",
+          "check_clause": "priority IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_10_not_null",
+          "check_clause": "harness_type IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24656_11_not_null",
+          "check_clause": "sanitizers IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "fuzz_targets_pkey",
+          "indexdef": "CREATE UNIQUE INDEX fuzz_targets_pkey ON public.fuzz_targets USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "16 kB",
+        "table_size": "0 bytes",
+        "indexes_size": "16 kB"
+      },
+      "row_count": 0
+    },
+    "fuzzing_results": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "nextval('fuzzing_results_id_seq'::regclass)",
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "target_binary",
+          "data_type": "character varying",
+          "character_maximum_length": 500,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "test_case_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "crash_found",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": "false",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "coverage_percent",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": "0.0",
+          "is_nullable": "YES",
+          "numeric_precision": 5,
+          "numeric_scale": 2,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "execution_time_ms",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "input_data",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "crash_details",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": "CURRENT_TIMESTAMP",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "fuzzer_type",
+          "data_type": "character varying",
+          "character_maximum_length": 100,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "iterations",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "unique_crashes",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "fuzzing_results_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "user_id",
+          "foreign_table_name": "users",
+          "foreign_column_name": "id",
+          "constraint_name": "fuzzing_results_user_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "CASCADE"
+        },
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans",
+          "foreign_column_name": "id",
+          "constraint_name": "fuzzing_results_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "CASCADE"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_41321_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41321_2_not_null",
+          "check_clause": "user_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41321_4_not_null",
+          "check_clause": "target_binary IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "fuzzing_results_pkey",
+          "indexdef": "CREATE UNIQUE INDEX fuzzing_results_pkey ON public.fuzzing_results USING btree (id)"
+        },
+        {
+          "indexname": "idx_fuzzing_user_id",
+          "indexdef": "CREATE INDEX idx_fuzzing_user_id ON public.fuzzing_results USING btree (user_id)"
+        },
+        {
+          "indexname": "idx_fuzzing_scan_id",
+          "indexdef": "CREATE INDEX idx_fuzzing_scan_id ON public.fuzzing_results USING btree (scan_id)"
+        },
+        {
+          "indexname": "idx_fuzzing_target",
+          "indexdef": "CREATE INDEX idx_fuzzing_target ON public.fuzzing_results USING btree (target_binary)"
+        },
+        {
+          "indexname": "idx_fuzzing_crash",
+          "indexdef": "CREATE INDEX idx_fuzzing_crash ON public.fuzzing_results USING btree (crash_found)"
+        }
+      ],
+      "size_info": {
+        "total_size": "96 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "88 kB"
+      },
+      "row_count": 12
+    },
+    "github_app_tokens": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "installation_id",
+          "data_type": "bigint",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 64,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int8"
+        },
+        {
+          "column_name": "access_token",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "expires_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "github_app_tokens_pkey"
+        }
+      ],
+      "foreign_keys": [],
+      "unique_constraints": [
+        {
+          "column_name": "installation_id",
+          "constraint_name": "github_app_tokens_installation_id_key"
+        }
+      ],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_41245_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41245_2_not_null",
+          "check_clause": "installation_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41245_3_not_null",
+          "check_clause": "access_token IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41245_4_not_null",
+          "check_clause": "expires_at IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "github_app_tokens_pkey",
+          "indexdef": "CREATE UNIQUE INDEX github_app_tokens_pkey ON public.github_app_tokens USING btree (id)"
+        },
+        {
+          "indexname": "github_app_tokens_installation_id_key",
+          "indexdef": "CREATE UNIQUE INDEX github_app_tokens_installation_id_key ON public.github_app_tokens USING btree (installation_id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "48 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "40 kB"
+      },
+      "row_count": 1
+    },
+    "github_installations": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "installation_id",
+          "data_type": "bigint",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 64,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int8"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "github_account_login",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "github_account_id",
+          "data_type": "bigint",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 64,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int8"
+        },
+        {
+          "column_name": "github_account_type",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "repository_selection",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "permissions",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "is_active",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "installed_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "github_installations_pkey"
+        }
+      ],
+      "foreign_keys": [],
+      "unique_constraints": [
+        {
+          "column_name": "installation_id",
+          "constraint_name": "github_installations_installation_id_key"
+        }
+      ],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_41236_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41236_2_not_null",
+          "check_clause": "installation_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41236_3_not_null",
+          "check_clause": "user_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41236_4_not_null",
+          "check_clause": "github_account_login IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "github_installations_pkey",
+          "indexdef": "CREATE UNIQUE INDEX github_installations_pkey ON public.github_installations USING btree (id)"
+        },
+        {
+          "indexname": "github_installations_installation_id_key",
+          "indexdef": "CREATE UNIQUE INDEX github_installations_installation_id_key ON public.github_installations USING btree (installation_id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "48 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "40 kB"
+      },
+      "row_count": 1
+    },
+    "harness_files": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "target_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "filename",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "harness_code",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "harness_type",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "build_status",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "build_log",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "binary_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "harness_files_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "target_id",
+          "foreign_table_name": "fuzz_targets",
+          "foreign_column_name": "id",
+          "constraint_name": "harness_files_target_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24685_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24685_2_not_null",
+          "check_clause": "target_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24685_3_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24685_4_not_null",
+          "check_clause": "filename IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24685_5_not_null",
+          "check_clause": "harness_code IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24685_6_not_null",
+          "check_clause": "harness_type IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "harness_files_pkey",
+          "indexdef": "CREATE UNIQUE INDEX harness_files_pkey ON public.harness_files USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "16 kB",
+        "table_size": "0 bytes",
+        "indexes_size": "16 kB"
+      },
+      "row_count": 0
+    },
+    "installation_repositories": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "installation_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "repository_full_name",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "repository_id",
+          "data_type": "bigint",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 64,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int8"
+        },
+        {
+          "column_name": "repository_name",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "repository_private",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "repository_language",
+          "data_type": "character varying",
+          "character_maximum_length": 100,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "automation_enabled",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "auto_scan_on_push",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "auto_create_prs",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "auto_scan_on_pr",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "settings",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "is_active",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "last_scanned_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "last_scan_status",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "added_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "installation_repositories_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "installation_id",
+          "foreign_table_name": "github_installations",
+          "foreign_column_name": "id",
+          "constraint_name": "installation_repositories_installation_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_41254_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41254_2_not_null",
+          "check_clause": "installation_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41254_3_not_null",
+          "check_clause": "repository_full_name IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41254_4_not_null",
+          "check_clause": "repository_id IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "installation_repositories_pkey",
+          "indexdef": "CREATE UNIQUE INDEX installation_repositories_pkey ON public.installation_repositories USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "32 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "24 kB"
+      },
+      "row_count": 1
+    },
+    "job_queue": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "job_type",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "priority",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "attempts",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "max_attempts",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "payload",
+          "data_type": "jsonb",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "jsonb"
+        },
+        {
+          "column_name": "result",
+          "data_type": "jsonb",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "jsonb"
+        },
+        {
+          "column_name": "error_message",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "started_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "completed_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "job_queue_pkey"
+        }
+      ],
+      "foreign_keys": [],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24601_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24601_2_not_null",
+          "check_clause": "job_type IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24601_3_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24601_8_not_null",
+          "check_clause": "payload IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "job_queue_pkey",
+          "indexdef": "CREATE UNIQUE INDEX job_queue_pkey ON public.job_queue USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "64 kB",
+        "table_size": "16 kB",
+        "indexes_size": "48 kB"
+      },
+      "row_count": 38
+    },
+    "patch_batches": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": "(gen_random_uuid())::text",
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": "'generating'::character varying",
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "stage1_complete",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": "false",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "stage2_complete",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": "false",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "stage1_patches_count",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "stage2_patches_count",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "total_patches_count",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "stage1_vulnerabilities_count",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "stage2_vulnerabilities_count",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "0",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": "now()",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "stage1_completed_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "stage2_completed_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "applied_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "applied_by",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "commit_sha",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "pr_url",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "branch_name",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "notes",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "patch_batches_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans",
+          "foreign_column_name": "id",
+          "constraint_name": "patch_batches_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "CASCADE"
+        },
+        {
+          "column_name": "applied_by",
+          "foreign_table_name": "users",
+          "foreign_column_name": "id",
+          "constraint_name": "patch_batches_applied_by_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [
+        {
+          "column_name": "scan_id",
+          "constraint_name": "patch_batches_scan_id_key"
+        }
+      ],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_49382_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_49382_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_49382_3_not_null",
+          "check_clause": "status IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "patch_batches_pkey",
+          "indexdef": "CREATE UNIQUE INDEX patch_batches_pkey ON public.patch_batches USING btree (id)"
+        },
+        {
+          "indexname": "patch_batches_scan_id_key",
+          "indexdef": "CREATE UNIQUE INDEX patch_batches_scan_id_key ON public.patch_batches USING btree (scan_id)"
+        },
+        {
+          "indexname": "idx_patch_batches_scan_id",
+          "indexdef": "CREATE INDEX idx_patch_batches_scan_id ON public.patch_batches USING btree (scan_id)"
+        },
+        {
+          "indexname": "idx_patch_batches_status",
+          "indexdef": "CREATE INDEX idx_patch_batches_status ON public.patch_batches USING btree (status)"
+        }
+      ],
+      "size_info": {
+        "total_size": "80 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "72 kB"
+      },
+      "row_count": 1
+    },
+    "patches": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "nextval('patches_id_seq'::regclass)",
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "vulnerability_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "patch_content",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": "'pending'::character varying",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "confidence_score",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": "0.0",
+          "is_nullable": "YES",
+          "numeric_precision": 5,
+          "numeric_scale": 2,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": "CURRENT_TIMESTAMP",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "applied_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "file_path",
+          "data_type": "character varying",
+          "character_maximum_length": 500,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "line_number",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "patch_type",
+          "data_type": "character varying",
+          "character_maximum_length": 100,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "ai_model",
+          "data_type": "character varying",
+          "character_maximum_length": 100,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "stage",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": "1",
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "selected_for_application",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": "true",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "batch_id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "patches_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "user_id",
+          "foreign_table_name": "users",
+          "foreign_column_name": "id",
+          "constraint_name": "patches_user_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "CASCADE"
+        },
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans",
+          "foreign_column_name": "id",
+          "constraint_name": "patches_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "CASCADE"
+        },
+        {
+          "column_name": "batch_id",
+          "foreign_table_name": "patch_batches",
+          "foreign_column_name": "id",
+          "constraint_name": "patches_batch_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "SET NULL"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "patches_stage_check",
+          "check_clause": "((stage = ANY (ARRAY[1, 2])))"
+        },
+        {
+          "constraint_name": "24584_41296_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41296_2_not_null",
+          "check_clause": "user_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_41296_5_not_null",
+          "check_clause": "patch_content IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "patches_pkey",
+          "indexdef": "CREATE UNIQUE INDEX patches_pkey ON public.patches USING btree (id)"
+        },
+        {
+          "indexname": "idx_patches_user_id",
+          "indexdef": "CREATE INDEX idx_patches_user_id ON public.patches USING btree (user_id)"
+        },
+        {
+          "indexname": "idx_patches_scan_id",
+          "indexdef": "CREATE INDEX idx_patches_scan_id ON public.patches USING btree (scan_id)"
+        },
+        {
+          "indexname": "idx_patches_status",
+          "indexdef": "CREATE INDEX idx_patches_status ON public.patches USING btree (status)"
+        },
+        {
+          "indexname": "idx_patches_stage",
+          "indexdef": "CREATE INDEX idx_patches_stage ON public.patches USING btree (stage)"
+        },
+        {
+          "indexname": "idx_patches_batch_id",
+          "indexdef": "CREATE INDEX idx_patches_batch_id ON public.patches USING btree (batch_id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "112 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "104 kB"
+      },
+      "row_count": 10
+    },
+    "repair_patches": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "finding_id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "file_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "original_code",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "patched_code",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "patch_diff",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "repair_method",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "confidence_score",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 3,
+          "numeric_scale": 2,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "validation_status",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "applied_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "repair_patches_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans_v2",
+          "foreign_column_name": "scan_id",
+          "constraint_name": "repair_patches_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        },
+        {
+          "column_name": "finding_id",
+          "foreign_table_name": "static_findings",
+          "foreign_column_name": "id",
+          "constraint_name": "repair_patches_finding_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24668_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24668_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24668_4_not_null",
+          "check_clause": "file_path IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24668_5_not_null",
+          "check_clause": "original_code IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24668_6_not_null",
+          "check_clause": "patched_code IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24668_7_not_null",
+          "check_clause": "patch_diff IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24668_8_not_null",
+          "check_clause": "repair_method IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "repair_patches_pkey",
+          "indexdef": "CREATE UNIQUE INDEX repair_patches_pkey ON public.repair_patches USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "168 kB",
+        "table_size": "96 kB",
+        "indexes_size": "72 kB"
+      },
+      "row_count": 116
+    },
+    "scan_sources": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "file_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "file_content",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "file_size",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "file_hash",
+          "data_type": "character varying",
+          "character_maximum_length": 64,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "scan_sources_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans_v2",
+          "foreign_column_name": "scan_id",
+          "constraint_name": "scan_sources_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24608_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24608_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24608_3_not_null",
+          "check_clause": "file_path IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24608_4_not_null",
+          "check_clause": "file_content IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24608_5_not_null",
+          "check_clause": "file_size IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24608_6_not_null",
+          "check_clause": "file_hash IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "scan_sources_pkey",
+          "indexdef": "CREATE UNIQUE INDEX scan_sources_pkey ON public.scan_sources USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "952 kB",
+        "table_size": "544 kB",
+        "indexes_size": "408 kB"
+      },
+      "row_count": 611
+    },
+    "scans": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "source_type",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "source_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "repo_url",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "analysis_tool",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "artifacts_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "vulnerabilities_json",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "patches_json",
+          "data_type": "json",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "json"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "scans_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "user_id",
+          "foreign_table_name": "users",
+          "foreign_column_name": "id",
+          "constraint_name": "scans_user_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24585_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24585_3_not_null",
+          "check_clause": "source_type IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24585_6_not_null",
+          "check_clause": "analysis_tool IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24585_7_not_null",
+          "check_clause": "status IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "scans_pkey",
+          "indexdef": "CREATE UNIQUE INDEX scans_pkey ON public.scans USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "32 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "24 kB"
+      },
+      "row_count": 5
+    },
+    "scans_v2": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "user_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "repo_url",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "source_type",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "analysis_tool",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "status",
+          "data_type": "character varying",
+          "character_maximum_length": 50,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "priority",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "started_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "completed_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "error_message",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "metadata_json",
+          "data_type": "jsonb",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "jsonb"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "scans_v2_pkey"
+        }
+      ],
+      "foreign_keys": [],
+      "unique_constraints": [
+        {
+          "column_name": "scan_id",
+          "constraint_name": "scans_v2_scan_id_key"
+        }
+      ],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24592_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24592_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24592_5_not_null",
+          "check_clause": "source_type IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24592_6_not_null",
+          "check_clause": "analysis_tool IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24592_7_not_null",
+          "check_clause": "status IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "scans_v2_pkey",
+          "indexdef": "CREATE UNIQUE INDEX scans_v2_pkey ON public.scans_v2 USING btree (id)"
+        },
+        {
+          "indexname": "scans_v2_scan_id_key",
+          "indexdef": "CREATE UNIQUE INDEX scans_v2_scan_id_key ON public.scans_v2 USING btree (scan_id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "352 kB",
+        "table_size": "216 kB",
+        "indexes_size": "136 kB"
+      },
+      "row_count": 530
+    },
+    "static_findings": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "uuid",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "uuid"
+        },
+        {
+          "column_name": "scan_id",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "rule_id",
+          "data_type": "character varying",
+          "character_maximum_length": 100,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "severity",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "confidence",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "file_path",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "line_number",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "column_number",
+          "data_type": "integer",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 32,
+          "numeric_scale": 0,
+          "datetime_precision": null,
+          "udt_name": "int4"
+        },
+        {
+          "column_name": "function_name",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "message",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "description",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "cwe",
+          "data_type": "character varying",
+          "character_maximum_length": 20,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "cvss_score",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 3,
+          "numeric_scale": 1,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "exploitability_score",
+          "data_type": "numeric",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": 3,
+          "numeric_scale": 1,
+          "datetime_precision": null,
+          "udt_name": "numeric"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "metadata_json",
+          "data_type": "jsonb",
+          "character_maximum_length": null,
+          "column_default": "'{}'::jsonb",
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "jsonb"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "static_findings_pkey"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column_name": "scan_id",
+          "foreign_table_name": "scans_v2",
+          "foreign_column_name": "scan_id",
+          "constraint_name": "static_findings_scan_id_fkey",
+          "update_rule": "NO ACTION",
+          "delete_rule": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24620_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_2_not_null",
+          "check_clause": "scan_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_3_not_null",
+          "check_clause": "rule_id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_4_not_null",
+          "check_clause": "severity IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_5_not_null",
+          "check_clause": "confidence IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_6_not_null",
+          "check_clause": "file_path IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_7_not_null",
+          "check_clause": "line_number IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24620_10_not_null",
+          "check_clause": "message IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "static_findings_pkey",
+          "indexdef": "CREATE UNIQUE INDEX static_findings_pkey ON public.static_findings USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "3040 kB",
+        "table_size": "2536 kB",
+        "indexes_size": "504 kB"
+      },
+      "row_count": 10886
+    },
+    "users": {
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "column_name": "id",
+          "data_type": "character varying",
+          "character_maximum_length": 36,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "username",
+          "data_type": "character varying",
+          "character_maximum_length": 100,
+          "column_default": null,
+          "is_nullable": "NO",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "email",
+          "data_type": "character varying",
+          "character_maximum_length": 255,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "varchar"
+        },
+        {
+          "column_name": "avatar_url",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "github_token",
+          "data_type": "text",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "text"
+        },
+        {
+          "column_name": "is_active",
+          "data_type": "boolean",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": null,
+          "udt_name": "bool"
+        },
+        {
+          "column_name": "created_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "updated_at",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        },
+        {
+          "column_name": "last_login",
+          "data_type": "timestamp without time zone",
+          "character_maximum_length": null,
+          "column_default": null,
+          "is_nullable": "YES",
+          "numeric_precision": null,
+          "numeric_scale": null,
+          "datetime_precision": 6,
+          "udt_name": "timestamp"
+        }
+      ],
+      "primary_keys": [
+        {
+          "column_name": "id",
+          "constraint_name": "users_pkey"
+        }
+      ],
+      "foreign_keys": [],
+      "unique_constraints": [],
+      "check_constraints": [
+        {
+          "constraint_name": "24584_24739_1_not_null",
+          "check_clause": "id IS NOT NULL"
+        },
+        {
+          "constraint_name": "24584_24739_2_not_null",
+          "check_clause": "username IS NOT NULL"
+        }
+      ],
+      "indexes": [
+        {
+          "indexname": "users_pkey",
+          "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+        }
+      ],
+      "size_info": {
+        "total_size": "32 kB",
+        "table_size": "8192 bytes",
+        "indexes_size": "24 kB"
+      },
+      "row_count": 2
+    }
+  },
+  "indexes": {},
+  "constraints": {},
+  "sequences": {
+    "patches_id_seq": {
+      "sequence_name": "patches_id_seq",
+      "data_type": "integer",
+      "start_value": "1",
+      "minimum_value": "1",
+      "maximum_value": "2147483647",
+      "increment": "1",
+      "cycle_option": "NO"
+    },
+    "fuzzing_results_id_seq": {
+      "sequence_name": "fuzzing_results_id_seq",
+      "data_type": "integer",
+      "start_value": "1",
+      "minimum_value": "1",
+      "maximum_value": "2147483647",
+      "increment": "1",
+      "cycle_option": "NO"
+    }
+  },
+  "views": {},
+  "functions": {
+    "update_batch_total_patches": {
+      "routine_name": "update_batch_total_patches",
+      "routine_type": "FUNCTION",
+      "return_type": "trigger",
+      "routine_definition": "\r\nBEGIN\r\n    UPDATE patch_batches\r\n    SET total_patches_count = stage1_patches_count + stage2_patches_count\r\n    WHERE id = NEW.id;\r\n    RETURN NEW;\r\nEND;\r\n"
+    }
+  },
+  "triggers": {
+    "trigger_update_batch_total": {
+      "trigger_name": "trigger_update_batch_total",
+      "event_manipulation": "UPDATE",
+      "event_object_table": "patch_batches",
+      "action_statement": "EXECUTE FUNCTION update_batch_total_patches()",
+      "action_timing": "AFTER"
+    }
+  }
+}

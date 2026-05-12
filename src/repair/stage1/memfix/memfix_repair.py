@@ -198,7 +198,7 @@ class MemFixRepair:
         """
         return {
             'patch_id': str(uuid.uuid4()),
-            'vulnerability_id': vuln.get('id', ''),
+            'vulnerability_id': vuln.get('finding_id') or vuln.get('id', ''),
             'file': source_file,
             'cwe': str(vuln.get('cwe', '')),
             'original': 'No existing free() statements',

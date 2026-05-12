@@ -1,0 +1,261 @@
+{
+  "total_vulnerabilities": 23,
+  "with_cwe": 23,
+  "without_cwe": 0,
+  "coverage_percent": 100.0,
+  "vulnerabilities": [
+    {
+      "id": "cppcheck_returnDanglingLifetime_62",
+      "severity": "high",
+      "description": "Returning pointer to local variable 'local' that will be invalid when returning.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 62,
+      "tool": "cppcheck",
+      "rule_id": "returnDanglingLifetime",
+      "priority_score": 7.0,
+      "cwe": "CWE-562"
+    },
+    {
+      "id": "cppcheck_arrayIndexOutOfBounds_74",
+      "severity": "high",
+      "description": "Array 'arr[10]' accessed at index 15, which is out of bounds.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 74,
+      "tool": "cppcheck",
+      "rule_id": "arrayIndexOutOfBounds",
+      "priority_score": 10.0,
+      "cwe": "CWE-788"
+    },
+    {
+      "id": "cppcheck_getsCalled_68",
+      "severity": "medium",
+      "description": "Obsolete function 'gets' called. It is recommended to use 'fgets' or 'gets_s' instead.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 68,
+      "tool": "cppcheck",
+      "rule_id": "getsCalled",
+      "priority_score": 5.0,
+      "cwe": "CWE-477"
+    },
+    {
+      "id": "cppcheck_memleak_30",
+      "severity": "high",
+      "description": "Memory leak: data",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 30,
+      "tool": "cppcheck",
+      "rule_id": "memleak",
+      "priority_score": 9.0,
+      "cwe": "CWE-401"
+    },
+    {
+      "id": "cppcheck_deallocuse_37",
+      "severity": "high",
+      "description": "Dereferencing 'ptr' after it is deallocated / released",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 37,
+      "tool": "cppcheck",
+      "rule_id": "deallocuse",
+      "priority_score": 7.0,
+      "cwe": "CWE-416"
+    },
+    {
+      "id": "cppcheck_doubleFree_44",
+      "severity": "high",
+      "description": "Memory pointed to by 'ptr' is freed twice.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 44,
+      "tool": "cppcheck",
+      "rule_id": "doubleFree",
+      "priority_score": 10.0,
+      "cwe": "CWE-415"
+    },
+    {
+      "id": "cppcheck_nullPointer_20",
+      "severity": "high",
+      "description": "Null pointer dereference: ptr",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 20,
+      "tool": "cppcheck",
+      "rule_id": "nullPointer",
+      "priority_score": 9.0,
+      "cwe": "CWE-476"
+    },
+    {
+      "id": "cppcheck_integerOverflow_50",
+      "severity": "high",
+      "description": "Signed integer overflow for expression 'x+1'.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 50,
+      "tool": "cppcheck",
+      "rule_id": "integerOverflow",
+      "priority_score": 9.0,
+      "cwe": "CWE-190"
+    },
+    {
+      "id": "cppcheck_uninitvar_56",
+      "severity": "high",
+      "description": "Uninitialized variable: x",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 56,
+      "tool": "cppcheck",
+      "rule_id": "uninitvar",
+      "priority_score": 9.0,
+      "cwe": "CWE-457"
+    },
+    {
+      "id": "cppcheck_unusedAllocatedMemory_42",
+      "severity": "low",
+      "description": "Variable 'ptr' is allocated memory that is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 42,
+      "tool": "cppcheck",
+      "rule_id": "unusedAllocatedMemory",
+      "priority_score": 3.0,
+      "cwe": "CWE-563"
+    },
+    {
+      "id": "cppcheck_unreadVariable_50",
+      "severity": "low",
+      "description": "Variable 'y' is assigned a value that is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 50,
+      "tool": "cppcheck",
+      "rule_id": "unreadVariable",
+      "priority_score": 3.0,
+      "cwe": "CWE-563"
+    },
+    {
+      "id": "cppcheck_unreadVariable_56",
+      "severity": "low",
+      "description": "Variable 'y' is assigned a value that is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 56,
+      "tool": "cppcheck",
+      "rule_id": "unreadVariable",
+      "priority_score": 3.0,
+      "cwe": "CWE-563"
+    },
+    {
+      "id": "cppcheck_unreadVariable_74",
+      "severity": "low",
+      "description": "Variable 'arr[15]' is assigned a value that is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 74,
+      "tool": "cppcheck",
+      "rule_id": "unreadVariable",
+      "priority_score": 3.0,
+      "cwe": "CWE-563"
+    },
+    {
+      "id": "cppcheck_unusedFunction_72",
+      "severity": "low",
+      "description": "The function 'test_array_bounds' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 72,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_11",
+      "severity": "low",
+      "description": "The function 'test_buffer_overflow' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 11,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_41",
+      "severity": "low",
+      "description": "The function 'test_double_free' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 41,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_66",
+      "severity": "low",
+      "description": "The function 'test_gets_overflow' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 66,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_48",
+      "severity": "low",
+      "description": "The function 'test_integer_overflow' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 48,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_24",
+      "severity": "low",
+      "description": "The function 'test_memory_leak' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 24,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_18",
+      "severity": "low",
+      "description": "The function 'test_null_pointer' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 18,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_60",
+      "severity": "low",
+      "description": "The function 'test_return_local' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 60,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_54",
+      "severity": "low",
+      "description": "The function 'test_uninitialized_var' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 54,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    },
+    {
+      "id": "cppcheck_unusedFunction_33",
+      "severity": "low",
+      "description": "The function 'test_use_after_free' is never used.",
+      "file": "/work/source/test_cwe_scan.c",
+      "line": 33,
+      "tool": "cppcheck",
+      "rule_id": "unusedFunction",
+      "priority_score": 3.0,
+      "cwe": "CWE-561"
+    }
+  ]
+}

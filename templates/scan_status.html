@@ -101,6 +101,43 @@
         let scanId = '{{ scan_id }}';
         let taskId = null;
         let refreshInterval = null;
+        let lastStatus = null;
+        let lastTaskStatus = null;
+
+        // ============================================
+        // COMPREHENSIVE LOGGING SYSTEM
+        // ============================================
+        
+        function log(level, category, message, data = null) {
+            const timestamp = new Date().toISOString();
+            const prefix = `[${timestamp}] [${level.toUpperCase()}] [${category}]`;
+            
+            const styles = {
+                'INFO': 'color: #0066cc; font-weight: bold',
+                'SUCCESS': 'color: #00cc00; font-weight: bold',
+                'WARNING': 'color: #ff9900; font-weight: bold',
+                'ERROR': 'color: #cc0000; font-weight: bold',
+                'DEBUG': 'color: #666666'
+            };
+            
+            console.log(`%c${prefix}`, styles[level.toUpperCase()] || '', message);
+            if (data) {
+                console.log(`%c${prefix} Data:`, 'color: #666666', data);
+            }
+        }
+
+        function logInfo(category, message, data) { log('INFO', category, message, data); }
+        function logSuccess(category, message, data) { log('SUCCESS', category, message, data); }
+        function logWarning(category, message, data) { log('WARNING', category, message, data); }
+        function logError(category, message, data) { log('ERROR', category, message, data); }
+        function logDebug(category, message, data) { log('DEBUG', category, message, data); }
+
+        // Log initialization
+        console.log('%c╔════════════════════════════════════════════════════════════════╗', 'color: #0066cc; font-weight: bold');
+        console.log('%c║   AutoVulRepair - Real-Time Scan Monitoring System           ║', 'color: #0066cc; font-weight: bold');
+        console.log('%c╚════════════════════════════════════════════════════════════════╝', 'color: #0066cc; font-weight: bold');
+        logInfo('INIT', `Monitoring scan: ${scanId}`);
+        logInfo('INIT', 'Console logging enabled - All scan events will be logged here');
 
         function updateProgress(percent, text) {
             const progressBar = document.getElementById('progress-bar');
@@ -109,12 +146,19 @@
             progressBar.style.width = percent + '%';
             progressBar.setAttribute('aria-valuenow', percent);
             progressText.textContent = text;
+            
+            logDebug('UI', `Progress updated: ${percent}% - ${text}`);
         }
 
         function updateScanStatus(status) {
             const statusElement = document.getElementById('scan-status');
             statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
             statusElement.className = 'status-' + status;
+            
+            if (status !== lastStatus) {
+                logInfo('SCAN_STATUS', `Status changed: ${lastStatus || 'initial'} → ${status}`);
+                lastStatus = status;
+            }
         }
 
         function showTaskInfo(taskData) {
@@ -127,9 +171,18 @@
             taskIdElement.textContent = taskData.task_id || '-';
             taskStatusElement.textContent = taskData.status || '-';
             
+            if (taskData.status !== lastTaskStatus) {
+                logInfo('CELERY_TASK', `Task status: ${taskData.status}`, {
+                    task_id: taskData.task_id,
+                    status: taskData.status
+                });
+                lastTaskStatus = taskData.status;
+            }
+            
             if (taskData.result) {
                 taskResultContent.textContent = JSON.stringify(taskData.result, null, 2);
                 taskResultElement.style.display = 'block';
+                logSuccess('CELERY_TASK', 'Task completed with result', taskData.result);
             }
             
             taskInfo.style.display = 'block';
@@ -146,73 +199,107 @@
             viewResultsBtn.href = `/detailed-findings/${scanId}`;
             
             resultsSection.style.display = 'block';
+            
+            logSuccess('SCAN_RESULTS', 'Scan completed successfully!', {
+                findings_count: scanData.findings_count || 0,
+                files_count: scanData.files_count || 0,
+                scan_id: scanId
+            });
         }
 
         function refreshStatus() {
+            logDebug('API_CALL', `Fetching scan status for: ${scanId}`);
+            
             fetch(`/api/scans/${scanId}/status`)
-                .then(response => response.json())
+                .then(response => {
+                    logDebug('API_RESPONSE', `Received response (status: ${response.status})`);
+                    return response.json();
+                })
                 .then(data => {
                     if (data.error) {
-                        console.error('Error:', data.error);
+                        logError('API_ERROR', 'Error fetching scan status', data.error);
                         return;
                     }
 
+                    logInfo('SCAN_DATA', 'Scan data received', data);
                     updateScanStatus(data.status);
 
                     switch (data.status) {
+                        case 'pending':
+                            updateProgress(5, 'Pending - Waiting for worker...');
+                            logInfo('SCAN_PHASE', 'Scan is pending, waiting for Celery worker to pick it up');
+                            document.getElementById('cancel-btn').style.display = 'inline-block';
+                            break;
                         case 'processing':
-                            updateProgress(25, 'Processing...');
+                            updateProgress(25, 'Processing - Celery worker is analyzing...');
+                            logInfo('SCAN_PHASE', 'Scan is being processed by Celery worker');
                             document.getElementById('cancel-btn').style.display = 'inline-block';
                             break;
                         case 'completed':
                             updateProgress(100, 'Completed');
+                            logSuccess('SCAN_PHASE', '✓ Scan completed successfully!');
                             showResults(data);
                             document.getElementById('cancel-btn').style.display = 'none';
                             clearInterval(refreshInterval);
+                            logInfo('MONITORING', 'Auto-refresh stopped - scan completed');
                             break;
                         case 'failed':
                             updateProgress(100, 'Failed');
+                            logError('SCAN_PHASE', '✗ Scan failed', data.error_message);
                             document.getElementById('cancel-btn').style.display = 'none';
                             clearInterval(refreshInterval);
+                            logInfo('MONITORING', 'Auto-refresh stopped - scan failed');
                             break;
                     }
 
                     // Check task status if task_id is available
                     if (data.task_id && !taskId) {
                         taskId = data.task_id;
+                        logInfo('CELERY_TASK', `Task ID assigned: ${taskId}`);
+                        logInfo('CELERY_TASK', 'Starting task status monitoring...');
                         checkTaskStatus();
                     }
                 })
                 .catch(error => {
-                    console.error('Error refreshing status:', error);
+                    logError('API_ERROR', 'Failed to fetch scan status', error);
                 });
         }
 
         function checkTaskStatus() {
             if (!taskId) return;
 
+            logDebug('CELERY_API', `Checking task status: ${taskId}`);
+
             fetch(`/api/tasks/${taskId}/status`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
-                        console.error('Task status error:', data.error);
+                        logError('CELERY_API', 'Error fetching task status', data.error);
                         return;
                     }
 
+                    logDebug('CELERY_DATA', 'Task data received', data);
                     showTaskInfo(data);
 
                     if (data.status === 'SUCCESS') {
                         updateProgress(100, 'Task Completed');
+                        logSuccess('CELERY_WORKER', '✓ Celery worker completed task successfully');
                     } else if (data.status === 'FAILURE') {
                         updateProgress(100, 'Task Failed');
+                        logError('CELERY_WORKER', '✗ Celery worker task failed', data.result);
                     } else if (data.status === 'PENDING') {
                         updateProgress(10, 'Task Pending');
+                        logInfo('CELERY_WORKER', 'Task is pending in queue, waiting for worker...');
                     } else if (data.status === 'STARTED') {
                         updateProgress(50, 'Task Running');
+                        logInfo('CELERY_WORKER', '⚙ Celery worker picked up the task and is processing...');
+                    } else if (data.status === 'RETRY') {
+                        updateProgress(30, 'Task Retrying');
+                        logWarning('CELERY_WORKER', 'Task is being retried', data);
                     }
                 })
                 .catch(error => {
-                    console.error('Error checking task status:', error);
+                    logError('CELERY_API', 'Failed to check task status', error);
                 });
         }
 
@@ -220,41 +307,73 @@
             if (!taskId) return;
 
             if (confirm('Are you sure you want to cancel this scan?')) {
+                logWarning('USER_ACTION', 'User requested scan cancellation');
+                
                 fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' })
                     .then(response => response.json())
                     .then(data => {
                         if (data.error) {
+                            logError('CANCEL', 'Failed to cancel scan', data.error);
                             alert('Error cancelling scan: ' + data.error);
                         } else {
+                            logSuccess('CANCEL', 'Scan cancelled successfully');
                             alert('Scan cancelled successfully');
                             updateProgress(100, 'Cancelled');
                             updateScanStatus('cancelled');
                             clearInterval(refreshInterval);
+                            logInfo('MONITORING', 'Auto-refresh stopped - scan cancelled');
                         }
                     })
                     .catch(error => {
-                        console.error('Error cancelling scan:', error);
+                        logError('CANCEL', 'Error cancelling scan', error);
                         alert('Error cancelling scan');
                     });
             }
         }
 
         // Event listeners
-        document.getElementById('refresh-btn').addEventListener('click', refreshStatus);
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            logInfo('USER_ACTION', 'Manual refresh requested');
+            refreshStatus();
+        });
         document.getElementById('cancel-btn').addEventListener('click', cancelScan);
 
         // Start auto-refresh
+        logInfo('MONITORING', 'Starting auto-refresh (every 3 seconds)');
         refreshStatus();
-        refreshInterval = setInterval(refreshStatus, 3000); // Refresh every 3 seconds
+        refreshInterval = setInterval(() => {
+            logDebug('MONITORING', 'Auto-refresh triggered');
+            refreshStatus();
+            if (taskId) {
+                checkTaskStatus();
+            }
+        }, 3000); // Refresh every 3 seconds
 
         // Stop auto-refresh when page is hidden
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
                 clearInterval(refreshInterval);
+                logInfo('MONITORING', 'Page hidden - auto-refresh paused');
             } else {
-                refreshInterval = setInterval(refreshStatus, 3000);
+                refreshInterval = setInterval(() => {
+                    logDebug('MONITORING', 'Auto-refresh triggered');
+                    refreshStatus();
+                    if (taskId) {
+                        checkTaskStatus();
+                    }
+                }, 3000);
+                logInfo('MONITORING', 'Page visible - auto-refresh resumed');
             }
         });
+        
+        // Log helpful information
+        console.log('%c═══════════════════════════════════════════════════════════════', 'color: #0066cc');
+        console.log('%cMonitoring Tips:', 'color: #0066cc; font-weight: bold');
+        console.log('%c• Watch for [CELERY_WORKER] logs to see when worker picks up the task', 'color: #666');
+        console.log('%c• [SCAN_PHASE] logs show the overall scan progress', 'color: #666');
+        console.log('%c• [CELERY_TASK] logs show Celery task status changes', 'color: #666');
+        console.log('%c• All API calls and responses are logged for debugging', 'color: #666');
+        console.log('%c═══════════════════════════════════════════════════════════════', 'color: #0066cc');
     </script>
 </body>
 </html>

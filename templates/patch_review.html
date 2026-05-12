@@ -24,336 +24,380 @@
     </div>
   </div>
 
-  <!-- Quick Stats Dashboard -->
-  <div class="row mb-4">
-    <div class="col-md-3">
+  <!-- Quick Stats Dashboard - Full Width -->
+  <div class="row mb-3">
+    <div class="col-md-2">
       <div class="card border-success h-100">
-        <div class="card-body text-center">
+        <div class="card-body text-center py-3">
           <i class="fas fa-cogs fa-2x text-success mb-2"></i>
           <h3 class="text-success mb-0">{{ total_stage1 }}</h3>
           <small class="text-muted">Stage 1 Ready</small>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
       <div class="card border-warning h-100">
-        <div class="card-body text-center">
+        <div class="card-body text-center py-3">
           <i class="fas fa-brain fa-2x text-warning mb-2"></i>
           <h3 class="text-warning mb-0">{{ total_stage2 }}</h3>
           <small class="text-muted">Needs AI Analysis</small>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
       <div class="card border-info h-100">
-        <div class="card-body text-center">
+        <div class="card-body text-center py-3">
           <i class="fas fa-file-code fa-2x text-info mb-2"></i>
-          <h3 class="text-info mb-0">{{ patches | length }}</h3>
+          <h3 class="text-info mb-0" id="patches-generated-count">{{ patches | length }}</h3>
           <small class="text-muted">Patches Generated</small>
         </div>
       </div>
     </div>
     <div class="col-md-3">
       <div class="card border-primary h-100">
-        <div class="card-body text-center d-flex flex-column justify-content-center">
+        <div class="card-body text-center py-2">
+          <i class="fas fa-layer-group fa-2x text-primary mb-2"></i>
+          <h3 class="text-primary mb-0" id="staged-patches-count">0</h3>
+          <small class="text-muted">Staged for Commit</small>
+          <button id="stageAllBtn" class="btn btn-outline-primary btn-sm mt-2 w-100">
+            <i class="fas fa-check-double"></i> Stage All
+          </button>
+          <button id="clearStagedBtn" class="btn btn-outline-secondary btn-sm mt-1 w-100" style="display: none;">
+            <i class="fas fa-times"></i> Clear Staged
+          </button>
+          <button id="commitStage1Btn" class="btn btn-primary btn-sm mt-1 w-100" disabled>
+            <i class="fas fa-code-branch"></i> Commit Stage 1
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-primary h-100">
+        <div class="card-body text-center py-3">
           {% set stage1_vulns = vulnerabilities | selectattr('classification.stage', 'equalto', 1) | selectattr('classification.enabled', 'equalto', true) | list %}
           {% set existing_patch_ids = patches | map(attribute='finding_id') | list %}
           {% set unpatchedVulns = stage1_vulns | rejectattr('finding_id', 'in', existing_patch_ids) | list %}
           
           {% if unpatchedVulns | length > 0 %}
-          <button id="generateAllStage1Btn" class="btn btn-primary btn-sm mb-2">
+          <button id="generateAllStage1Btn" class="btn btn-primary btn-block">
             <i class="fas fa-magic"></i> Generate All ({{ unpatchedVulns | length }})
           </button>
-          {% else %}
-          <div class="text-success">
-            <i class="fas fa-check-circle fa-2x mb-2"></i>
-            <div class="small">All patches generated</div>
-          </div>
-          {% endif %}
           <div id="generationProgress" class="mt-2" style="display: none;">
             <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
             <small class="d-block mt-1">Processing...</small>
           </div>
+          {% else %}
+          <i class="fas fa-check-circle fa-3x text-success mb-2"></i>
+          <div class="small text-success">All patches generated</div>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
+  
+  <!-- Stage 1 Commit Status Banner -->
+  <div id="stage1-commit-status" class="alert alert-info" style="display: none;">
+    <div class="d-flex align-items-center">
+      <i class="fas fa-info-circle fa-2x me-3"></i>
+      <div class="flex-grow-1">
+        <strong>Stage 1 Patches Committed!</strong>
+        <p class="mb-0 small">Commit SHA: <code id="stage1-commit-sha"></code></p>
+      </div>
+      <button class="btn btn-warning" onclick="proceedToStage2()">
+        <i class="fas fa-arrow-right"></i> Proceed to Stage 2
+      </button>
+    </div>
+  </div>
+  
+  <!-- Staging Persistence Info -->
+  <div class="alert alert-light border-primary" style="display: none;" id="staging-info-banner">
+    <div class="d-flex align-items-center">
+      <i class="fas fa-save text-primary me-2"></i>
+      <small class="text-muted mb-0">
+        <strong>Staged patches are saved</strong> - Your selections persist across page refreshes
+      </small>
+      <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="document.getElementById('staging-info-banner').style.display='none'">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  </div>
 
-  <!-- Main Content Layout -->
+  <!-- Main Content Layout - 3 Columns -->
   <div class="row">
-    <!-- Left Column: Stage 1 Vulnerabilities -->
-    <div class="col-lg-8">
+    <!-- Left Column: Stage 1 Vulnerabilities List -->
+    <div class="col-lg-4">
       <!-- Stage 1: Rule-Based Repairs -->
-      <div class="card mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-          <div>
-            <h4 class="mb-0">
-              <i class="fas fa-cogs"></i> Stage 1: Rule-Based Repair
-            </h4>
-            <small>Deterministic, template-driven fixes (93-100% success rate)</small>
-          </div>
-          <div class="text-white">
-            <i class="fas fa-shield-alt"></i> Safe & Automated
-          </div>
+      <div class="card">
+        <div class="card-header bg-primary text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-cogs"></i> Stage 1 Vulnerabilities ({{ stage1_vulns | length }})
+          </h6>
         </div>
-        <div class="card-body">
+        <div class="card-body p-0" style="max-height: 700px; overflow-y: auto;">
           {% set stage1_vulns = vulnerabilities | selectattr('classification.stage', 'equalto', 1) | selectattr('classification.enabled', 'equalto', true) | list %}
           
           {% if stage1_vulns %}
             <!-- Vulnerability List -->
-            <div class="vulnerability-list">
+            <div class="list-group list-group-flush">
               {% for vuln in stage1_vulns %}
-              <div class="card mb-3 border-left-success vulnerability-card" id="vuln-{{ vuln.finding_id }}">
-                <div class="card-header bg-light py-2">
-                  <div class="row align-items-center">
-                    <div class="col-md-8">
-                      <div class="d-flex align-items-center">
-                        <i class="fas fa-bug text-danger me-2"></i>
-                        <div>
-                          <strong>{{ vuln.file_name }}</strong>:{{ vuln.line }}
-                          <div class="small text-muted">{{ vuln.function }}</div>
-                        </div>
-                      </div>
+              <div class="list-group-item vulnerability-card" id="vuln-{{ vuln.finding_id }}">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <div class="flex-grow-1">
+                    <div class="d-flex align-items-center mb-1">
+                      <i class="fas fa-bug text-danger me-2"></i>
+                      <strong class="text-dark">{{ vuln.file_name }}</strong>
+                      <span class="text-muted mx-1">:</span>
+                      <span class="text-muted">{{ vuln.line }}</span>
                     </div>
-                    <div class="col-md-4 text-end">
-                      <span class="badge bg-success me-1">{{ vuln.classification.category | replace('_', ' ') | title }}</span>
-                      <span class="badge bg-info">CWE-{{ vuln.cwe }}</span>
+                    {% set message_parts = vuln.message.split(':') %}
+                    {% set short_message = message_parts[0] if message_parts else vuln.message %}
+                    <p class="mb-1 small text-muted">{{ short_message[:80] }}{% if short_message|length > 80 %}...{% endif %}</p>
+                    <div>
+                      <span class="badge bg-success me-1" style="font-size: 0.7rem;">{{ vuln.classification.category | replace('_', ' ') | title }}</span>
+                      <span class="badge bg-secondary" style="font-size: 0.7rem;">CWE-{{ vuln.cwe }}</span>
                     </div>
+                  </div>
+                  <div class="text-end ms-2" style="min-width: 80px;">
+                    {% set existing_patch = patches | selectattr('finding_id', 'equalto', vuln.finding_id) | first %}
+                    {% if existing_patch %}
+                      <span class="badge bg-success">
+                        <i class="fas fa-check"></i> Patched
+                      </span>
+                    {% else %}
+                      <button class="btn btn-primary btn-sm generate-single-patch" 
+                              data-vuln-id="{{ vuln.finding_id }}"
+                              data-scan-id="{{ scan_id }}">
+                        <i class="fas fa-magic"></i> Fix
+                      </button>
+                    {% endif %}
                   </div>
                 </div>
-                <div class="card-body py-3">
-                  <div class="row">
-                    <div class="col-md-8">
-                      <p class="mb-2 text-muted small">{{ vuln.message }}</p>
-                      
-                      <!-- Code Context (Collapsible) -->
-                      {% if vuln.code_context %}
-                      <details class="mb-2">
-                        <summary class="btn btn-sm btn-outline-secondary">View Code Context</summary>
-                        <pre class="mt-2 code-snippet-dark small"><code class="language-cpp">{% for line in vuln.code_context %}<span class="{% if line.is_vulnerable %}vulnerable-line{% endif %}"><span class="line-number">{{ '%4d' % line.line_num }}</span> | {{ line.code }}</span>
-{% endfor %}</code></pre>
-                      </details>
-                      {% endif %}
-                    </div>
-                    <div class="col-md-4 text-end">
-                      {% set existing_patch = patches | selectattr('finding_id', 'equalto', vuln.finding_id) | first %}
-                      {% if existing_patch %}
-                        <span class="badge bg-success">
-                          <i class="fas fa-check"></i> Patch Generated
-                        </span>
-                        <div class="small text-muted mt-1">
-                          {{ existing_patch.confidence | int if existing_patch.confidence else 'N/A' }}% confidence
-                        </div>
-                      {% else %}
-                        <button class="btn btn-primary btn-sm generate-single-patch" 
-                                data-vuln-id="{{ vuln.finding_id }}"
-                                data-scan-id="{{ scan_id }}">
-                          <i class="fas fa-magic"></i> Generate Patch
-                        </button>
-                      {% endif %}
-                    </div>
+                
+                <!-- Patch Preview (Hidden by default) -->
+                <div class="patch-preview-{{ vuln.finding_id }}" style="display: none;">
+                  <div class="bg-light p-2 rounded mt-2 small">
+                    <div class="text-danger patch-original"></div>
+                    <div class="text-success patch-repaired"></div>
                   </div>
-                  
-                  <!-- Show existing patch if available -->
-                  {% if existing_patch %}
-                  <hr>
-                  <div class="existing-patch">
-                    <h6 class="text-success"><i class="fas fa-check-circle"></i> Generated Patch:</h6>
-                    
-                    {% if existing_patch.category == 'memory_dealloc' %}
-                      <div class="mb-2">
-                        <span class="badge bg-info">MemFix</span>
-                        <span class="badge bg-secondary">{{ existing_patch.confidence | int if existing_patch.confidence else 'N/A' }}%</span>
-                      </div>
-                      <div class="bg-light p-2 rounded mb-2 small">
-                        <div class="text-muted">
-                          <em>MemFix automated memory deallocation repair</em>
-                        </div>
-                      </div>
-                    {% else %}
-                      <div class="bg-light p-2 rounded mb-2 small">
-                        {% if existing_patch.original %}
-                        <div class="text-danger">- {{ existing_patch.original }}</div>
-                        {% endif %}
-                        {% if existing_patch.repaired %}
-                        <div class="text-success">+ {{ existing_patch.repaired }}</div>
-                        {% endif %}
-                      </div>
-                    {% endif %}
-                    
-                    <div class="d-flex gap-2">
-                      <button class="btn btn-success btn-sm" onclick="applyPatch('{{ existing_patch.patch_id }}')">
-                        <i class="fas fa-check"></i> Apply
-                      </button>
-                      <details class="d-inline">
-                        <summary class="btn btn-outline-secondary btn-sm">View Diff</summary>
-                        <pre class="mt-2 bg-dark text-white p-2 rounded small"><code>{{ existing_patch.diff or 'No diff available' }}</code></pre>
-                      </details>
-                    </div>
-                  </div>
-                  {% endif %}
-                  
-                  <!-- Patch Preview (Hidden by default) -->
-                  <div class="patch-preview-{{ vuln.finding_id }}" style="display: none;">
-                    <hr>
-                    <h6 class="text-success"><i class="fas fa-check-circle"></i> Generated Patch:</h6>
-                    
-                    <!-- ACR Header Notice -->
-                    <div class="acr-header-notice-{{ vuln.finding_id }}" style="display: none;">
-                      <div class="alert alert-info mb-3">
-                        <h6 class="alert-heading">
-                          <i class="fas fa-file-code"></i> Required Header File
-                        </h6>
-                        <p class="mb-2">
-                          This patch requires the <code>acr.h</code> header file. It will be automatically created when you apply the patch.
-                        </p>
-                        <details>
-                          <summary class="btn btn-sm btn-outline-info">View acr.h Content</summary>
-                          <pre class="mt-2 bg-dark text-white p-3 rounded acr-header-content-{{ vuln.finding_id }}" style="max-height: 400px; overflow-y: auto;"><code></code></pre>
-                        </details>
-                      </div>
-                    </div>
-                    
-                    <div class="bg-light p-3 rounded mb-2">
-                      <div class="text-danger patch-original"></div>
-                      <div class="text-success patch-repaired"></div>
-                    </div>
-                    <details>
-                      <summary class="btn btn-sm btn-outline-secondary">View Full Diff</summary>
-                      <pre class="mt-2 bg-dark text-white p-3 rounded patch-diff"></pre>
-                    </details>
-                  </div>
-                  
-                  <!-- Generation Status -->
-                  <div class="patch-status-{{ vuln.finding_id }}" style="display: none;">
-                    <hr>
-                    <div class="alert alert-info mb-0">
-                      <i class="fas fa-spinner fa-spin"></i> Generating patch...
-                    </div>
+                </div>
+                
+                <!-- Generation Status -->
+                <div class="patch-status-{{ vuln.finding_id }}" style="display: none;">
+                  <div class="alert alert-info mb-0 py-1 mt-2 small">
+                    <i class="fas fa-spinner fa-spin"></i> Generating patch...
                   </div>
                 </div>
               </div>
               {% endfor %}
             </div>
           {% else %}
-            <div class="alert alert-info">
-              <i class="fas fa-info-circle"></i> No Stage 1 repairable vulnerabilities found.
+            <div class="p-4 text-center">
+              <i class="fas fa-info-circle fa-2x text-muted mb-2"></i>
+              <p class="text-muted mb-0">No Stage 1 repairable vulnerabilities found.</p>
             </div>
           {% endif %}
         </div>
       </div>
     </div>
 
+    <!-- Middle Column: Generated Patches -->
+    <div class="col-lg-4">
+      {% if patches %}
+      <div class="card">
+        <div class="card-header bg-success text-white">
+          <h6 class="mb-0">
+            <i class="fas fa-file-code"></i> Generated Patches ({{ patches | length }})
+          </h6>
+        </div>
+        <div class="list-group list-group-flush" style="max-height: 700px; overflow-y: auto;">
+          {% for patch in patches %}
+          <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center mb-1">
+                  <i class="fas fa-check-circle text-success me-2"></i>
+                  <strong class="text-dark small">{{ patch.file or patch.get('file', 'Unknown') }}</strong>
+                  {% if patch.line and patch.line != '?' %}
+                  <span class="text-muted mx-1">:</span>
+                  <span class="text-muted small">{{ patch.line }}</span>
+                  {% endif %}
+                </div>
+                <div>
+                  {% if patch.confidence or patch.get('confidence') %}
+                  <span class="badge bg-success small">{{ ((patch.confidence or patch.get('confidence', 0)) * 100) | int }}% confidence</span>
+                  {% endif %}
+                  {% if patch.category or patch.get('category') %}
+                  <span class="badge bg-info small ms-1">{{ (patch.category or patch.get('category', '')).replace('_', ' ').title() }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            
+            <!-- User-friendly description -->
+            {% set category = patch.category or patch.get('category', '') %}
+            {% if category == 'null_pointer' %}
+              <p class="mb-2 small text-success">
+                <i class="fas fa-shield-alt me-1"></i>Added null pointer safety check
+              </p>
+            {% elif category == 'memory_dealloc' %}
+              <p class="mb-2 small text-success">
+                <i class="fas fa-shield-alt me-1"></i>Fixed memory deallocation issue
+              </p>
+            {% elif category == 'integer_overflow' %}
+              <p class="mb-2 small text-success">
+                <i class="fas fa-shield-alt me-1"></i>Added integer overflow protection
+              </p>
+            {% elif category == 'uninitialized_var' %}
+              <p class="mb-2 small text-success">
+                <i class="fas fa-shield-alt me-1"></i>Initialized variable properly
+              </p>
+            {% else %}
+              <p class="mb-2 small text-success">
+                <i class="fas fa-shield-alt me-1"></i>Security fix applied
+              </p>
+            {% endif %}
+            
+            <!-- Simplified diff view -->
+            <details class="mb-2">
+              <summary class="btn btn-sm btn-outline-secondary">View Technical Details</summary>
+              <div class="bg-light p-2 rounded mt-2">
+                {% set original = patch.original or patch.get('original', '') %}
+                {% set repaired = patch.repaired or patch.get('repaired', '') or patch.patched or patch.get('patched', '') %}
+                
+                {% if original and original|length < 150 %}
+                <div class="text-danger small mb-1">
+                  <strong>Before:</strong> {{ original }}
+                </div>
+                {% endif %}
+                
+                {% if repaired and repaired|length < 150 %}
+                <div class="text-success small">
+                  <strong>After:</strong> {{ repaired }}
+                </div>
+                {% elif not original %}
+                <div class="small text-muted">
+                  Patch details available in download
+                </div>
+                {% endif %}
+              </div>
+            </details>
+
+            <!-- Actions -->
+            <div class="btn-group btn-group-sm w-100">
+              {% if patch.get('validation_status') == 'applied' or patch.get('applied_at') %}
+              <button class="btn btn-secondary apply-patch-btn" 
+                      data-patch-id="{{ patch.patch_id }}"
+                      disabled>
+                <i class="fas fa-check-circle"></i> Applied
+              </button>
+              {% else %}
+              <button class="btn btn-success apply-patch-btn" 
+                      data-patch-id="{{ patch.patch_id }}"
+                      data-patch-file="{{ patch.file or patch.get('file', 'Unknown') }}"
+                      data-patch-line="{{ patch.line }}"
+                      onclick="stagePatchForCommit(this)">
+                <i class="fas fa-plus"></i> Stage for Commit
+              </button>
+              {% endif %}
+              <button class="btn btn-outline-secondary" onclick="downloadPatch('{{ patch.patch_id }}')">
+                <i class="fas fa-download"></i>
+              </button>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card">
+        <div class="card-body text-center py-5">
+          <i class="fas fa-file-code fa-4x text-muted mb-3"></i>
+          <h6 class="text-muted mb-2">No Patches Generated Yet</h6>
+          <p class="small text-muted mb-3">Click "Generate All" or generate individual patches from the vulnerability list</p>
+          <button class="btn btn-primary" onclick="document.getElementById('generateAllStage1Btn').click()">
+            <i class="fas fa-magic"></i> Generate All Patches
+          </button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
     <!-- Right Column: Categories & Info -->
     <div class="col-lg-4">
       <!-- Stage 1 Categories -->
-      <div class="card mb-4">
+      <div class="card mb-3">
         <div class="card-header bg-success text-white">
-          <h5 class="mb-0">
-            <i class="fas fa-list"></i> Stage 1 Categories
-          </h5>
+          <h6 class="mb-0">
+            <i class="fas fa-list"></i> Repair Categories
+          </h6>
         </div>
-        <div class="card-body p-2">
-          <div class="category-item border-left-success mb-2 p-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="mb-0 text-success">Null Pointer</h6>
-                <small class="text-muted">EXP34-C / CWE-476</small>
-              </div>
-              <span class="badge bg-success">{{ stage1_counts.null_pointer }}</span>
+        <div class="list-group list-group-flush">
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-success small">Null Pointer</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-476 • 93-100% success</small>
             </div>
-            <div class="small text-muted">Success: 93.5-100%</div>
+            <span class="badge bg-success rounded-pill">{{ stage1_counts.null_pointer }}</span>
           </div>
           
-          <div class="category-item border-left-success mb-2 p-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="mb-0 text-success">Memory Dealloc</h6>
-                <small class="text-muted">MemFix / CWE-401/415/416</small>
-              </div>
-              <span class="badge bg-success">{{ stage1_counts.memory_dealloc }}</span>
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-success small">Memory Dealloc</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-401/415/416 • 85% success</small>
             </div>
-            <div class="small text-muted">Success: 85%</div>
+            <span class="badge bg-success rounded-pill">{{ stage1_counts.memory_dealloc }}</span>
           </div>
           
-          <div class="category-item border-left-success mb-2 p-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="mb-0 text-success">Integer Overflow</h6>
-                <small class="text-muted">IntRepair / CWE-190/191</small>
-              </div>
-              <span class="badge bg-success">{{ stage1_counts.integer_overflow }}</span>
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-success small">Integer Overflow</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-190/191 • 90% success</small>
             </div>
-            <div class="small text-muted">Success: 90%</div>
+            <span class="badge bg-success rounded-pill">{{ stage1_counts.integer_overflow }}</span>
           </div>
           
-          <div class="category-item border-left-success mb-2 p-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="mb-0 text-success">Uninitialized Vars</h6>
-                <small class="text-muted">EXP33-C / CWE-457</small>
-              </div>
-              <span class="badge bg-success">{{ stage1_counts.uninitialized_var }}</span>
+          <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+            <div>
+              <div class="font-weight-bold text-success small">Uninitialized Vars</div>
+              <small class="text-muted" style="font-size: 0.7rem;">CWE-457 • 94-100% success</small>
             </div>
-            <div class="small text-muted">Success: 94.5-100%</div>
-          </div>
-          
-          <div class="category-item border-left-secondary mb-0 p-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <h6 class="mb-0 text-secondary">Dead Code (Disabled)</h6>
-                <small class="text-muted">MSC12-C / CWE-561</small>
-              </div>
-              <span class="badge bg-secondary">{{ stage1_counts.dead_code }}</span>
-            </div>
-            <div class="small text-muted">Success: 20-40%</div>
+            <span class="badge bg-success rounded-pill">{{ stage1_counts.uninitialized_var }}</span>
           </div>
         </div>
       </div>
 
       <!-- Stage 2 Preview -->
-      <div class="card mb-4">
+      <div class="card mb-3">
         <div class="card-header bg-warning text-dark">
-          <h5 class="mb-0">
+          <h6 class="mb-0">
             <i class="fas fa-brain"></i> Stage 2: AI Repair
-          </h5>
+          </h6>
         </div>
-        <div class="card-body">
+        <div class="card-body py-3">
           <p class="small text-muted mb-3">Complex vulnerabilities requiring AI analysis</p>
           
           <div class="row text-center mb-3">
             <div class="col-4">
-              <div class="small text-warning">
-                <i class="fas fa-exclamation-triangle"></i><br>
-                Buffer<br>Overflow
-              </div>
+              <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+              <div class="small">Buffer Overflow</div>
             </div>
             <div class="col-4">
-              <div class="small text-warning">
-                <i class="fas fa-code"></i><br>
-                Format<br>String
-              </div>
+              <i class="fas fa-code fa-2x text-warning mb-2"></i>
+              <div class="small">Format String</div>
             </div>
             <div class="col-4">
-              <div class="small text-warning">
-                <i class="fas fa-sync"></i><br>
-                Race<br>Condition
-              </div>
+              <i class="fas fa-sync fa-2x text-warning mb-2"></i>
+              <div class="small">Race Condition</div>
             </div>
           </div>
 
           {% if stage2_vulns %}
-          <div class="text-center">
-            <a href="{{ url_for('repair_dashboard', scan_id=scan_id) }}" class="btn btn-warning btn-sm">
-              <i class="fas fa-robot"></i> Start AI Repair ({{ stage2_vulns | length }})
-            </a>
-          </div>
+          <a href="{{ url_for('repair_dashboard', scan_id=scan_id) }}" class="btn btn-warning btn-block">
+            <i class="fas fa-robot"></i> Start AI Repair ({{ stage2_vulns | length }})
+          </a>
           {% else %}
-          <div class="text-center">
-            <button class="btn btn-secondary btn-sm" disabled>
-              <i class="fas fa-robot"></i> No Stage 2 Needed
-            </button>
-          </div>
+          <button class="btn btn-secondary btn-block" disabled>
+            <i class="fas fa-check-circle"></i> No Stage 2 Needed
+          </button>
           {% endif %}
         </div>
       </div>
@@ -362,104 +406,382 @@
       <div class="card">
         <div class="card-header bg-info text-white">
           <h6 class="mb-0">
-            <i class="fas fa-info-circle"></i> About Stage 1 Repair
+            <i class="fas fa-info-circle"></i> About Stage 1
           </h6>
         </div>
-        <div class="card-body p-3">
-          <div class="small">
-            <p class="mb-2"><strong>Safe & Deterministic:</strong> Stage 1 repairs never break good execution traces.</p>
-            <p class="mb-2"><strong>Template-Based:</strong> Uses proven repair patterns from CMU/SEI research.</p>
-            <p class="mb-0"><strong>High Success Rate:</strong> 93-100% success for supported vulnerability classes.</p>
-          </div>
+        <div class="card-body py-2">
+          <ul class="list-unstyled mb-0 small">
+            <li class="mb-2">
+              <i class="fas fa-shield-alt text-success me-1"></i>
+              <strong>Safe & Deterministic</strong><br>
+              <span class="text-muted">Never breaks good execution</span>
+            </li>
+            <li class="mb-2">
+              <i class="fas fa-cogs text-primary me-1"></i>
+              <strong>Template-Based</strong><br>
+              <span class="text-muted">Proven repair patterns</span>
+            </li>
+            <li class="mb-0">
+              <i class="fas fa-chart-line text-success me-1"></i>
+              <strong>High Success Rate</strong><br>
+              <span class="text-muted">93-100% for supported classes</span>
+            </li>
+          </ul>
         </div>
       </div>
     </div>
   </div>
-
-  <!-- Generated Patches Summary -->
-  {% if patches %}
-  <div class="row mt-4">
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header bg-success text-white">
-          <h4 class="mb-0">
-            <i class="fas fa-file-code"></i> Generated Patches ({{ patches | length }})
-          </h4>
-        </div>
-        <div class="card-body">
-          <div class="row">
-            {% for patch in patches %}
-            <div class="col-lg-6 mb-3">
-              <div class="card border-left-primary h-100">
-                <div class="card-header py-2">
-                  <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                      <strong>{{ patch.file or patch.get('file', 'Unknown') }}</strong>:{{ patch.line or patch.get('line', '?') }}
-                      {% if patch.stage or patch.get('stage') %}
-                      <span class="badge bg-primary ms-2">Stage {{ patch.stage or patch.get('stage') }}</span>
-                      {% endif %}
-                    </div>
-                    <div>
-                      {% if patch.confidence or patch.get('confidence') %}
-                      <span class="badge bg-success">{{ ((patch.confidence or patch.get('confidence', 0)) * 100) | int }}%</span>
-                      {% endif %}
-                    </div>
-                  </div>
-                </div>
-                <div class="card-body py-2">
-                  <p class="mb-2 small">{{ patch.description or patch.get('description', 'No description') }}</p>
-                  
-                  <!-- Compact Diff View -->
-                  <div class="bg-light p-2 rounded mb-2 small">
-                    {% if patch.category == 'memory_dealloc' or patch.get('category') == 'memory_dealloc' %}
-                      <div class="mb-1">
-                        <span class="badge bg-info">MemFix</span>
-                        {% if patch.changes or patch.get('changes') %}
-                        <span class="badge bg-secondary">{{ (patch.changes or patch.get('changes', [])) | length }} change(s)</span>
-                        {% endif %}
-                      </div>
-                    {% else %}
-                      {% if patch.original or patch.get('original') %}
-                      <div class="text-danger">- {{ patch.original or patch.get('original', '') }}</div>
-                      {% endif %}
-                      {% if patch.repaired or patch.get('repaired') %}
-                      <div class="text-success">+ {{ patch.repaired or patch.get('repaired', '') }}</div>
-                      {% elif patch.patched or patch.get('patched') %}
-                      <div class="text-success">+ {{ patch.patched or patch.get('patched', '') }}</div>
-                      {% endif %}
-                    {% endif %}
-                  </div>
-
-                  <!-- Actions -->
-                  <div class="d-flex gap-2">
-                    <button class="btn btn-success btn-sm" onclick="applyPatch('{{ patch.patch_id }}')">
-                      <i class="fas fa-check"></i> Apply
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="downloadPatch('{{ patch.patch_id }}')">
-                      <i class="fas fa-download"></i> Download
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
 </div>
 
 <script>
+// Staged patches tracking with localStorage persistence
+const scanId = '{{ scan_id }}';
+const STORAGE_KEY = `staged_patches_${scanId}`;
+
+// Load staged patches from localStorage
+function loadStagedPatches() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch (e) {
+    console.error('Error loading staged patches:', e);
+    return new Set();
+  }
+}
+
+// Save staged patches to localStorage
+function saveStagedPatches(patches) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...patches]));
+  } catch (e) {
+    console.error('Error saving staged patches:', e);
+  }
+}
+
+// Clear staged patches from localStorage
+function clearStagedPatches() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.error('Error clearing staged patches:', e);
+  }
+}
+
+const stagedPatches = loadStagedPatches();
+
+// Restore UI state on page load
+document.addEventListener('DOMContentLoaded', function() {
+  // Restore staged button states
+  document.querySelectorAll('.apply-patch-btn').forEach(button => {
+    const patchId = button.dataset.patchId;
+    if (patchId && stagedPatches.has(patchId) && !button.disabled) {
+      button.innerHTML = '<i class="fas fa-check"></i> Staged';
+      button.classList.remove('btn-success');
+      button.classList.add('btn-warning');
+    }
+  });
+  
+  // Update counter
+  document.getElementById('staged-patches-count').textContent = stagedPatches.size;
+  
+  // Enable/disable commit button
+  const commitBtn = document.getElementById('commitStage1Btn');
+  if (commitBtn) {
+    commitBtn.disabled = stagedPatches.size === 0;
+  }
+  
+  // Update clear button visibility
+  updateClearButtonVisibility();
+  
+  // Show info banner if patches are staged
+  if (stagedPatches.size > 0) {
+    const infoBanner = document.getElementById('staging-info-banner');
+    if (infoBanner) {
+      infoBanner.style.display = 'block';
+    }
+  }
+  
+  console.log(`Restored ${stagedPatches.size} staged patches from previous session`);
+});
+
+// Stage all patches for commit
+function stageAllPatches() {
+  const allButtons = document.querySelectorAll('.apply-patch-btn:not([disabled])');
+  let stagedCount = 0;
+  
+  allButtons.forEach(button => {
+    const patchId = button.dataset.patchId;
+    
+    // Only stage if not already staged
+    if (!stagedPatches.has(patchId)) {
+      stagedPatches.add(patchId);
+      button.innerHTML = '<i class="fas fa-check"></i> Staged';
+      button.classList.remove('btn-success');
+      button.classList.add('btn-warning');
+      stagedCount++;
+    }
+  });
+  
+  // Save to localStorage
+  saveStagedPatches(stagedPatches);
+  
+  // Update counter
+  document.getElementById('staged-patches-count').textContent = stagedPatches.size;
+  
+  // Enable/disable commit button
+  const commitBtn = document.getElementById('commitStage1Btn');
+  commitBtn.disabled = stagedPatches.size === 0;
+  
+  // Update clear button visibility
+  updateClearButtonVisibility();
+  
+  console.log(`Staged ${stagedCount} patches. Total staged: ${stagedPatches.size}`);
+  
+  if (stagedCount > 0) {
+    // Show brief notification
+    const stageAllBtn = document.getElementById('stageAllBtn');
+    const originalText = stageAllBtn.innerHTML;
+    stageAllBtn.innerHTML = '<i class="fas fa-check"></i> All Staged!';
+    stageAllBtn.classList.add('btn-success');
+    stageAllBtn.classList.remove('btn-outline-primary');
+    
+    setTimeout(() => {
+      stageAllBtn.innerHTML = originalText;
+      stageAllBtn.classList.remove('btn-success');
+      stageAllBtn.classList.add('btn-outline-primary');
+    }, 2000);
+  } else {
+    // No patches to stage
+    alert('All available patches have already been applied or staged.');
+  }
+}
+
+// Stage a patch for commit
+function stagePatchForCommit(button) {
+  const patchId = button.dataset.patchId;
+  const patchFile = button.dataset.patchFile;
+  const patchLine = button.dataset.patchLine;
+  
+  if (stagedPatches.has(patchId)) {
+    // Unstage
+    stagedPatches.delete(patchId);
+    button.innerHTML = '<i class="fas fa-plus"></i> Stage for Commit';
+    button.classList.remove('btn-warning');
+    button.classList.add('btn-success');
+  } else {
+    // Stage
+    stagedPatches.add(patchId);
+    button.innerHTML = '<i class="fas fa-check"></i> Staged';
+    button.classList.remove('btn-success');
+    button.classList.add('btn-warning');
+  }
+  
+  // Save to localStorage
+  saveStagedPatches(stagedPatches);
+  
+  // Update counter
+  document.getElementById('staged-patches-count').textContent = stagedPatches.size;
+  
+  // Enable/disable commit button
+  const commitBtn = document.getElementById('commitStage1Btn');
+  commitBtn.disabled = stagedPatches.size === 0;
+  
+  // Update clear button visibility
+  updateClearButtonVisibility();
+  
+  console.log(`Patch ${patchId} (${patchFile}:${patchLine}) ${stagedPatches.has(patchId) ? 'staged' : 'unstaged'}`);
+  console.log(`Total staged patches: ${stagedPatches.size}`);
+}
+
+// Attach Stage All button event listener
+document.getElementById('stageAllBtn').addEventListener('click', stageAllPatches);
+
+// Clear all staged patches
+document.getElementById('clearStagedBtn').addEventListener('click', function() {
+  if (stagedPatches.size === 0) {
+    return;
+  }
+  
+  if (!confirm(`Clear all ${stagedPatches.size} staged patches?`)) {
+    return;
+  }
+  
+  // Unstage all patches
+  document.querySelectorAll('.apply-patch-btn').forEach(button => {
+    const patchId = button.dataset.patchId;
+    if (patchId && stagedPatches.has(patchId)) {
+      button.innerHTML = '<i class="fas fa-plus"></i> Stage for Commit';
+      button.classList.remove('btn-warning');
+      button.classList.add('btn-success');
+    }
+  });
+  
+  // Clear staged patches
+  stagedPatches.clear();
+  clearStagedPatches();
+  
+  // Update UI
+  document.getElementById('staged-patches-count').textContent = '0';
+  document.getElementById('commitStage1Btn').disabled = true;
+  document.getElementById('clearStagedBtn').style.display = 'none';
+  
+  console.log('All staged patches cleared');
+});
+
+// Update clear button visibility
+function updateClearButtonVisibility() {
+  const clearBtn = document.getElementById('clearStagedBtn');
+  if (clearBtn) {
+    clearBtn.style.display = stagedPatches.size > 0 ? 'block' : 'none';
+  }
+}
+
+// Commit all staged Stage 1 patches
+document.getElementById('commitStage1Btn').addEventListener('click', function() {
+  if (stagedPatches.size === 0) {
+    alert('No patches staged for commit');
+    return;
+  }
+  
+  if (!confirm(`Commit ${stagedPatches.size} Stage 1 patches in a single commit?\n\nThis will modify your source files and create a git commit (if applicable).`)) {
+    return;
+  }
+  
+  const btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Committing...';
+  
+  console.log('=== COMMITTING STAGE 1 PATCHES ===');
+  console.log('Scan ID:', scanId);
+  console.log('Patches to commit:', Array.from(stagedPatches));
+  
+  fetch(`/api/commit-stage1-patches/${scanId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      patch_ids: Array.from(stagedPatches)
+    })
+  })
+  .then(response => {
+    if (!response.ok) {
+      return response.json().then(err => {
+        throw new Error(err.error || `HTTP ${response.status}: ${response.statusText}`);
+      });
+    }
+    return response.json();
+  })
+  .then(data => {
+    console.log('Commit response:', data);
+    
+    if (data.success) {
+      console.log('✅ STAGE 1 PATCHES APPLIED');
+      console.log('Commit SHA:', data.commit_sha || 'N/A (file upload scan)');
+      console.log('Files modified:', data.files_modified);
+      console.log('Patches applied:', data.patches_applied);
+      
+      // Show detailed results if available
+      if (data.skipped_patches && data.skipped_patches.length > 0) {
+        console.warn('⚠️ Some patches were skipped:');
+        data.skipped_patches.forEach(skip => {
+          console.warn(`  - ${skip.file}: ${skip.reason}`);
+        });
+      }
+      
+      // Show success banner
+      const banner = document.getElementById('stage1-commit-status');
+      banner.style.display = 'block';
+      
+      // Update banner text based on whether there's a commit SHA
+      if (data.commit_sha) {
+        document.getElementById('stage1-commit-sha').textContent = data.commit_sha;
+      } else {
+        // For file upload scans without git
+        document.querySelector('#stage1-commit-status strong').textContent = 'Stage 1 Patches Applied!';
+        document.getElementById('stage1-commit-sha').textContent = data.message || 'Patches applied to source files';
+      }
+      
+      // Update button
+      btn.innerHTML = '<i class="fas fa-check-circle"></i> Applied!';
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-success');
+      
+      // Clear staged patches from memory and localStorage
+      stagedPatches.clear();
+      clearStagedPatches();
+      document.getElementById('staged-patches-count').textContent = '0';
+      
+      // Update all stage buttons to show "Applied"
+      document.querySelectorAll('.apply-patch-btn').forEach(button => {
+        if (data.applied_patch_ids && data.applied_patch_ids.includes(button.dataset.patchId)) {
+          button.innerHTML = '<i class="fas fa-check-circle"></i> Applied';
+          button.classList.remove('btn-warning', 'btn-success');
+          button.classList.add('btn-secondary');
+          button.disabled = true;
+        }
+      });
+      
+      // Create appropriate alert message
+      let alertMsg = `✅ Stage 1 patches applied successfully!\n\nPatches applied: ${data.patches_applied}`;
+      if (data.commit_sha) {
+        alertMsg += `\nCommit SHA: ${data.commit_sha}`;
+      } else {
+        alertMsg += `\n\n${data.message || 'Patches applied to source files'}`;
+      }
+      
+      if (data.skipped_patches && data.skipped_patches.length > 0) {
+        alertMsg += `\n\n⚠️ Warning: ${data.skipped_patches.length} patches were skipped (code may have changed)`;
+      }
+      
+      alertMsg += `\n\nYou can now proceed to Stage 2 for AI-assisted repairs.`;
+      
+      alert(alertMsg);
+      
+      console.log('=== STAGE 1 PATCHES APPLIED ===\n');
+    } else {
+      console.error('❌ COMMIT FAILED');
+      console.error('Error:', data.error);
+      
+      alert('Error applying patches: ' + (data.error || 'Unknown error'));
+      
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-code-branch"></i> Commit Stage 1';
+      
+      console.log('=== STAGE 1 COMMIT FAILED ===\n');
+    }
+  })
+  .catch(error => {
+    console.error('❌ COMMIT ERROR');
+    console.error('Error:', error);
+    
+    alert('Error committing patches: ' + error.message);
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-code-branch"></i> Commit Stage 1';
+    
+    console.log('=== STAGE 1 COMMIT ERROR ===\n');
+  });
+});
+
+// Proceed to Stage 2
+function proceedToStage2() {
+  window.location.href = `/repair/${scanId}`;
+}
+
 // Generate all Stage 1 patches
 document.getElementById('generateAllStage1Btn').addEventListener('click', function() {
   const btn = this;
   const progress = document.getElementById('generationProgress');
   
+  console.log('=== GENERATE ALL PATCHES STARTED ===');
+  console.log('Scan ID:', '{{ scan_id }}');
+  console.log('API Endpoint:', '/api/generate-stage1-patches/{{ scan_id }}');
+  
   btn.disabled = true;
   progress.style.display = 'block';
   
+  const startTime = Date.now();
   fetch('/api/generate-stage1-patches/{{ scan_id }}', {
     method: 'POST',
     headers: {
@@ -469,28 +791,99 @@ document.getElementById('generateAllStage1Btn').addEventListener('click', functi
       enable_dead_code: false
     })
   })
-  .then(response => response.json())
+  .then(response => {
+    const responseTime = Date.now() - startTime;
+    console.log(`Batch response received in ${responseTime}ms`);
+    console.log('Response status:', response.status, response.statusText);
+    return response.json();
+  })
   .then(data => {
+    console.log('Full Batch API Response:', JSON.stringify(data, null, 2));
+    
     if (data.success) {
-      // Update the counter immediately before reload
-      const counterElement = document.querySelector('.card-body.text-center h3.text-info');
+      console.log('✅ BATCH GENERATION SUCCESSFUL');
+      console.log('Patches generated:', data.patches_generated);
+      console.log('Total vulnerabilities processed:', data.vulnerability_results ? data.vulnerability_results.length : 'N/A');
+      
+      // Log detailed results for each vulnerability
+      if (data.vulnerability_results && data.vulnerability_results.length > 0) {
+        console.log('\n📋 PER-VULNERABILITY RESULTS:');
+        console.log('='.repeat(80));
+        
+        data.vulnerability_results.forEach((result, index) => {
+          const status = result.success ? '✅ SUCCESS' : '❌ FAILED';
+          console.log(`\n[${index + 1}/${data.vulnerability_results.length}] ${status}`);
+          console.log(`  Vulnerability ID: ${result.vulnerability_id}`);
+          console.log(`  File: ${result.file}:${result.line}`);
+          console.log(`  CWE: ${result.cwe}`);
+          console.log(`  Message: ${result.message}`);
+          
+          if (result.success) {
+            console.log(`  ✓ Patch ID: ${result.patch_id}`);
+            console.log(`  ✓ Category: ${result.category}`);
+            console.log(`  ✓ Confidence: ${(result.confidence * 100).toFixed(1)}%`);
+          } else {
+            console.log(`  ✗ Error: ${result.error}`);
+          }
+        });
+        
+        console.log('\n' + '='.repeat(80));
+        
+        // Summary statistics
+        const successCount = data.vulnerability_results.filter(r => r.success).length;
+        const failCount = data.vulnerability_results.filter(r => !r.success).length;
+        console.log(`\n📊 SUMMARY:`);
+        console.log(`  Total: ${data.vulnerability_results.length}`);
+        console.log(`  Success: ${successCount} (${(successCount/data.vulnerability_results.length*100).toFixed(1)}%)`);
+        console.log(`  Failed: ${failCount} (${(failCount/data.vulnerability_results.length*100).toFixed(1)}%)`);
+        
+        // Group failures by error type
+        const errorGroups = {};
+        data.vulnerability_results.filter(r => !r.success).forEach(r => {
+          const errorType = r.error.split(':')[0];
+          errorGroups[errorType] = (errorGroups[errorType] || 0) + 1;
+        });
+        
+        if (Object.keys(errorGroups).length > 0) {
+          console.log(`\n❌ FAILURE BREAKDOWN:`);
+          Object.entries(errorGroups).forEach(([errorType, count]) => {
+            console.log(`  ${errorType}: ${count}`);
+          });
+        }
+      }
+      
+      console.log('Details:', data.details || 'No details provided');
+      
+      // Update the counter immediately
+      const counterElement = document.getElementById('patches-generated-count');
       if (counterElement) {
         const currentCount = parseInt(counterElement.textContent) || 0;
         counterElement.textContent = currentCount + data.patches_generated;
       }
       
-      alert(`Successfully generated ${data.patches_generated} patches!`);
+      console.log('=== BATCH GENERATION COMPLETED ===\n');
+      console.log('💡 TIP: Review the detailed logs above, then refresh the page to see the new patches.');
       
-      // Add a small delay to ensure database transaction is committed
-      setTimeout(() => {
-        location.reload();
-      }, 500);
+      alert(`Successfully generated ${data.patches_generated} patches!\n\nCheck the browser console for detailed logs.\nRefresh the page when ready to see the patches.`);
     } else {
+      console.error('❌ BATCH GENERATION FAILED');
+      console.error('Error message:', data.error || 'Unknown error');
+      console.error('Full response data:', data);
+      
       alert('Error: ' + (data.error || 'Unknown error'));
+      
+      console.log('=== BATCH GENERATION FAILED ===\n');
     }
   })
   .catch(error => {
+    console.error('❌ BATCH NETWORK/FETCH ERROR');
+    console.error('Error type:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
     alert('Error generating patches: ' + error);
+    
+    console.log('=== BATCH GENERATION ERROR ===\n');
   })
   .finally(() => {
     btn.disabled = false;
@@ -506,29 +899,75 @@ document.querySelectorAll('.generate-single-patch').forEach(btn => {
     const statusDiv = document.querySelector(`.patch-status-${vulnId}`);
     const previewDiv = document.querySelector(`.patch-preview-${vulnId}`);
     
+    // Get vulnerability details from the card for logging
+    const vulnCard = document.getElementById(`vuln-${vulnId}`);
+    const fileElement = vulnCard.querySelector('strong.text-dark');
+    const lineElement = vulnCard.querySelector('.text-muted');
+    const categoryBadge = vulnCard.querySelector('.badge.bg-success');
+    const cweBadge = vulnCard.querySelector('.badge.bg-secondary');
+    const messageElement = vulnCard.querySelector('p.small.text-muted');
+    
+    const vulnDetails = {
+      id: vulnId,
+      file: fileElement ? fileElement.textContent : 'unknown',
+      line: lineElement ? lineElement.textContent : 'unknown',
+      category: categoryBadge ? categoryBadge.textContent : 'unknown',
+      cwe: cweBadge ? cweBadge.textContent : 'unknown',
+      message: messageElement ? messageElement.textContent : 'unknown'
+    };
+    
+    console.log('=== PATCH GENERATION STARTED ===');
+    console.log('Vulnerability Details:', vulnDetails);
+    console.log('Scan ID:', scanId);
+    console.log('API Endpoint:', `/api/generate-single-patch/${scanId}/${vulnId}`);
+    
     // Show loading
     this.disabled = true;
     statusDiv.style.display = 'block';
     previewDiv.style.display = 'none';
     
     // Generate patch for single vulnerability
+    const startTime = Date.now();
     fetch(`/api/generate-single-patch/${scanId}/${vulnId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       }
     })
-    .then(response => response.json())
+    .then(response => {
+      const responseTime = Date.now() - startTime;
+      console.log(`Response received in ${responseTime}ms`);
+      console.log('Response status:', response.status, response.statusText);
+      return response.json();
+    })
     .then(data => {
+      console.log('Full API Response:', JSON.stringify(data, null, 2));
+      
       if (data.success && data.patch) {
-        // Hide loading, show patch
-        statusDiv.style.display = 'none';
-        previewDiv.style.display = 'block';
+        console.log('✅ PATCH GENERATED SUCCESSFULLY');
+        console.log('Patch Details:', {
+          category: data.patch.category,
+          confidence: data.patch.confidence,
+          original: data.patch.original,
+          repaired: data.patch.repaired,
+          requires_acr_header: data.patch.requires_acr_header
+        });
         
-        // Populate patch preview
-        previewDiv.querySelector('.patch-original').textContent = `- ${data.patch.original}`;
-        previewDiv.querySelector('.patch-repaired').textContent = `+ ${data.patch.repaired}`;
-        previewDiv.querySelector('.patch-diff').textContent = data.patch.diff;
+        // Hide loading
+        statusDiv.style.display = 'none';
+        
+        // Show patch preview if elements exist
+        if (previewDiv) {
+          previewDiv.style.display = 'block';
+          
+          const originalEl = previewDiv.querySelector('.patch-original');
+          const repairedEl = previewDiv.querySelector('.patch-repaired');
+          const diffEl = previewDiv.querySelector('.patch-diff');
+          
+          if (originalEl) originalEl.textContent = `- ${data.patch.original}`;
+          if (repairedEl) repairedEl.textContent = `+ ${data.patch.repaired}`;
+          if (diffEl) diffEl.textContent = data.patch.diff;
+        }
         
         // Show ACR header if required
         if (data.patch.requires_acr_header) {
@@ -544,26 +983,73 @@ document.querySelectorAll('.generate-single-patch').forEach(btn => {
         this.innerHTML = '<i class="fas fa-check"></i> Patch Generated';
         this.classList.remove('btn-primary');
         this.classList.add('btn-success');
+        
+        // Refresh page to show the new patch in the list
+        console.log('Refreshing page to show new patch...');
+        setTimeout(() => {
+          location.reload();
+        }, 1000);
+        
+        console.log('=== PATCH GENERATION COMPLETED ===\n');
       } else {
+        console.error('❌ PATCH GENERATION FAILED');
+        console.error('Error message:', data.error || 'Unknown error');
+        console.error('Success flag:', data.success);
+        console.error('Full response data:', data);
+        
         alert('Error: ' + (data.error || 'Failed to generate patch'));
         statusDiv.style.display = 'none';
         this.disabled = false;
+        
+        console.log('=== PATCH GENERATION FAILED ===\n');
       }
     })
     .catch(error => {
+      console.error('❌ NETWORK/FETCH ERROR');
+      console.error('Error type:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      
       alert('Error generating patch: ' + error);
       statusDiv.style.display = 'none';
       this.disabled = false;
+      
+      console.log('=== PATCH GENERATION ERROR ===\n');
     });
   });
 });
 
-function applyPatch(patchId) {
-  alert('Patch application coming soon! Patch ID: ' + patchId);
-}
-
 function downloadPatch(patchId) {
-  alert('Patch download coming soon! Patch ID: ' + patchId);
+  console.log('Downloading patch:', patchId);
+  
+  // Create download URL
+  const downloadUrl = `/api/download-patch/${scanId}/${patchId}`;
+  
+  // Trigger download
+  fetch(downloadUrl)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.blob();
+    })
+    .then(blob => {
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `patch_${patchId}.diff`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log('✅ Patch downloaded successfully');
+    })
+    .catch(error => {
+      console.error('❌ Download failed:', error);
+      alert('Error downloading patch: ' + error.message);
+    });
 }
 </script>
 {% endblock %}

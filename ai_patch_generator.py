@@ -1,5 +1,12 @@
 """
-AI-Powered Patch Generator
+AI-Powered Patch Generator - BATCH PROCESSING SYSTEM
+
+⚠️ USE CASE: Background batch processing of Stage 2 vulnerabilities
+⚠️ USED BY: Celery task in src/services/patch_generation_service.py
+⚠️ NOT FOR: Interactive real-time repair (use src/repair/orchestrator.py instead)
+
+This is the BATCH SYSTEM for automated patch generation.
+For interactive AI repair with live feedback, use src/repair/orchestrator.py
 
 Uses RAG (FAISS + Gemini) to generate intelligent patches for vulnerabilities.
 
@@ -8,6 +15,12 @@ Features:
 - Generates code patches
 - Provides explanation and testing recommendations
 - Supports multiple programming languages
+
+Architecture:
+- Simple, direct Gemini API calls
+- Optimized for batch processing
+- Used in Celery background tasks
+- No real-time feedback needed
 """
 
 import os
