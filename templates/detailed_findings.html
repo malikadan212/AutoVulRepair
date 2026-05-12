@@ -136,9 +136,15 @@
         <a href="{{ url_for('fuzz_plan_view', scan_id=scan_id) }}" class="btn btn-info">
           <i class="fas fa-sitemap"></i> Generate Fuzz Plan
         </a>
+        {% if patches and patches|length > 0 %}
+        <a href="{{ url_for('patch_review', scan_id=scan_id) }}" class="btn btn-success">
+          <i class="fas fa-eye"></i> View Patches ({{ patches|length }})
+        </a>
+        {% else %}
         <a href="{{ url_for('patch_review', scan_id=scan_id) }}" class="btn btn-success">
           <i class="fas fa-magic"></i> Generate Patches
         </a>
+        {% endif %}
         {% if analysis_tool %}
         <div class="btn-group ms-2">
           {% if analysis_tool == 'codeql' %}

@@ -2179,8 +2179,8 @@ def detailed_findings(scan_id):
         # Check if fuzzing results are available for this scan
         fuzzing_status = get_fuzzing_status(scan_id)
         
-        # Get patches (for now, empty - will be implemented later)
-        patches = []
+        # Get existing patches (if any)
+        patches = get_existing_patches(scan_id)
         
         logger.info(f"[DETAILED_FINDINGS] Scan {scan_id} has {len(vulnerabilities)} vulnerabilities and {len(patches)} patches")
         
