@@ -2396,8 +2396,8 @@ def get_existing_patches(scan_id, stage=None):
         
         if repair_patches:
             # Convert RepairPatch objects to legacy format
-            # Use a dict to deduplicate by finding_id (keep the latest patch)
-            patches_by_finding = {}
+            # Use a dict to deduplicate by (file, line, message) - same as vulnerability deduplication
+            patches_by_location = {}
             
             for repair_patch in repair_patches:
                 # Filter by stage if specified
@@ -2405,6 +2405,7 @@ def get_existing_patches(scan_id, stage=None):
                     patch_stage = 2 if repair_patch.repair_method and repair_patch.repair_method.startswith('stage2_') else 1
                     if patch_stage != stage:
                         continue
+                
                 # Ensure finding_id is a string for comparison
                 finding_id_str = str(repair_patch.finding_id) if repair_patch.finding_id else None
                 
@@ -2412,21 +2413,27 @@ def get_existing_patches(scan_id, stage=None):
                     logger.warning(f"[GET_PATCHES] Skipping patch {repair_patch.id} with no finding_id")
                     continue
                 
-                # Get line number from the associated finding if available
+                # Get line number and message from the associated finding for deduplication
                 line_number = None
+                message = ''
                 if repair_patch.finding_id:
                     try:
                         from src.models.scan_v2 import StaticFinding
                         finding = session_db.query(StaticFinding).filter_by(id=repair_patch.finding_id).first()
                         if finding:
                             line_number = finding.line_number
+                            message = finding.message or ''
                     except Exception as e:
-                        logger.warning(f"[GET_PATCHES] Could not get line number for finding {repair_patch.finding_id}: {e}")
+                        logger.warning(f"[GET_PATCHES] Could not get finding details for {repair_patch.finding_id}: {e}")
+                
+                # Create deduplication key (same as vulnerability deduplication)
+                file_path = repair_patch.file_path
+                dedup_key = (file_path, line_number, message.strip())
                 
                 patch_dict = {
                     'patch_id': str(repair_patch.id),
                     'finding_id': finding_id_str,  # Store as string
-                    'file': repair_patch.file_path,
+                    'file': file_path,
                     'line': line_number,
                     'original': repair_patch.original_code,
                     'repaired': repair_patch.patched_code,
@@ -2441,18 +2448,18 @@ def get_existing_patches(scan_id, stage=None):
                     'created_at': repair_patch.created_at.isoformat() if repair_patch.created_at else None
                 }
                 
-                # Keep only one patch per finding_id (the latest one)
-                if finding_id_str not in patches_by_finding:
-                    patches_by_finding[finding_id_str] = patch_dict
-                    logger.debug(f"[GET_PATCHES] Loaded patch for finding_id: {finding_id_str}")
+                # Keep only one patch per location (file, line, message) - same as vulnerability deduplication
+                if dedup_key not in patches_by_location:
+                    patches_by_location[dedup_key] = patch_dict
+                    logger.debug(f"[GET_PATCHES] Loaded patch for location: {file_path}:{line_number}")
                 else:
-                    logger.debug(f"[GET_PATCHES] Duplicate patch for finding_id {finding_id_str}, keeping first")
+                    logger.debug(f"[GET_PATCHES] Duplicate patch at {file_path}:{line_number}, keeping first")
             
-            patches = list(patches_by_finding.values())
+            patches = list(patches_by_location.values())
             
             session_db.close()
             logger.info(f"[GET_PATCHES] Loaded {len(patches)} unique patches from database for scan {scan_id}" + (f" (stage {stage} only)" if stage else ""))
-            logger.info(f"[GET_PATCHES] Finding IDs with patches: {list(patches_by_finding.keys())}")
+            logger.info(f"[GET_PATCHES] Patch locations: {[(p['file'], p['line']) for p in patches[:5]]}")
             return patches
         
         session_db.close()
