@@ -2241,124 +2241,142 @@ def debug_test():
 
 
 def classify_vulnerability_for_patching(rule_id, message, cwe):
-    """Classify vulnerability for patch generation stages"""
-    rule_id = rule_id.lower() if rule_id else ''
-    message = message.lower() if message else ''
-    cwe = str(cwe) if cwe else ''
-    
-    # Stage 1: Rule-based repairs (deterministic)
-    
-    # Null pointer dereference (CWE-476)
-    if (cwe == '476' or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'nullpointer', 'null pointer', 'dereference', 'null_ptr'
-        ])):
-        return {
-            'stage': 1,
-            'category': 'null_pointer_dereference',
-            'enabled': True,
-            'reason': 'Null pointer dereference - deterministic repair available'
+    """
+    Classify vulnerability for patch generation stages
+    Uses the same logic as src/repair/stage1/classifier.py for consistency
+    """
+    # Import the official classifier to ensure consistency
+    try:
+        from src.repair.stage1.classifier import classify_vulnerability
+        
+        # Create vulnerability dict in expected format
+        vuln = {
+            'rule_id': rule_id,
+            'cwe': str(cwe) if cwe else '',
+            'description': message or ''
         }
-    
-    # Memory management issues (CWE-401, CWE-415, CWE-416)
-    if (cwe in ['401', '415', '416'] or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'memleak', 'memory leak', 'doublefree', 'double free', 'memory pointed', 'freed twice'
-        ])):
-        return {
-            'stage': 1,
-            'category': 'memory_deallocation',
-            'enabled': True,
-            'reason': 'Memory management issue - MemFix repair available'
-        }
-    
-    # Integer overflow (CWE-190, CWE-191)
-    if (cwe in ['190', '191'] or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'overflow', 'integer overflow', 'signed integer overflow'
-        ])):
-        return {
-            'stage': 1,
-            'category': 'integer_overflow',
-            'enabled': True,
-            'reason': 'Integer overflow - IntRepair available'
-        }
-    
-    # Variable scope reduction (CWE-398) - requires code restructuring
-    # Check this BEFORE uninitialized variables to avoid false matches
-    if (cwe == '398' or 
-        'variablescope' in rule_id or
-        any(keyword in message for keyword in [
-            'scope of the variable', 'scope can be reduced'
-        ])):
+        
+        # Use official classifier
+        return classify_vulnerability(vuln)
+        
+    except Exception as e:
+        logger.warning(f"[CLASSIFY] Error using official classifier: {e}, falling back to legacy")
+        
+        # Fallback to legacy classification if import fails
+        rule_id = rule_id.lower() if rule_id else ''
+        message = message.lower() if message else ''
+        cwe = str(cwe) if cwe else ''
+        
+        # Stage 1: Rule-based repairs (deterministic)
+        
+        # Null pointer dereference (CWE-476)
+        if (cwe == '476' or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'nullpointer', 'null pointer', 'dereference', 'null_ptr'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'null_pointer',
+                'enabled': True,
+                'reason': 'Null pointer dereference - deterministic repair available'
+            }
+        
+        # Memory management issues (CWE-401, CWE-415, CWE-416)
+        if (cwe in ['401', '415', '416'] or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'memleak', 'memory leak', 'doublefree', 'double free', 'memory pointed', 'freed twice'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'memory_dealloc',
+                'enabled': True,
+                'reason': 'Memory management issue - MemFix repair available'
+            }
+        
+        # Integer overflow (CWE-190, CWE-191)
+        if (cwe in ['190', '191'] or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'overflow', 'integer overflow', 'signed integer overflow'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'integer_overflow',
+                'enabled': True,
+                'reason': 'Integer overflow - IntRepair available'
+            }
+        
+        # Buffer overflow (CWE-120, CWE-121, CWE-122, CWE-788, CWE-119, CWE-477)
+        if (cwe in ['120', '121', '122', '788', '119', '477'] or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'buffer', 'array', 'bounds', 'buffer overflow', 'getscalled', 'strcpycalled', 
+                'strcatcalled', 'sprintfcalled', 'obsoletefunctions'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'buffer_overflow',
+                'enabled': True,
+                'reason': 'Buffer overflow - Stage 1 repair available'
+            }
+        
+        # Variable scope reduction (CWE-398) - requires code restructuring
+        if (cwe == '398' or 
+            'variablescope' in rule_id or
+            any(keyword in message for keyword in [
+                'scope of the variable', 'scope can be reduced'
+            ])):
+            return {
+                'stage': 2,
+                'category': 'code_quality',
+                'enabled': True,
+                'reason': 'Variable scope reduction requires code restructuring'
+            }
+        
+        # Uninitialized variables (CWE-457, CWE-908)
+        if (cwe in ['457', '908'] or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'uninitialized', 'uninit'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'uninitialized_var',
+                'enabled': True,
+                'reason': 'Uninitialized variable - deterministic repair available'
+            }
+        
+        # Dead code (CWE-561) - disabled by default
+        if (cwe == '561' or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'dead', 'unused', 'unreachable'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'dead_code',
+                'enabled': False,
+                'reason': 'Dead code - disabled due to low success rate (20-40%)'
+            }
+        
+        # Format string (CWE-134)
+        if (cwe == '134' or 
+            any(keyword in rule_id or keyword in message for keyword in [
+                'format', 'printf', 'sprintf'
+            ])):
+            return {
+                'stage': 1,
+                'category': 'format_string',
+                'enabled': True,
+                'reason': 'Format string vulnerability - Stage 1 repair available'
+            }
+        
+        # Default to Stage 2 for unknown vulnerabilities
         return {
             'stage': 2,
-            'category': 'code_quality',
+            'category': 'unknown',
             'enabled': True,
-            'reason': 'Variable scope reduction requires code restructuring'
+            'reason': 'Complex vulnerability requiring AI analysis'
         }
-    
-    # Uninitialized variables (CWE-457, CWE-908)
-    # Note: variableScope (scope reduction) moved to Stage 2
-    if (cwe in ['457', '908'] or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'uninitialized', 'uninit'
-        ])):
-        return {
-            'stage': 1,
-            'category': 'uninitialized_variable',
-            'enabled': True,
-            'reason': 'Uninitialized variable - deterministic repair available'
-        }
-    
-    # Dead code (CWE-561) - disabled by default
-    if (cwe == '561' or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'dead', 'unused', 'unreachable'
-        ])):
-        return {
-            'stage': 1,
-            'category': 'dead_code',
-            'enabled': False,  # Disabled due to low success rate
-            'reason': 'Dead code - disabled due to low success rate (20-40%)'
-        }
-    
-    # Stage 2: AI-assisted repairs (complex cases)
-    
-    # Buffer overflow (CWE-121, CWE-122, CWE-788)
-    if (cwe in ['121', '122', '788'] or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'buffer', 'array', 'bounds', 'buffer overflow'
-        ])):
-        return {
-            'stage': 2,
-            'category': 'buffer_overflow',
-            'enabled': True,
-            'reason': 'Buffer overflow requires contextual analysis'
-        }
-    
-    # Format string (CWE-134)
-    if (cwe == '134' or 
-        any(keyword in rule_id or keyword in message for keyword in [
-            'format', 'printf', 'sprintf'
-        ])):
-        return {
-            'stage': 2,
-            'category': 'format_string',
-            'enabled': True,
-            'reason': 'Format string vulnerability requires calling convention understanding'
-        }
-    
-    # Default to Stage 2 for unknown vulnerabilities
-    return {
-        'stage': 2,
-        'category': 'other',
-        'enabled': True,
-        'reason': 'Complex vulnerability requiring AI analysis'
-    }
 
 def get_existing_patches(scan_id):
-    """Get existing patches for a scan"""
+    """Get existing patches for a scan - deduplicated by finding_id"""
     try:
         # Try to get patches directly from database using the new schema
         from src.models.scan_v2 import RepairPatch, DatabaseManager
@@ -2373,10 +2391,16 @@ def get_existing_patches(scan_id):
         
         if repair_patches:
             # Convert RepairPatch objects to legacy format
-            patches = []
+            # Use a dict to deduplicate by finding_id (keep the latest patch)
+            patches_by_finding = {}
+            
             for repair_patch in repair_patches:
                 # Ensure finding_id is a string for comparison
                 finding_id_str = str(repair_patch.finding_id) if repair_patch.finding_id else None
+                
+                if not finding_id_str:
+                    logger.warning(f"[GET_PATCHES] Skipping patch {repair_patch.id} with no finding_id")
+                    continue
                 
                 # Get line number from the associated finding if available
                 line_number = None
@@ -2406,12 +2430,19 @@ def get_existing_patches(scan_id):
                     'applied_at': repair_patch.applied_at.isoformat() if repair_patch.applied_at else None,
                     'created_at': repair_patch.created_at.isoformat() if repair_patch.created_at else None
                 }
-                patches.append(patch_dict)
-                logger.debug(f"[GET_PATCHES] Loaded patch for finding_id: {finding_id_str}")
+                
+                # Keep only one patch per finding_id (the latest one)
+                if finding_id_str not in patches_by_finding:
+                    patches_by_finding[finding_id_str] = patch_dict
+                    logger.debug(f"[GET_PATCHES] Loaded patch for finding_id: {finding_id_str}")
+                else:
+                    logger.debug(f"[GET_PATCHES] Duplicate patch for finding_id {finding_id_str}, keeping first")
+            
+            patches = list(patches_by_finding.values())
             
             session_db.close()
-            logger.info(f"[GET_PATCHES] Loaded {len(patches)} patches from database for scan {scan_id}")
-            logger.info(f"[GET_PATCHES] Finding IDs with patches: {[p['finding_id'] for p in patches]}")
+            logger.info(f"[GET_PATCHES] Loaded {len(patches)} unique patches from database for scan {scan_id}")
+            logger.info(f"[GET_PATCHES] Finding IDs with patches: {list(patches_by_finding.keys())}")
             return patches
         
         session_db.close()
@@ -2516,13 +2547,14 @@ def patch_review(scan_id):
             seen_vulnerabilities.add(dedup_key)
             
             # Get the finding ID - database uses 'id', file system uses 'finding_id'
-            finding_id = finding.get('finding_id') or str(finding.get('id', f"vuln_{i}"))
+            # Always convert to string for consistent comparison
+            finding_id = str(finding.get('finding_id') or finding.get('id', f"vuln_{i}"))
             
             # Classify vulnerability for patch generation
             classification = classify_vulnerability_for_patching(rule_id, message, actual_cwe)
             
             vuln = {
-                'finding_id': finding_id,  # Use the finding_id we extracted
+                'finding_id': finding_id,  # Store as string for consistent comparison
                 'file_name': finding.get('file_name', file_path.split('/')[-1] if file_path else 'unknown'),
                 'file': file_path,
                 'line': line_num,
@@ -2553,10 +2585,15 @@ def patch_review(scan_id):
             'memory_dealloc': len([v for v in stage1_vulns if 'memory' in v['classification']['category']]),
             'integer_overflow': len([v for v in stage1_vulns if 'integer' in v['classification']['category']]),
             'uninitialized_var': len([v for v in stage1_vulns if 'uninitialized' in v['classification']['category']]),
+            'buffer_overflow': len([v for v in stage1_vulns if 'buffer' in v['classification']['category']]),
             'dead_code': len([v for v in stage1_vulns if 'dead_code' in v['classification']['category']])
         }
         
         logger.info(f"[PATCH_REVIEW] Rendering patch review with {len(stage1_vulns)} Stage 1 and {len(stage2_vulns)} Stage 2 vulnerabilities")
+        logger.info(f"[PATCH_REVIEW] Stage 1 breakdown: {stage1_counts}")
+        logger.info(f"[PATCH_REVIEW] Total patches loaded: {len(patches)}")
+        logger.info(f"[PATCH_REVIEW] Patch finding_ids: {[p.get('finding_id') for p in patches[:5]]}...")
+        logger.info(f"[PATCH_REVIEW] Vuln finding_ids: {[v.get('finding_id') for v in stage1_vulns[:5]]}...")
         
         return render_template('patch_review.html',
                              scan_id=scan_id,
@@ -3263,14 +3300,79 @@ def api_generate_stage1_patches(scan_id):
                     if not repair_engine.can_repair(vuln):
                         from src.repair.stage1.classifier import classify_vulnerability
                         classification = classify_vulnerability(vuln)
-                        vuln_result['error'] = f"Not Stage 1 repairable (stage={classification['stage']}, category={classification.get('category', 'unknown')})"
+                        
+                        # Log that this vulnerability needs Stage 2 AI repair
+                        logger.info(f"[API] ⚠️  Vulnerability {vuln_id} cannot be patched by Stage 1 (stage={classification['stage']}, category={classification.get('category', 'unknown')})")
+                        logger.info(f"[API] 📝 Marking this vulnerability as needing AI repair in database")
+                        
+                        # Mark in database that Stage 1 failed and needs AI repair
+                        try:
+                            from src.models.scan_v2 import StaticFinding, DatabaseManager
+                            from src.config.database import get_secure_database_url
+                            from sqlalchemy.orm.attributes import flag_modified
+                            
+                            DATABASE_URL = get_secure_database_url()
+                            db_manager = DatabaseManager(DATABASE_URL)
+                            session_db_meta = db_manager.get_session()
+                            
+                            finding = session_db_meta.query(StaticFinding).filter_by(id=vuln_id).first()
+                            if finding:
+                                metadata = dict(finding.metadata_json) if finding.metadata_json else {}
+                                metadata['stage1_attempted'] = True
+                                metadata['stage1_failed'] = True
+                                metadata['stage1_failure_reason'] = f"Not Stage 1 repairable (stage={classification['stage']}, category={classification.get('category', 'unknown')})"
+                                metadata['needs_ai_repair'] = True
+                                
+                                finding.metadata_json = metadata
+                                flag_modified(finding, 'metadata_json')
+                                session_db_meta.commit()
+                                logger.info(f"[API] ✅ Marked vulnerability {vuln_id} as needing AI repair in database")
+                            else:
+                                logger.warning(f"[API] Could not find finding {vuln_id} in database to mark as needing AI")
+                            
+                            session_db_meta.close()
+                        except Exception as meta_error:
+                            logger.error(f"[API] Error updating metadata for {vuln_id}: {meta_error}")
+                        
+                        vuln_result['error'] = f"Cannot patch with Stage 1 - needs AI analysis (stage={classification['stage']}, category={classification.get('category', 'unknown')})"
+                        vuln_result['needs_ai'] = True
                         vulnerability_results.append(vuln_result)
                         continue
                     
                     # Get source code
                     source_code = source_files.get(file_path)
                     if not source_code:
+                        logger.warning(f"[API] Source file not found for {vuln_id}: {file_path}")
+                        
+                        # Mark in database that Stage 1 failed due to missing source
+                        try:
+                            from src.models.scan_v2 import StaticFinding, DatabaseManager
+                            from src.config.database import get_secure_database_url
+                            from sqlalchemy.orm.attributes import flag_modified
+                            
+                            DATABASE_URL = get_secure_database_url()
+                            db_manager = DatabaseManager(DATABASE_URL)
+                            session_db_meta = db_manager.get_session()
+                            
+                            finding = session_db_meta.query(StaticFinding).filter_by(id=vuln_id).first()
+                            if finding:
+                                metadata = dict(finding.metadata_json) if finding.metadata_json else {}
+                                metadata['stage1_attempted'] = True
+                                metadata['stage1_failed'] = True
+                                metadata['stage1_failure_reason'] = f"Source file not found: {file_path}"
+                                metadata['needs_ai_repair'] = True
+                                
+                                finding.metadata_json = metadata
+                                flag_modified(finding, 'metadata_json')
+                                session_db_meta.commit()
+                                logger.info(f"[API] ✅ Marked vulnerability {vuln_id} as needing AI repair (missing source)")
+                            
+                            session_db_meta.close()
+                        except Exception as meta_error:
+                            logger.error(f"[API] Error updating metadata for {vuln_id}: {meta_error}")
+                        
                         vuln_result['error'] = f"Source file not found: {file_path}"
+                        vuln_result['needs_ai'] = True
                         vulnerability_results.append(vuln_result)
                         continue
                     
@@ -3286,17 +3388,102 @@ def api_generate_stage1_patches(scan_id):
                         
                         logger.info(f"[API] Patch generated for {vuln_id}: finding_id={patch.get('finding_id')}, vulnerability_id={patch.get('vulnerability_id')}")
                         
+                        # Mark in database that Stage 1 succeeded
+                        try:
+                            from src.models.scan_v2 import StaticFinding, DatabaseManager
+                            from src.config.database import get_secure_database_url
+                            from sqlalchemy.orm.attributes import flag_modified
+                            
+                            DATABASE_URL = get_secure_database_url()
+                            db_manager = DatabaseManager(DATABASE_URL)
+                            session_db_meta = db_manager.get_session()
+                            
+                            finding = session_db_meta.query(StaticFinding).filter_by(id=vuln_id).first()
+                            if finding:
+                                metadata = dict(finding.metadata_json) if finding.metadata_json else {}
+                                metadata['stage1_attempted'] = True
+                                metadata['stage1_failed'] = False
+                                metadata['stage1_success'] = True
+                                metadata['needs_ai_repair'] = False
+                                
+                                finding.metadata_json = metadata
+                                flag_modified(finding, 'metadata_json')
+                                session_db_meta.commit()
+                            
+                            session_db_meta.close()
+                        except Exception as meta_error:
+                            logger.error(f"[API] Error updating metadata for {vuln_id}: {meta_error}")
+                        
                         patches.append(patch)
                         vuln_result['success'] = True
                         vuln_result['patch_id'] = patch.get('patch_id')
                         vuln_result['category'] = patch.get('category')
                         vuln_result['confidence'] = patch.get('confidence', 0)
                     else:
+                        logger.warning(f"[API] Patch generation returned None for {vuln_id}")
+                        
+                        # Mark in database that Stage 1 failed
+                        try:
+                            from src.models.scan_v2 import StaticFinding, DatabaseManager
+                            from src.config.database import get_secure_database_url
+                            from sqlalchemy.orm.attributes import flag_modified
+                            
+                            DATABASE_URL = get_secure_database_url()
+                            db_manager = DatabaseManager(DATABASE_URL)
+                            session_db_meta = db_manager.get_session()
+                            
+                            finding = session_db_meta.query(StaticFinding).filter_by(id=vuln_id).first()
+                            if finding:
+                                metadata = dict(finding.metadata_json) if finding.metadata_json else {}
+                                metadata['stage1_attempted'] = True
+                                metadata['stage1_failed'] = True
+                                metadata['stage1_failure_reason'] = "Patch generation returned None (repair module failed)"
+                                metadata['needs_ai_repair'] = True
+                                
+                                finding.metadata_json = metadata
+                                flag_modified(finding, 'metadata_json')
+                                session_db_meta.commit()
+                                logger.info(f"[API] ✅ Marked vulnerability {vuln_id} as needing AI repair (patch gen failed)")
+                            
+                            session_db_meta.close()
+                        except Exception as meta_error:
+                            logger.error(f"[API] Error updating metadata for {vuln_id}: {meta_error}")
+                        
                         vuln_result['error'] = "Patch generation returned None (repair module failed)"
+                        vuln_result['needs_ai'] = True
                     
                 except Exception as vuln_error:
                     vuln_result['error'] = f"{type(vuln_error).__name__}: {str(vuln_error)}"
                     logger.error(f"[API] Error processing vulnerability {vuln_id}: {vuln_error}")
+                    
+                    # Mark in database that Stage 1 failed with exception
+                    try:
+                        from src.models.scan_v2 import StaticFinding, DatabaseManager
+                        from src.config.database import get_secure_database_url
+                        from sqlalchemy.orm.attributes import flag_modified
+                        
+                        DATABASE_URL = get_secure_database_url()
+                        db_manager = DatabaseManager(DATABASE_URL)
+                        session_db_meta = db_manager.get_session()
+                        
+                        finding = session_db_meta.query(StaticFinding).filter_by(id=vuln_id).first()
+                        if finding:
+                            metadata = dict(finding.metadata_json) if finding.metadata_json else {}
+                            metadata['stage1_attempted'] = True
+                            metadata['stage1_failed'] = True
+                            metadata['stage1_failure_reason'] = f"{type(vuln_error).__name__}: {str(vuln_error)}"
+                            metadata['needs_ai_repair'] = True
+                            
+                            finding.metadata_json = metadata
+                            flag_modified(finding, 'metadata_json')
+                            session_db_meta.commit()
+                            logger.info(f"[API] ✅ Marked vulnerability {vuln_id} as needing AI repair (exception)")
+                        
+                        session_db_meta.close()
+                    except Exception as meta_error:
+                        logger.error(f"[API] Error updating metadata for {vuln_id}: {meta_error}")
+                    
+                    vuln_result['needs_ai'] = True
                 
                 vulnerability_results.append(vuln_result)
             
@@ -3397,6 +3584,21 @@ def api_generate_stage1_patches(scan_id):
         
         logger.info(f"[API] Generated {len(result['patches'])} Stage 1 patches for scan {scan_id}")
         
+        # Collect vulnerabilities that need Stage 2 AI repair
+        needs_ai_vulns = [
+            vr for vr in result.get('vulnerability_results', [])
+            if vr.get('needs_ai', False)
+        ]
+        
+        if needs_ai_vulns:
+            logger.info(f"[API] 🤖 {len(needs_ai_vulns)} vulnerabilities need Stage 2 AI repair")
+            logger.info(f"[API] Vulnerability IDs needing AI: {[v['vulnerability_id'] for v in needs_ai_vulns]}")
+            
+            # TODO: Automatically trigger Stage 2 AI repair for these vulnerabilities
+            # For now, just log them so they can be manually sent to AI repair
+            logger.warning(f"[API] ⚠️  AUTOMATIC STAGE 2 ROUTING NOT IMPLEMENTED YET")
+            logger.warning(f"[API] ⚠️  User must manually click 'AI Repair' button for these vulnerabilities")
+        
         return jsonify({
             'success': True,
             'patches_generated': len(result['patches']),
@@ -3405,6 +3607,8 @@ def api_generate_stage1_patches(scan_id):
             'total_patches': len(result['patches']),
             'vulnerability_results': result.get('vulnerability_results', []),  # Per-vulnerability details
             'source_files_found': len(source_files),
+            'needs_ai_count': len(needs_ai_vulns),  # Number of vulnerabilities that need AI repair
+            'needs_ai_vulnerabilities': [v['vulnerability_id'] for v in needs_ai_vulns],  # IDs needing AI
             'code_version': 'UPDATED_VERSION_3'  # Added to verify code is updated
         })
         
@@ -6176,16 +6380,45 @@ def repair_dashboard(scan_id):
         
         logger.info(f"[REPAIR_DASHBOARD] Loaded {len(findings)} findings from database")
         
-        # Filter for Stage 2 vulnerabilities (complex ones that need AI)
+        # Filter for Stage 2 vulnerabilities using the official classifier
+        # ALSO include vulnerabilities that Stage 1 attempted but failed
+        from src.repair.stage1.classifier import classify_vulnerability
+        
         stage2_vulns = []
         for finding in findings:
-            rule_id = finding.get('rule_id', '')
-            # Include buffer overflows, array bounds, obsolete functions (gets, strcpy, etc.)
-            if any(keyword in rule_id.lower() for keyword in [
-                'arrayindexoutofbounds', 'bufferaccessoutofbounds', 'bufferoverflow',
-                'obsoletefunction', 'gets', 'strcpy', 'sprintf', 'strcat',
-                'formatstring', 'racecondition'
-            ]):
+            # Check metadata for Stage 1 failure flag
+            metadata = finding.get('metadata_json', {}) or {}
+            needs_ai_from_stage1_failure = metadata.get('needs_ai_repair', False)
+            
+            # Create vulnerability dict for classification
+            vuln = {
+                'rule_id': finding.get('rule_id', ''),
+                'cwe': str(finding.get('cwe', '')),
+                'description': finding.get('message', '')
+            }
+            
+            # Use official classifier
+            classification = classify_vulnerability(vuln)
+            
+            # Include if:
+            # 1. Classified as Stage 2, OR
+            # 2. Classified as Stage 1 but disabled, OR
+            # 3. Stage 1 attempted but failed (needs_ai_repair flag)
+            should_include = (
+                classification['stage'] == 2 or 
+                (classification['stage'] == 1 and not classification['enabled']) or
+                needs_ai_from_stage1_failure
+            )
+            
+            if should_include:
+                # Determine the reason for inclusion
+                if needs_ai_from_stage1_failure:
+                    inclusion_reason = f"Stage 1 failed: {metadata.get('stage1_failure_reason', 'Unknown reason')}"
+                elif classification['stage'] == 2:
+                    inclusion_reason = f"Stage 2 vulnerability: {classification['reason']}"
+                else:
+                    inclusion_reason = f"Stage 1 disabled: {classification['reason']}"
+                
                 stage2_vulns.append({
                     'id': str(finding.get('id', f"vuln_{finding.get('line_number', 0)}")),
                     'crash_id': str(finding.get('id', f"vuln_{finding.get('line_number', 0)}")),
@@ -6197,11 +6430,20 @@ def repair_dashboard(scan_id):
                     'rule_id': finding.get('rule_id', 'unknown'),
                     'cwe': finding.get('cwe', ''),
                     'function': finding.get('function_name', ''),
-                    'repair_status': 'pending'
+                    'repair_status': 'pending',
+                    'classification': classification,
+                    'needs_ai_from_stage1_failure': needs_ai_from_stage1_failure,
+                    'inclusion_reason': inclusion_reason,
+                    'stage1_attempted': metadata.get('stage1_attempted', False),
+                    'stage1_failure_reason': metadata.get('stage1_failure_reason', '')
                 })
+                logger.debug(f"[REPAIR_DASHBOARD] Added AI repair vuln: {finding.get('rule_id')} - {inclusion_reason}")
+        
+        logger.info(f"[REPAIR_DASHBOARD] Found {len(stage2_vulns)} vulnerabilities needing AI repair")
+        logger.info(f"[REPAIR_DASHBOARD] Breakdown: Stage 2={len([v for v in stage2_vulns if v['classification']['stage']==2])}, Stage 1 failed={len([v for v in stage2_vulns if v['needs_ai_from_stage1_failure']])}")
         
         if not stage2_vulns:
-            flash('No Stage 2 vulnerabilities found for AI repair. These vulnerabilities may be handled by Stage 1 (rule-based) repair.', 'info')
+            flash('No Stage 2 vulnerabilities found for AI repair. All vulnerabilities can be handled by Stage 1 (rule-based) repair.', 'info')
             return redirect(url_for('patch_review', scan_id=scan_id))
         
         # Create triage results format
@@ -6212,8 +6454,6 @@ def repair_dashboard(scan_id):
                 'unique': len(stage2_vulns)
             }
         }
-        
-        logger.info(f"[REPAIR_DASHBOARD] Found {len(stage2_vulns)} Stage 2 vulnerabilities")
         
         # Load repair results from database first, then supplement with JSON file
         repair_path = Path(f"scans/{scan_id}/repair/repair_results.json")

@@ -230,6 +230,44 @@
             </div>
           </div>
         </div>
+
+        <!-- Webhook Status Widget -->
+        <div class="card border-0 shadow-sm">
+          <div class="card-body py-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0 font-weight-bold">
+                <i class="fas fa-satellite-dish mr-1"></i>Webhook Status
+              </h6>
+              <button class="btn btn-link btn-sm p-0" onclick="refreshWebhookStatus()" title="Refresh">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+            </div>
+            <div id="webhookStatusWidget">
+              <div class="text-center py-2">
+                <i class="fas fa-spinner fa-spin text-muted"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Webhook Activity -->
+        <div class="card border-0 shadow-sm" style="max-height: 300px;">
+          <div class="card-body py-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0 font-weight-bold">
+                <i class="fas fa-history mr-1"></i>Webhook Activity
+              </h6>
+              <button class="btn btn-link btn-sm p-0" onclick="showWebhookActivityModal()" title="View All">
+                <i class="fas fa-external-link-alt"></i>
+              </button>
+            </div>
+            <div id="webhookActivityWidget" style="max-height: 250px; overflow-y: auto;">
+              <div class="text-center py-2">
+                <i class="fas fa-spinner fa-spin text-muted"></i>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1294,3 +1332,193 @@ window.addEventListener('beforeunload', function() {
 });
 </script>
 {% endblock %}
+
+<script>
+// Webhook Status and Activity Functions
+function refreshWebhookStatus() {
+    fetch('/api/webhook-status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderWebhookStatus(data);
+            } else {
+                document.getElementById('webhookStatusWidget').innerHTML = `
+                    <small class="text-muted">Unable to load webhook status</small>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading webhook status:', error);
+            document.getElementById('webhookStatusWidget').innerHTML = `
+                <small class="text-danger">Error loading status</small>
+            `;
+        });
+}
+
+function renderWebhookStatus(data) {
+    const widget = document.getElementById('webhookStatusWidget');
+    
+    if (!data.webhook_enabled) {
+        widget.innerHTML = `
+            <div class="alert alert-warning py-1 px-2 mb-0" style="font-size: 0.75rem;">
+                <i class="fas fa-exclamation-triangle mr-1"></i>
+                <strong>Webhooks Disabled</strong>
+                <p class="mb-0 mt-1">Configure GITHUB_WEBHOOK_SECRET to enable automation</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const lastWebhook = data.last_webhook;
+    const timeSince = lastWebhook ? getTimeSince(new Date(lastWebhook.created_at)) : 'Never';
+    const statusClass = lastWebhook ? 'success' : 'secondary';
+    const statusIcon = lastWebhook ? 'check-circle' : 'question-circle';
+    
+    widget.innerHTML = `
+        <div class="d-flex align-items-center mb-2">
+            <i class="fas fa-${statusIcon} text-${statusClass} mr-2"></i>
+            <div class="flex-grow-1">
+                <small class="font-weight-bold d-block">Status: Active</small>
+                <small class="text-muted" style="font-size: 0.7rem;">Last webhook: ${timeSince}</small>
+            </div>
+        </div>
+        <div class="row text-center" style="font-size: 0.7rem;">
+            <div class="col-4">
+                <div class="text-success font-weight-bold">${data.status_breakdown.processed || 0}</div>
+                <div class="text-muted">Processed</div>
+            </div>
+            <div class="col-4">
+                <div class="text-warning font-weight-bold">${data.status_breakdown.skipped || 0}</div>
+                <div class="text-muted">Skipped</div>
+            </div>
+            <div class="col-4">
+                <div class="text-danger font-weight-bold">${data.status_breakdown.failed || 0}</div>
+                <div class="text-muted">Failed</div>
+            </div>
+        </div>
+        <small class="text-muted d-block mt-2" style="font-size: 0.65rem;">
+            ${data.last_24h_count} webhooks in last 24h
+        </small>
+    `;
+}
+
+function loadWebhookActivity() {
+    fetch('/api/webhook-activity')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderWebhookActivity(data.events);
+            } else {
+                document.getElementById('webhookActivityWidget').innerHTML = `
+                    <small class="text-muted">No webhook activity</small>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading webhook activity:', error);
+            document.getElementById('webhookActivityWidget').innerHTML = `
+                <small class="text-danger">Error loading activity</small>
+            `;
+        });
+}
+
+function renderWebhookActivity(events) {
+    const widget = document.getElementById('webhookActivityWidget');
+    
+    if (!events || events.length === 0) {
+        widget.innerHTML = `
+            <div class="text-center py-3">
+                <i class="fas fa-inbox text-muted mb-2"></i>
+                <p class="text-muted mb-0" style="font-size: 0.75rem;">No webhook activity yet</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '';
+    events.slice(0, 5).forEach(event => {
+        const statusIcon = getWebhookStatusIcon(event.status);
+        const statusClass = getWebhookStatusClass(event.status);
+        const eventIcon = getWebhookEventIcon(event.event_type);
+        const timeSince = getTimeSince(new Date(event.created_at));
+        
+        html += `
+            <div class="border-bottom py-2" style="font-size: 0.75rem;">
+                <div class="d-flex align-items-start">
+                    <i class="fas fa-${eventIcon} text-muted mr-2 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <div class="font-weight-bold">${event.event_type}</div>
+                        <div class="text-muted" style="font-size: 0.7rem;">
+                            ${event.repository || 'Unknown repo'} • ${timeSince}
+                        </div>
+                        ${event.scan_id ? `
+                            <a href="/scan/${event.scan_id}/status" class="text-primary" style="font-size: 0.7rem;">
+                                <i class="fas fa-external-link-alt"></i> View scan
+                            </a>
+                        ` : ''}
+                    </div>
+                    <i class="fas fa-${statusIcon} text-${statusClass}"></i>
+                </div>
+            </div>
+        `;
+    });
+    
+    widget.innerHTML = html;
+}
+
+function getWebhookStatusIcon(status) {
+    const icons = {
+        'processed': 'check-circle',
+        'scan_started': 'check-circle',
+        'skipped': 'minus-circle',
+        'failed': 'times-circle',
+        'received': 'clock'
+    };
+    return icons[status] || 'question-circle';
+}
+
+function getWebhookStatusClass(status) {
+    const classes = {
+        'processed': 'success',
+        'scan_started': 'success',
+        'skipped': 'warning',
+        'failed': 'danger',
+        'received': 'info'
+    };
+    return classes[status] || 'secondary';
+}
+
+function getWebhookEventIcon(eventType) {
+    const icons = {
+        'push': 'code-branch',
+        'pull_request': 'code-pull-request',
+        'installation': 'plug'
+    };
+    return icons[eventType] || 'bell';
+}
+
+function getTimeSince(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+    return Math.floor(seconds / 86400) + 'd ago';
+}
+
+function showWebhookActivityModal() {
+    alert('Full webhook activity log coming soon!');
+}
+
+// Load webhook data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    refreshWebhookStatus();
+    loadWebhookActivity();
+    
+    // Refresh every 30 seconds
+    setInterval(() => {
+        refreshWebhookStatus();
+        loadWebhookActivity();
+    }, 30000);
+});
+</script>

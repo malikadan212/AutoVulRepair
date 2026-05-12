@@ -75,8 +75,16 @@
       <div class="card border-primary h-100">
         <div class="card-body text-center py-3">
           {% set stage1_vulns = vulnerabilities | selectattr('classification.stage', 'equalto', 1) | selectattr('classification.enabled', 'equalto', true) | list %}
-          {% set existing_patch_ids = patches | map(attribute='finding_id') | list %}
+          {% set existing_patch_ids = patches | map(attribute='finding_id') | map('string') | list %}
           {% set unpatchedVulns = stage1_vulns | rejectattr('finding_id', 'in', existing_patch_ids) | list %}
+          
+          <!-- Debug info (hidden, can be shown in console) -->
+          <script>
+            console.log('[PATCH_REVIEW] Stage 1 vulnerabilities:', {{ stage1_vulns | length }});
+            console.log('[PATCH_REVIEW] Existing patches:', {{ patches | length }});
+            console.log('[PATCH_REVIEW] Existing patch IDs:', {{ existing_patch_ids | tojson }});
+            console.log('[PATCH_REVIEW] Unpatched vulnerabilities:', {{ unpatchedVulns | length }});
+          </script>
           
           {% if unpatchedVulns | length > 0 %}
           <button id="generateAllStage1Btn" class="btn btn-primary btn-block">

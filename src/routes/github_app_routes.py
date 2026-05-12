@@ -30,6 +30,85 @@ def init_github_app_services(app_id: str, private_key: str):
     github_app_service = GitHubAppService(app_id, private_key, db_session)
     installation_service = InstallationService(db_session, github_app_service)
 
+
+@github_app_bp.route('/api/webhook-activity')
+@login_required
+def webhook_activity():
+    """Get recent webhook activity for current user"""
+    try:
+        from src.models.webhook_event import WebhookEvent
+        from src.models.github_installation import InstallationRepository
+        
+        db = get_session()
+        
+        # Get user's installations
+        user_installations = db.query(InstallationRepository).filter(
+            InstallationRepository.installation.has(user_id=current_user.id)
+        ).all()
+        
+        repo_names = [repo.full_name for repo in user_installations]
+        
+        # Get webhook events for user's repositories
+        events = db.query(WebhookEvent).filter(
+            WebhookEvent.repository_full_name.in_(repo_names)
+        ).order_by(
+            WebhookEvent.created_at.desc()
+        ).limit(50).all()
+        
+        return jsonify({
+            'success': True,
+            'events': [event.to_dict() for event in events],
+            'total': len(events)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching webhook activity: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@github_app_bp.route('/api/webhook-status')
+@login_required
+def webhook_status():
+    """Get webhook health status"""
+    try:
+        from src.models.webhook_event import WebhookEvent
+        from datetime import datetime, timedelta
+        
+        db = get_session()
+        
+        # Get last webhook received
+        last_webhook = db.query(WebhookEvent).order_by(
+            WebhookEvent.created_at.desc()
+        ).first()
+        
+        # Count webhooks in last 24 hours
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        recent_count = db.query(WebhookEvent).filter(
+            WebhookEvent.created_at >= yesterday
+        ).count()
+        
+        # Count by status
+        status_counts = {}
+        for status in ['processed', 'skipped', 'failed']:
+            count = db.query(WebhookEvent).filter(
+                WebhookEvent.created_at >= yesterday,
+                WebhookEvent.status == status
+            ).count()
+            status_counts[status] = count
+        
+        return jsonify({
+            'success': True,
+            'webhook_enabled': os.getenv('GITHUB_WEBHOOK_SECRET') is not None,
+            'last_webhook': last_webhook.to_dict() if last_webhook else None,
+            'last_24h_count': recent_count,
+            'status_breakdown': status_counts
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching webhook status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @github_app_bp.route('/install-github-app')
 @login_required
 def install_github_app():

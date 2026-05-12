@@ -49,7 +49,7 @@ class GitHubWebhookHandler:
             
             elif action == 'deleted':
                 # Installation deleted - deactivate in our system
-                from src.services.installation_service import installation_service
+                from src.routes.github_app_routes import installation_service
                 if installation_service:
                     result = installation_service.handle_installation_deleted(installation_id)
                     return {'status': 'processed', 'action': action, 'result': result}
@@ -75,7 +75,7 @@ class GitHubWebhookHandler:
             logger.info(f"Push event: {repo_full_name}, branch: {branch}, commit: {commit_sha[:8]}")
             
             # Get repository from installation service
-            from src.services.installation_service import installation_service
+            from src.routes.github_app_routes import installation_service
             if not installation_service:
                 return {'status': 'error', 'error': 'Installation service not available'}
             
@@ -146,7 +146,7 @@ class GitHubWebhookHandler:
             logger.info(f"PR event: {repo_full_name}, PR #{pr_number}, action: {action}")
             
             # Get repository from installation service
-            from src.services.installation_service import installation_service
+            from src.routes.github_app_routes import installation_service
             if not installation_service:
                 return {'status': 'error', 'error': 'Installation service not available'}
             
@@ -203,6 +203,13 @@ def init_webhook_handler(webhook_secret: str):
 @github_webhooks_bp.route('/webhook/github', methods=['POST'])
 def handle_github_webhook():
     """Main GitHub webhook endpoint"""
+    from datetime import datetime
+    from src.models.webhook_event import WebhookEvent
+    from src.database.connection import get_session
+    
+    webhook_event = None
+    db = None
+    
     try:
         if not webhook_handler:
             logger.error("Webhook handler not initialized")
@@ -230,6 +237,32 @@ def handle_github_webhook():
             logger.error(f"Invalid JSON in webhook payload: {e}")
             return jsonify({'error': 'Invalid JSON'}), 400
         
+        # Create webhook event record
+        try:
+            db = get_session()
+            webhook_event = WebhookEvent(
+                delivery_id=delivery_id,
+                event_type=event_type,
+                action=data.get('action'),
+                repository_full_name=data.get('repository', {}).get('full_name'),
+                installation_id=data.get('installation', {}).get('id'),
+                sender_login=data.get('sender', {}).get('login'),
+                status='received',
+                payload_summary={
+                    'ref': data.get('ref'),
+                    'before': data.get('before', '')[:8] if data.get('before') else None,
+                    'after': data.get('after', '')[:8] if data.get('after') else None,
+                    'pr_number': data.get('pull_request', {}).get('number'),
+                    'pr_title': data.get('pull_request', {}).get('title')
+                }
+            )
+            db.add(webhook_event)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to create webhook event record: {e}")
+            if db:
+                db.rollback()
+        
         # Route to appropriate handler
         if event_type == 'installation':
             result = webhook_handler.handle_installation_event(data)
@@ -241,9 +274,35 @@ def handle_github_webhook():
             logger.info(f"Ignoring webhook event: {event_type}")
             result = {'status': 'ignored', 'event': event_type}
         
+        # Update webhook event with result
+        if webhook_event and db:
+            try:
+                webhook_event.status = result.get('status', 'processed')
+                webhook_event.scan_id = result.get('scan_id')
+                webhook_event.error_message = result.get('error') or result.get('reason')
+                webhook_event.processed_at = datetime.utcnow()
+                db.commit()
+            except Exception as e:
+                logger.warning(f"Failed to update webhook event: {e}")
+                db.rollback()
+        
         logger.info(f"Webhook processed: {result.get('status')} for {event_type}")
         return jsonify(result)
         
     except Exception as e:
         logger.error(f"Webhook handling error: {e}")
+        
+        # Mark webhook as failed
+        if webhook_event and db:
+            try:
+                webhook_event.status = 'failed'
+                webhook_event.error_message = str(e)
+                webhook_event.processed_at = datetime.utcnow()
+                db.commit()
+            except:
+                pass
+        
         return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        if db:
+            db.close()
