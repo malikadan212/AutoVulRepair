@@ -2375,8 +2375,13 @@ def classify_vulnerability_for_patching(rule_id, message, cwe):
             'reason': 'Complex vulnerability requiring AI analysis'
         }
 
-def get_existing_patches(scan_id):
-    """Get existing patches for a scan - deduplicated by finding_id"""
+def get_existing_patches(scan_id, stage=None):
+    """Get existing patches for a scan - deduplicated by finding_id
+    
+    Args:
+        scan_id: The scan ID
+        stage: Optional stage filter (1 for Stage 1, 2 for Stage 2, None for all)
+    """
     try:
         # Try to get patches directly from database using the new schema
         from src.models.scan_v2 import RepairPatch, DatabaseManager
@@ -2395,6 +2400,11 @@ def get_existing_patches(scan_id):
             patches_by_finding = {}
             
             for repair_patch in repair_patches:
+                # Filter by stage if specified
+                if stage is not None:
+                    patch_stage = 2 if repair_patch.repair_method and repair_patch.repair_method.startswith('stage2_') else 1
+                    if patch_stage != stage:
+                        continue
                 # Ensure finding_id is a string for comparison
                 finding_id_str = str(repair_patch.finding_id) if repair_patch.finding_id else None
                 
@@ -2441,7 +2451,7 @@ def get_existing_patches(scan_id):
             patches = list(patches_by_finding.values())
             
             session_db.close()
-            logger.info(f"[GET_PATCHES] Loaded {len(patches)} unique patches from database for scan {scan_id}")
+            logger.info(f"[GET_PATCHES] Loaded {len(patches)} unique patches from database for scan {scan_id}" + (f" (stage {stage} only)" if stage else ""))
             logger.info(f"[GET_PATCHES] Finding IDs with patches: {list(patches_by_finding.keys())}")
             return patches
         
@@ -2569,10 +2579,10 @@ def patch_review(scan_id):
             
             vulnerabilities.append(vuln)
         
-        # Get existing patches (if any)
-        patches = get_existing_patches(scan_id)
+        # Get existing patches (Stage 1 only for this view)
+        patches = get_existing_patches(scan_id, stage=1)
         
-        logger.info(f"[PATCH_REVIEW] Loaded {len(patches)} existing patches for scan {scan_id}")
+        logger.info(f"[PATCH_REVIEW] Loaded {len(patches)} existing Stage 1 patches for scan {scan_id}")
         if patches:
             logger.info(f"[PATCH_REVIEW] Sample patch IDs: {[p.get('patch_id', 'NO_ID')[:8] for p in patches[:3]]}")
         
@@ -2912,8 +2922,8 @@ def api_generate_single_patch(scan_id, vuln_id):
     logger.info(f"[API] Single patch generation requested for scan: {scan_id}, vuln: {vuln_id}")
     
     try:
-        # Check if patch already exists for this vulnerability
-        existing_patches = get_existing_patches(scan_id)
+        # Check if patch already exists for this vulnerability (Stage 1 only)
+        existing_patches = get_existing_patches(scan_id, stage=1)
         for patch in existing_patches:
             if patch.get('finding_id') == vuln_id:
                 logger.info(f"[API] Patch already exists for vulnerability {vuln_id}")
@@ -3118,11 +3128,11 @@ def api_generate_stage1_patches(scan_id):
     logger.info(f"[API] Stage 1 patch generation requested for scan: {scan_id} - UPDATED CODE VERSION 3")
     
     try:
-        # Check existing patches first to avoid duplicates
+        # Check existing patches first to avoid duplicates (Stage 1 only)
         try:
-            existing_patches = get_existing_patches(scan_id)
+            existing_patches = get_existing_patches(scan_id, stage=1)
             existing_patch_finding_ids = {patch.get('finding_id') for patch in existing_patches if patch.get('finding_id')}
-            logger.info(f"[API] Found {len(existing_patches)} existing patches for {len(existing_patch_finding_ids)} vulnerabilities")
+            logger.info(f"[API] Found {len(existing_patches)} existing Stage 1 patches for {len(existing_patch_finding_ids)} vulnerabilities")
         except Exception as patch_check_error:
             logger.warning(f"[API] Error checking existing patches: {patch_check_error}")
             existing_patches = []
@@ -6400,13 +6410,12 @@ def repair_dashboard(scan_id):
             # Use official classifier
             classification = classify_vulnerability(vuln)
             
-            # Include if:
-            # 1. Classified as Stage 2, OR
-            # 2. Classified as Stage 1 but disabled, OR
-            # 3. Stage 1 attempted but failed (needs_ai_repair flag)
+            # Include ONLY if:
+            # 1. Classified as Stage 2 (true AI-required vulnerabilities), OR
+            # 2. Stage 1 attempted but failed (needs_ai_repair flag)
+            # NOTE: Stage 1 disabled (low priority) are excluded from AI repair dashboard
             should_include = (
                 classification['stage'] == 2 or 
-                (classification['stage'] == 1 and not classification['enabled']) or
                 needs_ai_from_stage1_failure
             )
             
@@ -6414,10 +6423,8 @@ def repair_dashboard(scan_id):
                 # Determine the reason for inclusion
                 if needs_ai_from_stage1_failure:
                     inclusion_reason = f"Stage 1 failed: {metadata.get('stage1_failure_reason', 'Unknown reason')}"
-                elif classification['stage'] == 2:
-                    inclusion_reason = f"Stage 2 vulnerability: {classification['reason']}"
                 else:
-                    inclusion_reason = f"Stage 1 disabled: {classification['reason']}"
+                    inclusion_reason = f"Stage 2 vulnerability: {classification['reason']}"
                 
                 stage2_vulns.append({
                     'id': str(finding.get('id', f"vuln_{finding.get('line_number', 0)}")),
@@ -6440,7 +6447,7 @@ def repair_dashboard(scan_id):
                 logger.debug(f"[REPAIR_DASHBOARD] Added AI repair vuln: {finding.get('rule_id')} - {inclusion_reason}")
         
         logger.info(f"[REPAIR_DASHBOARD] Found {len(stage2_vulns)} vulnerabilities needing AI repair")
-        logger.info(f"[REPAIR_DASHBOARD] Breakdown: Stage 2={len([v for v in stage2_vulns if v['classification']['stage']==2])}, Stage 1 failed={len([v for v in stage2_vulns if v['needs_ai_from_stage1_failure']])}")
+        logger.info(f"[REPAIR_DASHBOARD] Breakdown: True Stage 2={len([v for v in stage2_vulns if v['classification']['stage']==2])}, Stage 1 failed={len([v for v in stage2_vulns if v['needs_ai_from_stage1_failure']])}")
         
         if not stage2_vulns:
             flash('No Stage 2 vulnerabilities found for AI repair. All vulnerabilities can be handled by Stage 1 (rule-based) repair.', 'info')
@@ -6477,22 +6484,31 @@ def repair_dashboard(scan_id):
             
             logger.info(f"[REPAIR_DASHBOARD] Loaded {len(db_patches)} Stage 2 patches from database")
             
-            # Create a map of file paths to patches for easier lookup
+            # Create a map of finding_id to patches for correct matching
             patch_map = {}
             for patch in db_patches:
-                # Normalize file path
-                file_key = patch.file_path.replace('/tmp/source/', '').replace('/source/', '').replace('source/', '')
-                patch_map[file_key] = patch
+                if patch.finding_id:
+                    finding_id_str = str(patch.finding_id)
+                    patch_map[finding_id_str] = patch
+                    logger.debug(f"[REPAIR_DASHBOARD] Mapped patch to finding_id: {finding_id_str}")
+            
+            logger.info(f"[REPAIR_DASHBOARD] Created patch map with {len(patch_map)} entries")
+            logger.info(f"[REPAIR_DASHBOARD] Patch finding_ids: {list(patch_map.keys())[:5]}...")
             
             # Convert database patches to repairs list and update vulnerability status
             for vuln in stage2_vulns:
+                vuln_id = str(vuln['id'])
                 vuln_file = vuln['file']
                 
-                # Check if this vulnerability has a patch
-                if vuln_file in patch_map:
-                    patch = patch_map[vuln_file]
+                logger.debug(f"[REPAIR_DASHBOARD] Checking vuln {vuln_id} ({vuln_file}:{vuln['line']}) for patch")
+                
+                # Check if this vulnerability has a patch by finding_id
+                if vuln_id in patch_map:
+                    patch = patch_map[vuln_id]
                     vuln['repair_status'] = 'completed'
                     completed_repairs += 1
+                    
+                    logger.info(f"[REPAIR_DASHBOARD] ✓ Found patch for vulnerability {vuln_id}")
                     
                     # Add to repairs list
                     repairs.append({
@@ -6508,6 +6524,8 @@ def repair_dashboard(scan_id):
                         'patch_content': patch.patch_diff,
                         'validation_score': float(patch.confidence_score) if patch.confidence_score else 0.0
                     })
+                else:
+                    logger.debug(f"[REPAIR_DASHBOARD] ✗ No patch found for vulnerability {vuln_id}")
             
             session_db.close()
             
@@ -6863,24 +6881,45 @@ def start_repair(scan_id):
         
         logger.info(f"[START_REPAIR] Loaded {len(findings)} findings from database")
         
-        # Filter for Stage 2 vulnerabilities (complex ones that need AI)
+        # Filter for Stage 2 vulnerabilities using the official classifier (same as dashboard)
+        from src.repair.stage1.classifier import classify_vulnerability
+        
         stage2_vulns = []
         for finding in findings:
-            rule_id = finding.get('rule_id', '')
-            if any(keyword in rule_id.lower() for keyword in [
-                'arrayindexoutofbounds', 'bufferaccessoutofbounds', 'bufferoverflow',
-                'obsoletefunction', 'gets', 'strcpy', 'sprintf', 'strcat',
-                'formatstring', 'racecondition'
-            ]):
+            # Check metadata for Stage 1 failure flag
+            metadata = finding.get('metadata_json', {}) or {}
+            needs_ai_from_stage1_failure = metadata.get('needs_ai_repair', False)
+            
+            # Create vulnerability dict for classification
+            vuln = {
+                'rule_id': finding.get('rule_id', ''),
+                'cwe': str(finding.get('cwe', '')),
+                'description': finding.get('message', '')
+            }
+            
+            # Use official classifier
+            classification = classify_vulnerability(vuln)
+            
+            # Include if:
+            # 1. Classified as Stage 2, OR
+            # 2. Stage 1 attempted but failed (needs_ai_repair flag)
+            # NOTE: We exclude Stage 1 disabled (low priority) unless user explicitly requests them
+            should_include = (
+                classification['stage'] == 2 or 
+                needs_ai_from_stage1_failure
+            )
+            
+            if should_include:
                 stage2_vulns.append({
                     'crash_id': str(finding.get('id', f"vuln_{finding.get('line_number', 0)}")),
                     'file': finding.get('file_path', 'unknown'),
                     'line': finding.get('line_number', 0),
                     'description': finding.get('message', 'Unknown vulnerability'),
-                    'severity': 'High',  # Stage 2 vulnerabilities are high severity
+                    'severity': finding.get('severity', 'high'),
                     'rule_id': finding.get('rule_id', 'unknown'),
                     'cwe': finding.get('cwe', ''),
-                    'function': finding.get('function_name', '')
+                    'function': finding.get('function_name', ''),
+                    'classification': classification
                 })
         
         if not stage2_vulns:
@@ -6889,13 +6928,10 @@ def start_repair(scan_id):
                 'message': 'No Stage 2 vulnerabilities found. These may be handled by Stage 1 (rule-based) repair.'
             })
         
-        logger.info(f"[START_REPAIR] Found {len(stage2_vulns)} Stage 2 vulnerabilities")
+        logger.info(f"[START_REPAIR] Found {len(stage2_vulns)} Stage 2 vulnerabilities to repair")
         
-        # Filter critical/high vulnerabilities
-        vulnerabilities = []
-        for vuln in stage2_vulns:
-            if vuln.get('severity') in ['Critical', 'High']:
-                vulnerabilities.append(vuln)
+        # Use all Stage 2 vulnerabilities (already filtered by classifier)
+        vulnerabilities = stage2_vulns
         
         if not vulnerabilities:
             return jsonify({
