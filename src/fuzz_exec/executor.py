@@ -118,20 +118,18 @@ class FuzzExecutor:
         start_time = time.time()
         
         try:
+            # Don't capture output to avoid memory issues with verbose fuzz targets
+            # Redirect stdout/stderr to devnull to prevent hanging on infinite output
             result = subprocess.run(
                 cmd,
-                capture_output=True,
-                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 timeout=(runtime_minutes * 60) + 30
             )
             
             elapsed = time.time() - start_time
             
-            # Parse output for stats
-            output = result.stdout + result.stderr
-            stats = self._parse_fuzzer_stats(output)
-            
-            # Check for crashes
+            # Check for crashes (we don't need fuzzer output, just crash files)
             crashes = self._find_crashes(crash_dir)
             
             return {
@@ -141,8 +139,8 @@ class FuzzExecutor:
                 'exit_code': result.returncode,
                 'crashes_found': len(crashes),
                 'crashes': crashes,
-                'stats': stats,
-                'output': output[-1000:]  # Last 1000 chars
+                'stats': {},  # No stats since we're not capturing output
+                'output': ''  # No output to avoid memory issues
             }
             
         except subprocess.TimeoutExpired:
