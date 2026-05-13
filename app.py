@@ -4499,35 +4499,73 @@ def start_fuzzing(scan_id):
     """Start fuzzing campaign in background - accessible without login"""
     logger.info(f"[FUZZ_EXEC] Campaign start requested for scan: {scan_id}")
     
-    scans_dir = os.getenv('SCANS_DIR', './scans')
-    scan_dir = os.path.join(scans_dir, scan_id)
+    try:
+        scans_dir = os.getenv('SCANS_DIR', './scans')
+        scan_dir = os.path.join(scans_dir, scan_id)
+        
+        # Validate scan directory exists
+        if not os.path.exists(scan_dir):
+            logger.error(f"[FUZZ_EXEC] Scan directory not found: {scan_dir}")
+            return jsonify({'error': 'Scan directory not found'}), 404
+        
+        # Validate build directory exists
+        build_dir = os.path.join(scan_dir, 'build')
+        if not os.path.exists(build_dir):
+            logger.error(f"[FUZZ_EXEC] Build directory not found. Run build step first.")
+            return jsonify({'error': 'Build directory not found. Please run the build step first.'}), 400
+        
+        # Check if there are any built fuzz targets
+        targets = [f for f in os.listdir(build_dir) 
+                  if f.startswith('fuzz_') and os.access(os.path.join(build_dir, f), os.X_OK)]
+        
+        if not targets:
+            logger.error(f"[FUZZ_EXEC] No fuzz targets found in build directory")
+            return jsonify({'error': 'No fuzz targets found. Please run harness generation and build steps first.'}), 400
+        
+        logger.info(f"[FUZZ_EXEC] Found {len(targets)} fuzz targets to execute")
+        
+        # Get runtime parameter
+        runtime_minutes = float(request.json.get('runtime_minutes', 1)) if request.json else 1
+        max_targets = request.json.get('max_targets') if request.json else None
+        
+        # Write running marker
+        results_dir = os.path.join(scan_dir, 'fuzz', 'results')
+        os.makedirs(results_dir, exist_ok=True)
+        marker_path = os.path.join(results_dir, '.fuzz_running')
+        with open(marker_path, 'w') as f:
+            f.write('running')
+        
+        import threading
+        def run_campaign():
+            try:
+                logger.info(f"[FUZZ_EXEC] Starting campaign thread for scan: {scan_id}")
+                executor = FuzzExecutor(scan_dir)
+                result = executor.run_campaign(runtime_minutes=runtime_minutes, max_targets=max_targets)
+                
+                if result and 'error' in result:
+                    logger.error(f"[FUZZ_EXEC] Campaign error: {result['error']}")
+                else:
+                    logger.info(f"[FUZZ_EXEC] Campaign completed successfully for scan: {scan_id}")
+            except Exception as e:
+                logger.error(f"[FUZZ_EXEC] Campaign failed with exception: {e}", exc_info=True)
+            finally:
+                if os.path.exists(marker_path):
+                    os.remove(marker_path)
+                    logger.info(f"[FUZZ_EXEC] Removed running marker for scan: {scan_id}")
+        
+        thread = threading.Thread(target=run_campaign, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Fuzzing campaign started in background',
+            'targets_count': len(targets),
+            'runtime_minutes': runtime_minutes
+        })
     
-    runtime_minutes = float(request.json.get('runtime_minutes', 5))
-    max_targets = request.json.get('max_targets')
-    
-    # Write running marker
-    results_dir = os.path.join(scan_dir, 'fuzz', 'results')
-    os.makedirs(results_dir, exist_ok=True)
-    marker_path = os.path.join(results_dir, '.fuzz_running')
-    with open(marker_path, 'w') as f:
-        f.write('running')
-    
-    import threading
-    def run_campaign():
-        try:
-            executor = FuzzExecutor(scan_dir)
-            executor.run_campaign(runtime_minutes=runtime_minutes, max_targets=max_targets)
-            logger.info(f"[FUZZ_EXEC] Campaign completed for scan: {scan_id}")
-        except Exception as e:
-            logger.error(f"[FUZZ_EXEC] Campaign failed: {e}")
-        finally:
-            if os.path.exists(marker_path):
-                os.remove(marker_path)
-    
-    thread = threading.Thread(target=run_campaign, daemon=True)
-    thread.start()
-    
-    return jsonify({'success': True, 'message': 'Fuzzing campaign started in background'})
+    except Exception as e:
+        logger.error(f"[FUZZ_EXEC] Failed to start campaign: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to start campaign: {str(e)}'}), 500
 
 
 @app.route('/api/fuzz/results/<scan_id>')

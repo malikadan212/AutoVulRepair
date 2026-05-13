@@ -602,27 +602,84 @@
             fetch(`/api/fuzz/start/${scanId}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({runtime_minutes: parseInt(runtime)})
+                body: JSON.stringify({runtime_minutes: parseFloat(runtime)})
             })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                }
+                return r.json();
+            })
             .then(data => {
-                campaignRunning = false;
                 if (data.error) {
+                    campaignRunning = false;
                     banner.className = 'status-banner error';
                     banner.innerHTML = '<span>❌</span><span>Error: ' + data.error + '</span>';
+                    btn.disabled = false;
+                } else if (data.success) {
+                    // Campaign started in background, poll for results
+                    banner.innerHTML = '<div class="spinner"></div><span>Fuzzing campaign running... This may take several minutes.</span>';
+                    pollForResults();
                 } else {
-                    banner.className = 'status-banner completed';
-                    banner.innerHTML = '<span>✅</span><span>Campaign completed successfully!</span>';
-                    displayResults(data);
+                    campaignRunning = false;
+                    banner.className = 'status-banner error';
+                    banner.innerHTML = '<span>❌</span><span>Unexpected response from server</span>';
+                    btn.disabled = false;
                 }
-                btn.disabled = false;
             })
             .catch(err => {
                 campaignRunning = false;
                 banner.className = 'status-banner error';
-                banner.innerHTML = '<span>❌</span><span>Error: ' + err + '</span>';
+                banner.innerHTML = '<span>❌</span><span>Error starting campaign: ' + err.message + '</span>';
                 btn.disabled = false;
+                console.error('Campaign start error:', err);
             });
+        }
+        
+        function pollForResults() {
+            const banner = document.getElementById('statusBanner');
+            const btn = document.getElementById('startBtn');
+            
+            const pollInterval = setInterval(() => {
+                fetch(`/api/fuzz/results/${scanId}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.running) {
+                            // Still running, keep polling
+                            console.log('Campaign still running...');
+                        } else if (data.error) {
+                            // Error occurred
+                            clearInterval(pollInterval);
+                            campaignRunning = false;
+                            banner.className = 'status-banner error';
+                            banner.innerHTML = '<span>❌</span><span>Error: ' + data.error + '</span>';
+                            btn.disabled = false;
+                        } else if (data.results) {
+                            // Campaign completed successfully
+                            clearInterval(pollInterval);
+                            campaignRunning = false;
+                            banner.className = 'status-banner completed';
+                            banner.innerHTML = '<span>✅</span><span>Campaign completed successfully!</span>';
+                            displayResults(data);
+                            btn.disabled = false;
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Polling error:', err);
+                        // Don't stop polling on network errors, just log them
+                    });
+            }, 3000); // Poll every 3 seconds
+            
+            // Safety timeout: stop polling after 30 minutes
+            setTimeout(() => {
+                clearInterval(pollInterval);
+                if (campaignRunning) {
+                    campaignRunning = false;
+                    banner.className = 'status-banner error';
+                    banner.innerHTML = '<span>⚠️</span><span>Campaign timeout. Check logs for details.</span>';
+                    btn.disabled = false;
+                }
+            }, 30 * 60 * 1000);
         }
 
         function refreshResults() {
@@ -1021,9 +1078,21 @@
             });
         }
 
-        // Load existing results on page load
+        // Load existing results on page load (silently, don't show errors)
         window.addEventListener('load', () => {
-            refreshResults();
+            fetch(`/api/fuzz/results/${scanId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.results && !data.error) {
+                        // Only display if we have actual results
+                        displayResults(data);
+                    }
+                    // Silently ignore errors on initial load - user hasn't started campaign yet
+                })
+                .catch(err => {
+                    // Silently ignore errors on initial load
+                    console.log('No existing results found (this is normal for new scans)');
+                });
         });
     </script>
 </body>
