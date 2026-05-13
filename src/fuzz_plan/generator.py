@@ -249,9 +249,15 @@ class FuzzPlanGenerator:
         """De-duplicate findings by <file_stem>::<function> (FR3) - Issue #6 fixed"""
         print(f"[FUZZ_PLAN] De-duplicating {len(findings)} findings...")
         
+        # Filter out dead code and auto-filtered vulnerabilities first
+        filtered_findings = [f for f in findings if not self.should_skip_finding(f)]
+        skipped_count = len(findings) - len(filtered_findings)
+        if skipped_count > 0:
+            print(f"[FUZZ_PLAN] Filtered out {skipped_count} dead code/auto-filtered vulnerabilities")
+        
         # Group by target key
         target_groups = defaultdict(list)
-        for finding in findings:
+        for finding in filtered_findings:
             file_stem = finding.get('file_stem') or Path(finding.get('file') or finding.get('file_path', 'unknown')).stem
             function = finding.get('function') or finding.get('function_name', '')
             line_num = finding.get('line') or finding.get('line_number', 0)
@@ -470,8 +476,44 @@ class FuzzPlanGenerator:
                     return name
         return None
     
+    def should_skip_finding(self, finding: Dict[str, Any]) -> bool:
+        """
+        Check if finding should be skipped (dead code, auto-filtered, etc.)
+        
+        Returns:
+            True if should skip, False if should include
+        """
+        rule_id = finding.get('rule_id', '')
+        cwe = finding.get('cwe', '').replace('CWE-', '')
+        
+        # Skip dead code vulnerabilities (disabled by default, low success rate)
+        dead_code_rules = ['unusedFunction', 'unusedVariable', 'unreadVariable']
+        dead_code_cwes = ['561', '1164', '398']
+        
+        if rule_id in dead_code_rules or cwe in dead_code_cwes:
+            print(f"[FUZZ_PLAN] Skipping dead code vulnerability: {rule_id} (CWE-{cwe})")
+            return True
+        
+        # Skip code quality issues that require restructuring
+        code_quality_rules = ['variableScope']
+        if rule_id in code_quality_rules:
+            print(f"[FUZZ_PLAN] Skipping code quality issue: {rule_id} (requires restructuring)")
+            return True
+        
+        # Skip style/information severity (not security vulnerabilities)
+        severity = finding.get('severity', '').lower()
+        if severity in ['style', 'information']:
+            print(f"[FUZZ_PLAN] Skipping non-security issue: {rule_id} (severity: {severity})")
+            return True
+        
+        return False
+    
     def validate_finding(self, finding: Dict[str, Any]) -> bool:
         """Validate that finding has all required fields"""
+        # Check if should be skipped first
+        if self.should_skip_finding(finding):
+            return False
+        
         # Only truly required fields - function and file_stem can be derived
         required_fields = ['rule_id', 'severity', 'message']
 
@@ -826,6 +868,7 @@ class FuzzPlanGenerator:
             'targets': targets,
             'metadata': {
                 'total_findings': self.findings_data['total_findings'],
+                'filtered_findings': original_count if original_count > len(targets) else 0,  # Findings filtered due to limits
                 'deduplicated_targets': len(targets) - integration_count - race_condition_count,  # Exclude special targets from dedup count
                 'integration_targets': integration_count,
                 'race_condition_targets': race_condition_count,
@@ -838,13 +881,17 @@ class FuzzPlanGenerator:
                 'signatures_failed': signatures_failed,
                 'signature_extraction_rate': f"{signatures_extracted}/{len(targets)}" if len(targets) > 0 else "0/0",
                 'integration_enabled': self.enable_integration,
-                'race_condition_enabled': self.enable_race_condition
+                'race_condition_enabled': self.enable_race_condition,
+                'filtering_applied': True,  # Indicate that dead code filtering is active
+                'skipped_count': skipped_count  # Number of invalid findings skipped
             }
         }
         
-        print(f"[FUZZ_PLAN] Generated {len(targets)} fuzz targets")
+        print(f"[FUZZ_PLAN] Generated {len(targets)} fuzz targets (skipped {skipped_count} invalid/filtered)")
         print(f"[FUZZ_PLAN] Bug class breakdown: {dict(bug_class_breakdown)}")
         print(f"[FUZZ_PLAN] Signatures extracted: {signatures_extracted}/{len(targets)}")
+        if original_count > len(targets):
+            print(f"[FUZZ_PLAN] Applied resource limit: {original_count} → {len(targets)} targets")
         
         return fuzz_plan
     
