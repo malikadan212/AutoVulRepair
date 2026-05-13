@@ -485,26 +485,53 @@ class FuzzPlanGenerator:
         """
         rule_id = finding.get('rule_id', '')
         cwe = finding.get('cwe', '').replace('CWE-', '')
+        severity = finding.get('severity', '').lower()
+        message = finding.get('message', '').lower()
         
-        # Skip dead code vulnerabilities (disabled by default, low success rate)
+        # Skip dead code vulnerabilities (CWE-561, 1164)
         dead_code_rules = ['unusedFunction', 'unusedVariable', 'unreadVariable']
-        dead_code_cwes = ['561', '1164', '398']
+        dead_code_cwes = ['561', '1164']
         
         if rule_id in dead_code_rules or cwe in dead_code_cwes:
-            print(f"[FUZZ_PLAN] Skipping dead code vulnerability: {rule_id} (CWE-{cwe})")
+            print(f"[FUZZ_PLAN] Skipping dead code: {rule_id} (CWE-{cwe})")
             return True
         
-        # Skip code quality issues that require restructuring
-        code_quality_rules = ['variableScope']
-        if rule_id in code_quality_rules:
-            print(f"[FUZZ_PLAN] Skipping code quality issue: {rule_id} (requires restructuring)")
+        # Skip code quality issues (CWE-398, 570, 571)
+        # These are not security vulnerabilities, just code quality/style issues
+        code_quality_cwes = ['398', '570', '571']
+        code_quality_rules = ['variableScope', 'cstyleCast', 'knownConditionTrueFalse']
+        
+        if cwe in code_quality_cwes or rule_id in code_quality_rules:
+            print(f"[FUZZ_PLAN] Skipping code quality issue: {rule_id} (CWE-{cwe})")
             return True
         
-        # Skip style/information severity (not security vulnerabilities)
-        severity = finding.get('severity', '').lower()
-        if severity in ['style', 'information']:
-            print(f"[FUZZ_PLAN] Skipping non-security issue: {rule_id} (severity: {severity})")
+        # Skip based on message patterns (code quality indicators)
+        code_quality_patterns = [
+            'scope of the variable',
+            'c-style pointer casting',
+            'condition is always true',
+            'condition is always false',
+            'is never used'
+        ]
+        
+        for pattern in code_quality_patterns:
+            if pattern in message:
+                print(f"[FUZZ_PLAN] Skipping code quality: {message[:60]}...")
+                return True
+        
+        # Skip style/information/performance severity (not security vulnerabilities)
+        if severity in ['style', 'information', 'performance']:
+            print(f"[FUZZ_PLAN] Skipping non-security severity: {severity}")
             return True
+        
+        # Skip low severity findings unless they're known security issues
+        # Low severity is often used for code quality, not security
+        if severity == 'low':
+            # Allow low severity only for known security CWEs
+            security_cwes = ['119', '120', '121', '122', '125', '190', '191', '401', '415', '416', '476', '787', '788']
+            if cwe not in security_cwes:
+                print(f"[FUZZ_PLAN] Skipping low severity non-security: {rule_id} (CWE-{cwe})")
+                return True
         
         return False
     
