@@ -118,29 +118,73 @@ class FuzzExecutor:
         start_time = time.time()
         
         try:
-            # Don't capture output to avoid memory issues with verbose fuzz targets
-            # Redirect stdout/stderr to devnull to prevent hanging on infinite output
-            result = subprocess.run(
+            # Capture output with size limit to prevent memory exhaustion
+            # Use a separate thread to read output and enforce max size
+            import threading
+            import queue
+            
+            output_queue = queue.Queue()
+            max_output_size = 1024 * 1024  # 1MB limit
+            
+            def read_output(pipe, output_list, max_size):
+                """Read output up to max_size bytes"""
+                total_read = 0
+                while total_read < max_size:
+                    chunk = pipe.read(8192)
+                    if not chunk:
+                        break
+                    output_list.append(chunk)
+                    total_read += len(chunk)
+                # Drain remaining output to prevent blocking
+                while pipe.read(8192):
+                    pass
+            
+            # Run process with pipes
+            process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=(runtime_minutes * 60) + 30
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
+            
+            stdout_data = []
+            stderr_data = []
+            
+            # Start threads to read output with size limits
+            stdout_thread = threading.Thread(target=read_output, args=(process.stdout, stdout_data, max_output_size))
+            stderr_thread = threading.Thread(target=read_output, args=(process.stderr, stderr_data, max_output_size))
+            
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            # Wait for process with timeout
+            try:
+                process.wait(timeout=(runtime_minutes * 60) + 30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            
+            # Wait for reader threads to finish
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
             
             elapsed = time.time() - start_time
             
-            # Check for crashes (we don't need fuzzer output, just crash files)
+            # Combine output (stderr usually has sanitizer output)
+            output = ''.join(stderr_data) if stderr_data else ''.join(stdout_data)
+            
+            # Check for crashes
             crashes = self._find_crashes(crash_dir)
             
             return {
                 'target': target_name,
                 'status': 'completed',
                 'runtime': round(elapsed, 2),
-                'exit_code': result.returncode,
+                'exit_code': process.returncode,
                 'crashes_found': len(crashes),
                 'crashes': crashes,
-                'stats': {},  # No stats since we're not capturing output
-                'output': ''  # No output to avoid memory issues
+                'stats': self._parse_fuzzer_stats(output),
+                'output': output[:10000]  # Keep last 10KB for triage analysis
             }
             
         except subprocess.TimeoutExpired:
@@ -152,13 +196,15 @@ class FuzzExecutor:
                 'status': 'timeout',
                 'runtime': round(elapsed, 2),
                 'crashes_found': len(crashes),
-                'crashes': crashes
+                'crashes': crashes,
+                'output': ''
             }
         except Exception as e:
             return {
                 'target': target_name,
                 'status': 'error',
-                'error': str(e)
+                'error': str(e),
+                'output': ''
             }
     
     def _parse_fuzzer_stats(self, output: str) -> Dict:

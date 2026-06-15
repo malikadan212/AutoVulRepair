@@ -6495,6 +6495,11 @@ def repair_dashboard(scan_id):
             # Use official classifier
             classification = classify_vulnerability(vuln)
             
+            # Skip excluded non-security issues (code quality/style)
+            if classification['stage'] == 'excluded':
+                logger.debug(f"[REPAIR_DASHBOARD] Skipping excluded non-security issue: {finding.get('rule_id')} - {classification['reason']}")
+                continue
+            
             # Include ONLY if:
             # 1. Classified as Stage 2 (true AI-required vulnerabilities), OR
             # 2. Stage 1 attempted but failed (needs_ai_repair flag)
@@ -6984,6 +6989,11 @@ def start_repair(scan_id):
             
             # Use official classifier
             classification = classify_vulnerability(vuln)
+            
+            # Skip excluded non-security issues (code quality/style)
+            if classification['stage'] == 'excluded':
+                logger.debug(f"[START_REPAIR] Skipping excluded non-security issue: {finding.get('rule_id')} - {classification['reason']}")
+                continue
             
             # Include if:
             # 1. Classified as Stage 2, OR

@@ -126,6 +126,19 @@ STAGE2_ONLY = {
     }
 }
 
+# Code quality/style issues that should be EXCLUDED from repair entirely
+# These are not security vulnerabilities and should not consume AI resources
+EXCLUDED_NON_SECURITY = {
+    'code_style': {
+        'cwes': ['570', '571'],  # CWE-570/571: Expression Always True/False
+        'cppcheck_ids': [
+            'cstyleCast',              # C-style pointer casting (style issue)
+            'knownConditionTrueFalse', # Condition always true/false (logic issue)
+        ],
+        'reason': 'Code quality/style issue, not a security vulnerability'
+    }
+}
+
 
 def classify_vulnerability(vuln: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -137,7 +150,7 @@ def classify_vulnerability(vuln: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Classification dict with:
         - category: 'null_pointer', 'uninitialized_var', 'dead_code', or 'stage2_only'
-        - stage: 1 or 2
+        - stage: 1 or 2 or 'excluded'
         - enabled: bool
         - reason: str (why it's classified this way)
         - priority: int
@@ -152,6 +165,18 @@ def classify_vulnerability(vuln: Dict[str, Any]) -> Dict[str, Any]:
             cwe = match.group(1)
     
     cppcheck_id = vuln.get('rule_id', vuln.get('id', ''))
+    
+    # Check excluded non-security issues FIRST (before any repair routing)
+    for category, config in EXCLUDED_NON_SECURITY.items():
+        if cwe in config['cwes'] or cppcheck_id in config['cppcheck_ids']:
+            return {
+                'category': category,
+                'stage': 'excluded',
+                'enabled': False,
+                'reason': config['reason'],
+                'priority': -1,
+                'success_rate': 0.0
+            }
     
     # Check Stage 1 categories
     for category, config in STAGE1_CATEGORIES.items():

@@ -14,6 +14,3 @@ __all__ = [
     'GeneratorAgent',
     'ValidatorAgent',
 ]
-
-# Optimizer agent will be added later:
-# from .optimizer import OptimizerAgent

@@ -526,7 +526,7 @@
                     <tbody>
                         {% for crash in results.crashes %}
                         <tr data-severity="{{ crash['severity'] }}">
-                            <td><code>{{ crash['id'][:8] }}</code></td>
+                            <td><code>{{ crash['id'] }}</code></td>
                             <td><span class="badge badge-dark">{{ crash['crash_type'] }}</span></td>
                             <td>
                                 {% if crash['severity'] == 'Critical' %}
